@@ -1,0 +1,1165 @@
+{
+  "addcontent": {
+    "formTitle" : "Content form",
+    "title": "Add Content",
+    "form": {
+      "title": "Title",
+      "type": "Type",
+      "selectLesson": "Select a lesson",
+      "createLesson": "Create lesson",
+      "author": "Author",
+      "difficulty": "Difficulty Level",
+      "description": "Description",
+      "tags": "Tags",
+      "resources": "Resources",
+      "addResource": "Add resource",
+      "clear": "Clear",
+      "read": "Read",
+      "reading": "Reading...",
+      "save": "Save",
+      "update": "Update",
+      "headerSubtitle": "Create and organize educational content for your lessons",
+      "lessonSection": "Associated lesson",
+      "basicInfo": "Basic information",
+      "titlePlaceholder": "E.g.: Molecular structure of water",
+      "descriptionPlaceholder": "Briefly describe the content...",
+      "authorPlaceholder": "Author name",
+      "tagsAndResources": "Tags and resources",
+      "tagPlaceholder": "Type and press Enter to add...",
+      "selectLessonRequired": "Select a lesson",
+      "typeOptions": {
+        "molecule": "Molecule",
+        "atom": "Atom",
+        "experiment": "Experiment",
+        "chemicalReactions": "Chemical reactions",
+        "periodicTable": "Periodic Table",
+        "article": "Article",
+        "slide": "Presentation/Slides",
+        "document": "Document",
+        "video": "Video"
+      },
+      "difficultyOptions": {
+        "easy": "Easy",
+        "medium": "Medium",
+        "hard": "Hard"
+      },
+      "multimediaContent": "Multimedia content",
+      "multimedia": {
+        "content": "Multimedia content"
+      }
+    },
+    "read": "Read",
+    "table": {
+      "title": "Existing content",
+      "filter": "Filter...",
+      "noRecords": "No records found",
+      "columns": {
+        "title": "Title",
+        "type": "Type",
+        "difficulty": "Difficulty Level",
+        "tags": "Tags",
+        "actions": "Actions"
+      },
+      "actions": {
+        "edit": "Edit",
+        "delete": "Delete"
+      }
+    },
+    "history": {
+      "title": "Change History",
+      "noHistory": "No history available",
+      "columns": {
+        "record": "Record",
+        "action": "Action",
+        "author": "Author",
+        "date": "Date"
+      }
+    },
+    "validation": {
+      "titleRequired": "Title is required",
+      "authorRequired": "Author is required",
+      "selectLessonRequired": "Select a lesson"
+    },
+    "errors": {
+      "lessonAlreadyAssigned": "Lesson already assigned to another content"
+    },
+    "toast": {
+      "updateError": "Error updating record",
+      "updateSuccess": "Record updated successfully",
+      "saveError": "Error saving record",
+      "saveSuccess": "Record saved successfully",
+      "deleteError": "Error deleting record",
+      "deleteSuccess": "Record deleted successfully",
+      "undoError": "Error undoing: {{message}}",
+      "deleteSuccessDetailed": "🗑️ Record deleted successfully",
+      "loadLessonsError": "Error loading lessons",
+      "loadRecordsError": "Error loading records"
+    },
+    "tabs": {
+      "text": "Text",
+      "slides": "Slides",
+      "media": "Media",
+      "textDescription": "Descriptive text is edited above in the 'Description' field."
+    }
+  },
+  "sidebarNav": "Sidebar navigation",
+  "sidebarLabel": "Main navigation",
+  "learn": "Learn",
+  "molecules": "Molecules",
+  "atoms": "Atoms",
+  "periodicTable": "Periodic Table",
+  "chemicalReactions": "Chemical Reactions", 
+  "experiments": "Experiments",
+  "accessibility": "Accessibility",
+  "accessibility.visualAlertsToggled": "Visual alerts toggled",
+  "accessibility.visualAlertsEnabled": "Visual alerts enabled",
+  "accessibility.visualAlertsDisabled": "Visual alerts disabled",
+  "accessibility.voiceReadingToggled": "Voice reading toggled",
+  "accessibility.voiceReadingEnabled": "Voice reading enabled",
+  "accessibility.voiceReadingDisabled": "Voice reading disabled",
+  "accessibility.textSizeToggled": "Text size toggled",
+  "accessibility.textSizeEnabled": "Large text enabled",
+  "accessibility.textSizeDisabled": "Large text disabled",
+  "accessibility.highContrastToggled": "High contrast toggled",
+  "accessibility.highContrastEnabled": "High contrast enabled",
+  "accessibility.highContrastDisabled": "High contrast disabled",
+  "accessibility.description": "Adjust accessibility options like visual alerts, large text and high contrast.",
+  "accessibility.visualAlertsDesc": "Show visual cues for important UI changes.",
+  "accessibility.voiceReadingDesc": "Read content aloud using the browser's speech synthesis.",
+  "accessibility.largeTextDesc": "Increase overall text size across the application.",
+  "accessibility.highContrastDesc": "Use a high contrast color scheme for better visibility.",
+  "enable": "Enable",
+  "enabled": "Enabled",
+  "visualAlerts": "Visual Alerts",
+  "voiceReading": "Voice Reading",
+  "textSize": "Text Size",
+  "highContrast": "High Contrast",
+  "settings": "Settings",
+  "addContent": "Add content",
+  "close": "Close",
+  "titleLabel": "Title",
+  "titlePlaceholder": "Enter a title (3-150 chars)",
+  "typeLabel": "Type",
+  "chooseType": "Choose a type",
+  "tagsLabel": "Tags (comma separated)",
+  "tagsPlaceholder": "e.g. reaction, water, organic",
+  "descriptionLabel": "Description",
+  "resourcesLabel": "Resources (URLs)",
+  "resourcePlaceholder": "https://",
+  "addResource": "Add resource",
+  "safetyLabel": "Safety level",
+  "safetyLow": "Low",
+  "safetyMedium": "Medium", 
+  "safetyHigh": "High",
+  "authorLabel": "Author",
+  "newBtn": "New",
+  "saveBtn": "Save",
+  "updateBtn": "Update",
+  "smartFilterBtn": "Smart filter",
+  "clearBtn": "Clear",
+  "savedToast": "Content saved (simulation)",
+    "undo": "Undo",
+    "undoSuccess": "Undo successful",
+    "titleHelp": "This title will be the lesson header",
+    "typeHelp": "Select content type (molecule, atom, experiment, article)",
+    "addContentHelpTitle": "Help - Add Content",
+    "shortcuts": "Shortcuts",
+    "shortcut": {
+      "save": "Save (Ctrl/Cmd + S)",
+      "close": "Close modal (Esc)",
+      "navigateSuggestions": "Navigate suggestions (↑/↓)",
+      "applySuggestion": "Apply suggestion (Enter)",
+      "tabNavigate": "Navigate between fields (Tab)"
+        ,
+        "openSidebar": "Open / close the sidebar",
+        "toggleHighContrast": "Toggle high contrast mode",
+        "adjustTextSize": "Increase / decrease text size",
+        "reload": "Reload",
+        "closeModal": "Close modals / overlays"
+    },
+    "history": {
+      "title": "Change History",
+      "clear": "Clear history",
+      "confirmClear": "Are you sure you want to clear history?",
+      "cleared": "History cleared",
+      "filters": {
+        "title": "Filters",
+        "actionAll": "All actions",
+        "authorAll": "All authors",
+        "typeAll": "All types",
+        "search": "Search by title or description..."
+      },
+      "table": {
+        "action": "Action",
+        "title": "Title",
+        "author": "Author",
+        "type": "Type",
+        "when": "When"
+      }
+      ,
+      "subtitle": "All changes and actions in your content",
+      "items": "items",
+      "resetFilters": "Reset",
+      "noItems": "No history items found",
+      "noItemsHint": "Try adjusting your filters",
+      "preview": "Preview",
+      "read": "Read",
+      "reading": "Reading...",
+      "previewEmpty": "Select an item to see details",
+      "open": "Open",
+      "copy": "Copy",
+      "copied": "Copied to clipboard"
+    },
+  "updatedToast": "Content updated (simulation)",
+  "validationTitleRequired": "Title is required and must be at least 3 characters.",
+  "validationTypeRequired": "Please choose a type.",
+  "article": "Article",
+  "visualAlertsEnabled": "Visual alerts enabled (simulation)",
+  "voiceReadingEnabled": "Voice reading enabled (simulation)",
+  "welcome": "Welcome to QuimicaUleam",
+  "exploreChemistry": "Explore the fascinating world of basic chemistry",
+  "learnInteractive": "Learn chemistry interactively with 3D models and augmented reality. Visualize molecules, atoms and reactions directly from your browser.",
+  "news": "News",
+  "newsHelp": "Here you will find the latest news, new models and experiments available in QuimicaUleam.",
+  "newWaterMolecule": "New 3D Water Molecule",
+  "newWaterMoleculeDesc": "Explore the molecular structure of H₂O with our new interactive model.",
+  "updatedPeriodicTable": "Updated Periodic Table",
+  "updatedPeriodicTableDesc": "Access detailed information about all chemical elements.",
+  "virtualExperiments": "Virtual Experiments Available",
+  "virtualExperimentsDesc": "Perform simple chemical experiments directly from your browser.",
+
+  "home": {
+    "heroTitle": "Explore the world of science interactively",
+    "heroSubtitle": "Discover concepts, virtual experiments and scientific advances in an environment designed for dynamic learning.",
+    "heroButton": "Start learning",
+    "recentLessons": "Recent lessons",
+    "recentLessonsHelp": "The latest lessons added to the platform",
+    "noLessonsYet": "No lessons available yet",
+    "noDescription": "No description",
+    "sessionStarted": "Session started successfully",
+    "registerOrLogin": "Register or log in"
+  },
+  "contents": {
+    "title": "General Content",
+    "noRecords": "No records found",
+    "follow": "Follow",
+    "unfollow": "Unfollow",
+    "following": "Following",
+    "followed": "You are now following this content",
+    "unfollowed": "You unfollowed this content",
+    "followError": "Error updating follow status"
+  },
+  "lessons": {
+    "title": "Lessons",
+    "noRecords": "No lessons found",
+    "loadError": "Error loading lessons",
+    "back": "Back to lessons",
+    "invalidId": "Invalid lesson ID",
+    "notFound": "Lesson not found",
+    "markComplete": "Mark as completed",
+    "markedCompleted": "Lesson marked as completed",
+    "completed": "Completed",
+    "card": {
+      "viewClass": "View class",
+      "noThumbnail": "No thumbnail",
+      "continue": "Continue",
+      "complete": "Completed"
+    }
+    ,
+    "status": {
+      "completed": "Completed — review resources and results",
+      "inProgress": "In progress — current score {{score}}%",
+      "notStarted": "Not started — begin the lesson to make progress"
+    }
+  },
+  "contents.loadLessonsError": "Error loading lessons",
+  "contents.loadRecordsError": "Error loading records",
+  "contents.table": {
+    "title": "Title",
+    "type": "Type",
+    "lesson": "Lesson",
+    "difficulty": "Difficulty",
+    "tags": "Tags",
+    "actions": "Actions",
+    "copy": "Copy",
+    "copied": "Copied to clipboard"
+  },
+  "contents.card": {
+    "viewLesson": "View lesson",
+    "edit": "Edit content",
+    "noDescription": "No description"
+  },
+  "contents.classTitle": "Lesson #{{id}}",
+  "common": {
+    "percentCompleted": "{{percent}}% completed"
+  },
+
+  "register": {
+    "title": "Create Account",
+    "firstName": "First Name",
+    "lastName": "Last Name",
+    "email": "Email",
+    "confirmEmail": "Confirm Email",
+    "password": "Password",
+    "confirmPassword": "Confirm Password",
+    "phone": "Phone",
+    "role": "Role",
+    "placeholders": {
+      "firstName": "Your first name",
+      "lastName": "Your last name", 
+      "email": "user@example.com",
+      "confirmEmail": "Repeat your email",
+      "password": "Minimum 8 characters",
+      "confirmPassword": "Repeat your password",
+      "phone": "+1 555XXXXXXX"
+    },
+    "terms": "I accept the terms and conditions",
+    "roles": {
+      "student": "Student",
+      "teacher": "Teacher",
+      "other": "Other",
+      "admin": "Administrator"
+    },
+    "buttons": {
+      "create": "Create Account",
+      "creating": "Creating...",
+      "haveAccount": "I already have an account"
+    },
+    "success": "Registration successful. Check your email to verify your account.",
+    "teacherApprovalNote": "The teacher role requires approval from an administrator. You will be registered as a student until your request is approved.",
+    "teacherPendingApproval": "You have been registered as a student. Your request to become a teacher will be reviewed by an administrator.",
+    "verifyEmail": {
+      "title": "Check your email",
+      "description": "We've sent a verification link to {{email}}. Click the link to activate your account.",
+      "checkSpam": "If you don't see the email, check your spam or junk folder.",
+      "goToLogin": "Go to login"
+    },
+    "errors": {
+      "required": {
+        "firstName": "First name is required",
+        "lastName": "Last name is required",
+        "email": "Email is required",
+        "password": "Password is required",
+        "phone": "Phone is required",
+        "terms": "You must accept the terms"
+      },
+      "invalid": {
+        "email": "Invalid email",
+        "phone": "Invalid phone number",
+        "password": "Must be at least 6 characters"
+      },
+      "mismatch": {
+        "email": "Emails do not match",
+        "password": "Passwords do not match"
+      }
+      ,
+      "models": {
+        "quickModel": {
+          "title": "Create AR Model",
+          "description": "Generate 3D models quickly",
+          "nameLabel": "Model name",
+          "namePlaceholder": "Eg: Water molecule",
+          "typeLabel": "Type",
+          "fileLabel": "File (optional)",
+          "upload": "Upload",
+          "change": "Change",
+          "generateFromImage": "Generate from image",
+          "generateModes": {
+            "billboard": "Billboard",
+            "ai3d": "AI 3D"
+          },
+          "generateDesc": {
+            "billboard": "⚡ Create a textured plane with your image (instant)",
+            "ai3d": "✨ Generate a real 3D model using Meshy.ai (1-3 minutes)"
+          },
+          "apiKeyLabel": "Meshy.ai API Key",
+          "apiKeyGet": "get it here",
+          "apiKeyPlaceholder": "msy_...",
+          "apiKeyConfigured": "API Key configured",
+          "selectImage": "Select image",
+          "save": "Save",
+          "processing": "Processing...",
+          "generatingWithProgress": "Generating... {{progress}}%",
+          "buttons": {
+            "generateAi": "Generate 3D Model",
+            "generateBillboard": "Generate Billboard",
+            "cancel": "Cancel",
+            "create": "Create Model",
+            "creating": "Creating..."
+          },
+          "success": {
+            "modelCreated": "Model created",
+            "glbGenerated": "GLB generated successfully",
+            "modelAiCreated": "3D model generated successfully with AI!",
+            "glbReady": "GLB ready"
+            ,
+            "apiKeySaved": "API Key saved"
+          },
+          "attachedToLesson": "Will be attached to lesson #{{id}}",
+          "ai": {
+            "preparing": "Preparing image...",
+            "processing": "Processing image...",
+            "creatingTask": "Creating Meshy.ai task...",
+            "generating": "Generating 3D model with AI...",
+            "downloading": "Downloading model...",
+            "completed": "Completed!",
+            "status": "Status: {{status}}"
+          },
+          "errors": {
+            "requiredName": "Model name required",
+            "notAuthenticated": "You must sign in to create a model",
+            "invalidFileType": "Invalid file type",
+            "fileTooLarge": "File too large (max 50MB)",
+            "rlsError": "Could not create the model due to RLS policies. Check session and policies in the dashboard.",
+            "createError": "Error creating model",
+            "missingImage": "Upload an image first",
+            "missingApiKey": "You need a Meshy.ai API Key",
+            "timeout": "Timeout (10 min)",
+            "generationFailed": "3D generation failed",
+            "loginToManageModel": "Sign in to manage the model"
+          }
+          ,
+          "previewUnavailable": "Preview unavailable.",
+          "openModel": "Open model"
+        }
+      }
+    },
+    "modelos": {
+      "title": "AR Models Management",
+      "subtitle": "Manage Augmented Reality models on the platform",
+      "search": "Search by name or description...",
+      "create": "New Model",
+      "errorLoading": "Error loading models",
+      "table": {
+        "name": "Name",
+        "type": "Type",
+        "lesson": "Lesson",
+        "description": "Description",
+        "createdBy": "Created by",
+        "actions": "Actions",
+        "noModels": "No models registered yet",
+        "showing": "Showing",
+        "of": "of",
+        "models": "models"
+      },
+      "filters": {
+        "allTypes": "All types"
+      },
+      "actions": {
+        "view": "View",
+        "edit": "Edit",
+        "delete": "Delete"
+      },
+      "success": {
+        "created": "Model created successfully",
+        "updated": "Model updated successfully",
+        "deleted": "Model deleted successfully"
+      },
+      "errors": {
+        "loadError": "Error loading models",
+        "createError": "Error creating model",
+        "updateError": "Error updating model",
+        "deleteError": "Error deleting model"
+      },
+      "modal": {
+        "createTitle": "Create New Model",
+        "editTitle": "Edit Model",
+        "viewTitle": "Model Details",
+        "nameLabel": "Model Name",
+        "descriptionLabel": "Description",
+        "typeLabel": "Type",
+        "lessonLabel": "Lesson",
+        "fileLabel": "File",
+        "fileHint": "Click or drag a file",
+        "fileUploading": "Uploading...",
+        "fileUploaded": "✓ File uploaded",
+        "fileChange": "Change",
+        "cancel": "Cancel",
+        "create": "Create Model",
+        "save": "Save Changes",
+        "saving": "Saving...",
+        "creating": "Creating...",
+        "close": "Close",
+        "nameRequired": "Name is required",
+        "fileRequired": "You must upload a file",
+        "uploadSuccess": "File uploaded successfully",
+        "uploadError": "Error uploading file"
+      }
+    }
+  },
+  "teacher": {
+    "myContents": "My contents",
+    "newContent": "New content",
+    "edit": "Edit",
+    "newLesson": "New Lesson",
+    "lessons": "Lessons",
+    "contents": {
+      "title": "My Contents",
+      "titleAll": "All Contents",
+      "viewingAll": "Admin view: viewing all contents in the system",
+      "description": "Manage all your contents and lessons",
+      "searchPlaceholder": "Search contents...",
+      "noContents": "You don't have any contents yet",
+      "noResults": "No results found",
+      "tryDifferentSearch": "Try different search terms",
+      "createFirst": "Create your first content to get started",
+      "loadError": "Error loading content",
+      "deleteSuccess": "Content deleted successfully",
+      "deleteError": "Error deleting content",
+      "confirmDelete": "Are you sure you want to delete this content?",
+      "editContent": "Edit Content",
+      "editContentDescription": "Modify the content fields",
+      "order": "Order",
+      "addTag": "Type and press Enter to add",
+      "lessons": "Lessons",
+      "noLessonsAvailable": "No lessons available",
+      "moreLessons": "more lessons"
+    },
+    "pruebas": {
+      "title": "Tests",
+      "titleAll": "All Tests",
+      "description": "Create and manage tests for your lessons",
+      "descriptionAll": "Admin view: all tests in the system",
+      "newPrueba": "New Test",
+      "searchPlaceholder": "Search tests...",
+      "noPruebas": "You don't have any tests yet",
+      "noResults": "No results found",
+      "tryDifferentSearch": "Try different search terms",
+      "createFirst": "Create your first test to get started",
+      "loadError": "Error loading test",
+      "deleteSuccess": "Test deleted successfully",
+      "deleteError": "Error deleting test",
+      "confirmDelete": "Are you sure you want to delete this test?",
+      "editPrueba": "Edit Test",
+      "saveSuccess": "Test saved successfully",
+      "saveError": "Error saving test",
+      "saving": "Saving...",
+      "save": "Save",
+      "titulo": "Title",
+      "descripcion": "Description",
+      "leccion": "Lesson",
+      "selectLeccion": "Select a lesson",
+      "orden": "Order",
+      "tiempoLimite": "Time limit (minutes)",
+      "tiempoLimitePlaceholder": "Optional",
+      "puntajeMinimo": "Minimum score (%)",
+      "activa": "Test active",
+      "preguntas": "Questions",
+      "addPregunta": "Add Question",
+      "noPreguntas": "No questions. Add at least one.",
+      "noQuestions": "This test has no questions",
+      "pregunta": "Question",
+      "preguntaTexto": "Question text",
+      "tipoPregunta": "Type",
+      "opcionMultiple": "Multiple choice",
+      "verdaderoFalso": "True/False",
+      "respuestas": "Answers",
+      "addRespuesta": "Add",
+      "respuestaPlaceholder": "Answer text",
+      "validation": {
+        "titleRequired": "Title is required",
+        "leccionRequired": "Select a lesson",
+        "preguntasRequired": "Add at least one question",
+        "preguntaTextRequired": "Question {{num}} must have text",
+        "minRespuestas": "Question {{num}} must have at least 2 answers",
+        "correctaRequired": "Question {{num}} must have at least one correct answer",
+        "respuestaTextRequired": "Answer {{resp}} of question {{num}} must have text"
+      },
+      "active": "Active",
+      "inactive": "Inactive",
+      "takingPrueba": "Taking Test",
+      "results": "Test Results",
+      "approved": "Approved!",
+      "notApproved": "Not Approved",
+      "scoreDetails": "{{correctas}} out of {{total}} correct answers",
+      "minimumRequired": "Minimum score required: {{min}}%",
+      "timeSpent": "Time spent: {{minutes}}:{{seconds}}",
+      "review": "Answer Review",
+      "yourAnswer": "Your answer",
+      "noAnswer": "No answer",
+      "correctAnswer": "Correct answer",
+      "submit": "Submit Test",
+      "confirmSubmitIncomplete": "You haven't answered all questions. Do you want to submit anyway?",
+        "finish": "Finish assessment",
+        "reviewBeforeSubmit": "Review before submitting",
+        "reviewTitle": "Assessment review",
+        "answered": "Answered",
+        "unanswered": "Unanswered",
+        "submitConfirm": "Submit now",
+        "mustAnswerAll": "You must answer all questions before submitting",
+        "answerCurrent": "Answer the current question before continuing",
+        "next": "Next",
+        "previous": "Previous",
+        "questions": "questions",
+        "progress": "Question",
+        "of": "of",
+        "noQuestionSelected": "Question not available",
+      "saveResultError": "Error saving result",
+      "notActive": "This test is not active",
+      "saveLessonFirst": "You must save the lesson first",
+      "leccionPreselected": "Lesson pre-selected from lesson editing",
+      "timeLimit": "Time limit",
+      "edit": "Edit",
+      "delete": "Delete",
+      "deleted": "Test deleted"
+    },
+    "performance": {
+      "title": "Student Performance Panel",
+      "titleAll": "Performance Panel - All Students",
+      "description": "Analyze student performance in your lessons and tests",
+      "descriptionAll": "Admin view: analyze performance of all students in the system",
+      "loadError": "Error loading performance data",
+      "noData": "No data to display",
+      "noStudents": "No students",
+      "noStudentsFound": "No students found",
+      "searchStudents": "Search students...",
+      "showing": "Showing",
+      "of": "of",
+      "page": "Page",
+      "view": "View",
+      "filters": {
+        "title": "Filters",
+        "student": "Student",
+        "lesson": "Lesson",
+        "test": "Test"
+      },
+      "allStudents": "All students",
+      "allLessons": "All lessons",
+      "allTests": "All tests",
+      "studentsList": "Students List",
+      "metrics": {
+        "totalStudents": "Total Students",
+        "averageScore": "Average Score",
+        "approvalRate": "Approval Rate",
+        "failureRate": "Failure Rate"
+      },
+      "table": {
+        "student": "Student",
+        "attempts": "Attempts",
+        "tests": "Tests",
+        "average": "Average",
+        "approved": "Approved",
+        "lessons": "Lessons",
+        "contents": "Contents",
+        "following": "Following",
+        "lastActivity": "Last Activity",
+        "actions": "Actions"
+      },
+      "charts": {
+        "trends": "Score Trends by Test",
+        "distribution": "Results Distribution",
+        "evolution": "Score Evolution"
+      },
+      "average": "Average",
+      "approved": "Approved",
+      "failed": "Failed",
+      "score": "Score",
+      "export": {
+        "csv": "Export CSV",
+        "pdf": "Export PDF",
+        "success": "Data exported successfully",
+        "error": "Error exporting data",
+        "pdfNotImplemented": "PDF export coming soon"
+      },
+      "exporting": "Exporting...",
+      "loading": "Loading...",
+      "studentPerformance": "Performance",
+      "generalInfo": "General Information",
+      "email": "Email",
+      "lastActivity": "Last Activity",
+      "testHistory": "Test History",
+      "noTests": "No tests registered",
+      "test": "Test",
+      "attempts": "Attempts",
+      "bestScore": "Best Score",
+      "status": "Status",
+      "lastAttempt": "Last Attempt",
+      "lessonProgress": "Lesson Progress",
+      "noLessons": "No lessons registered",
+      "completed": "Completed",
+      "inProgress": "In Progress",
+      "lastAccess": "Last access",
+      "contentProgress": "Content Progress",
+      "noContents": "No contents registered",
+      "lessonsLabel": "lessons",
+      "averageScore": "Average",
+      "followedContents": "Followed Contents"
+    }
+  },
+  "lesson": {
+    "contents": "Contents",
+    "relatedLessons": "Related lessons",
+    "pruebas": "Tests",
+    "takePrueba": "Take Test",
+    "noContent": "This lesson doesn't have contents or tests yet",
+    "noPruebas": "This lesson has no tests yet",
+    "back": "Back to lessons",
+    "notFound": "Lesson not found"
+  },
+
+  "login": {
+    "title": "Login",
+    "email": "Email",
+    "emailPlaceholder": "user@example.com",
+    "password": "Password", 
+    "passwordPlaceholder": "••••••••",
+    "rememberMe": "Remember me",
+    "forgotPassword": "Forgot password?",
+    "noAccount": "Don't have an account?",
+    "submit": "Sign in",
+    "loading": "Signing in...",
+    "success": "Login successful ✅",
+    "errors": {
+      "allFields": "Please complete all fields.",
+      "invalid": "Invalid email or password ❌"
+      ,
+      "blocked": "Too many attempts. Try again later.",
+      "blockedTimer": "Try again in {{count}} seconds.",
+      "connection": "Connection error. Please check your internet connection.",
+      "unconfirmed": "Account not confirmed. Please check your email."
+    },
+    "signIn": "Sign In",
+    "signOut": "Sign Out",
+    "resendVerification": "Resend verification email",
+    "verificationResent": "Verification email resent. Check your inbox.",
+    "signoutSuccess": "You have been signed out.",
+    "signoutError": "Error signing out. Please try again.",
+    "help": {
+      "passwordTips": "Password tips: at least 6 characters and avoid reusing passwords.",
+      "shortcuts": "Shortcuts: Ctrl+B (sidebar), Ctrl+H (high contrast), Ctrl+R (reload)",
+      "rememberMeTooltip": "Remember email on this device"
+    }
+  },
+  "verify": {
+    "loading": "Verifying your account...",
+    "successTitle": "Account Verified!",
+    "success": "Your account has been verified successfully. You can now log in.",
+    "errorTitle": "Verification Failed",
+    "error": "The verification link is invalid or has expired.",
+    "noToken": "No verification token provided.",
+    "goToLogin": "Go to login"
+  },
+  "createLesson": {
+        "title": "Create Lesson",
+        "fields": {
+          "title": "Title",
+          "description": "Description",
+          "level": "Level",
+          "thumbnail": "Cover image",
+          "uploadThumbnail": "Upload image",
+          "removeThumbnail": "Remove thumbnail",
+          "thumbnailHint": "Paste a link or upload an image (JPG, PNG, WebP, GIF, max 5 MB)",
+          "levelOptions": {
+            "basic": "Basic",
+            "intermediate": "Intermediate",
+            "advanced": "Advanced"
+          }
+        },
+        "placeholders": {
+          "title": "Eg: Intro to Organic Chemistry",
+          "description": "Briefly describe the lesson...",
+          "thumbnailUrl": "https://... or upload an image"
+        },
+        "buttons": {
+          "create": "Create",
+          "cancel": "Cancel",
+          "creating": "Creating...",
+          "update": "Update",
+          "updating": "Updating..."
+        }
+      ,
+      "errors": {
+        "titleRequired": "Title is required",
+        "notAuthenticatedToLinkModel": "You must be signed in to associate the model with the lesson",
+        "invalidFileType": "Invalid file type. Use .glb, .gltf or .usdz",
+        "invalidImageType": "Only images are allowed (JPG, PNG, WebP, GIF)",
+        "imageTooLarge": "Image must not exceed 5 MB",
+        "fileTooLarge": "File too large. Max 50 MB",
+        "uploadError": "Error uploading model",
+        "linkModelError": "Error linking model: {{message}}",
+        "createError": "Error creating lesson"
+      },
+      "thumbnailUploaded": "Thumbnail uploaded successfully",
+      "headerDescription": "Fill the fields to create your lesson",
+      "openInNewTab": "Open in new tab",
+      "success": {
+        "created": "Lesson created",
+        "modelUploadedAndLinked": "RA model uploaded and linked to the lesson",
+        "createdAndAssigned": "Lesson created and assigned",
+        "updated": "Lesson updated"
+      }
+},
+  "resetPassword": {
+    "title": "Reset password",
+    "checkingSession": "Checking reset link...",
+    "invalidOrExpired": "The link has expired or is invalid. Enter your email and we'll request a new reset link.",
+    "emailPlaceholder": "Email address",
+    "newPassword": "New password",
+    "newPasswordPlaceholder": "New password",
+    "confirmPassword": "Confirm password",
+    "confirmPlaceholder": "Confirm password",
+    "submit": "Update password",
+    "updating": "Updating...",
+    "resend": "Send recovery email",
+    "resending": "Sending...",
+    "resendSuccess": "Recovery email sent. Check your inbox.",
+    "success": "Password updated. You can now sign in.",
+    "errors": {
+      "invalidLink": "Invalid or expired link.",
+      "tooShort": "Password must be at least 6 characters.",
+      "mismatch": "Passwords do not match.",
+      "required": "Please enter the password and the confirmation.",
+      "enterEmail": "You must provide an email address.",
+      "resendFailed": "Could not re-send the email.",
+      "updateFailed": "Error updating password."
+    }
+  },
+  "footer": {
+    "brand": "QuimicaUleam",
+    "addressLabel": "Address:",
+    "address": "Av. SantaMarta, Manta",
+    "authorLabel": "Author:",
+    "author": "Dr. Josue Vinces",
+    "foundationLabel": "Foundation:",
+    "foundation": "20th October 2025",
+    "support": "Support / Contact",
+    "helpCenter": "Help center",
+    "contactEmail": "josuvince@gmail.com",
+    "callUs": "Call us: 0984563204",
+    "policies": "Policy & Terms of Use",
+    "privacyPolicy": "Privacy Policy",
+    "termsOfUse": "Terms of Use",
+    "accessibility": "Accessibility",
+    "rightsReserved": "All rights reserved"
+  },
+
+  "nav": {
+    "home": "Home",
+    "login": "Login",
+    "register": "Register",
+    "addContent": "Add Content",
+    "resetPassword": "Reset Password"
+  },
+  "help": "Help",
+  "search": {
+    "placeholder": "Search..."
+  },
+  "sidebarOpen": "Open sidebar",
+  "sidebarClose": "Close sidebar",
+  "admin": {
+    "users": {
+      "title": "User Management",
+      "description": "Manage all system users",
+      "search": "Search by email, name...",
+      "create": {
+        "title": "Create New User",
+        "button": "Create User"
+      },
+      "edit": {
+        "title": "Edit User"
+      },
+      "export": "Export",
+      "loading": "Loading user...",
+      "saving": "Saving...",
+      "creating": "Creating...",
+      "save": "Save Changes",
+      "cancel": "Cancel",
+      "form": {
+        "email": "Email",
+        "password": "Password",
+        "confirmPassword": "Confirm Password",
+        "firstName": "First Name",
+        "lastName": "Last Name",
+        "displayName": "Display Name",
+        "phone": "Phone",
+        "role": "Role",
+        "isVerified": "Verified User",
+        "sendVerificationEmail": "Send verification email",
+        "emailNote": "Note: Changing email may require additional verification",
+        "passwordMinLength": "Minimum 6 characters"
+      },
+      "table": {
+        "email": "Email",
+        "name": "Name",
+        "role": "Role",
+        "status": "Status",
+        "createdAt": "Registration Date",
+        "actions": "Actions",
+        "noUsers": "No users to display",
+        "noEmail": "No email",
+        "showing": "Showing",
+        "of": "of",
+        "users": "users",
+        "page": "Page"
+      },
+      "status": {
+        "active": "Active",
+        "inactive": "Inactive",
+        "verified": "Verified"
+      },
+      "filters": {
+        "title": "Filters",
+        "role": "Role",
+        "verificationStatus": "Verification Status",
+        "activeStatus": "Active Status",
+        "dateFrom": "Date From",
+        "dateTo": "Date To",
+        "all": "All",
+        "allRoles": "All",
+        "verified": "Verified",
+        "notVerified": "Not Verified",
+        "active": "Active",
+        "inactive": "Inactive",
+        "pendingRequests": "Pending Requests",
+        "withPendingRequest": "With pending request",
+        "clear": "Clear Filters"
+      },
+      "actions": {
+        "edit": "Edit",
+        "delete": "Delete",
+        "approveRole": "Approve role request",
+        "rejectRole": "Reject role request"
+      },
+      "warnings": {
+        "roleChange": "Warning: You are changing the role to Administrator. This will grant full permissions to the user.",
+        "adminRole": "Warning: You are creating a user with Administrator role. This will grant full permissions to the user."
+      },
+      "confirmDelete": "Are you sure you want to delete user {{email}}?",
+      "confirmApproveRole": "Approve the request from {{email}} to become {{role}}?",
+      "confirmRejectRole": "Reject the role request from {{email}}?",
+      "pendingRole": "Requests: {{role}}",
+      "success": {
+        "created": "User created successfully",
+        "updated": "User updated successfully",
+        "deleted": "User deleted successfully",
+        "exported": "Users exported successfully",
+        "roleApproved": "Role request approved successfully",
+        "roleRejected": "Role request rejected"
+      },
+      "errors": {
+        "loadError": "Error loading users",
+        "createError": "Error creating user",
+        "updateError": "Error updating user",
+        "deleteError": "Error deleting user",
+        "exportError": "Error exporting users",
+        "emailRequired": "Email is required",
+        "passwordRequired": "Password is required",
+        "passwordMinLength": "Password must be at least 6 characters",
+        "passwordMismatch": "Passwords do not match",
+        "userExists": "User already exists",
+        "approveError": "Error approving role request",
+        "rejectError": "Error rejecting role request"
+      }
+    },
+    "dashboard": {
+      "title": "General Dashboard",
+      "description": "System overview",
+      "errors": {
+        "loadError": "Error loading dashboard data"
+      },
+      "kpis": {
+        "totalUsers": "Total Users",
+        "totalTeachers": "Total Teachers",
+        "totalStudents": "Total Students",
+        "totalLessons": "Total Lessons",
+        "totalContents": "Total Contents",
+        "totalPruebas": "Total Tests",
+        "approvalRate": "Approval Rate",
+        "pendingRequests": "Pending Requests",
+        "monthlyActivity": "Monthly Activity"
+      },
+      "charts": {
+        "userGrowth": "User Growth",
+        "newUsers": "New Users",
+        "pruebaActivity": "Test Activity",
+        "totalAttempts": "Total Attempts",
+        "approved": "Approved",
+        "lessonCompletion": "Lesson Completion",
+        "completed": "Completed",
+        "inProgress": "In Progress",
+        "roleDistribution": "Role Distribution",
+        "topLessons": "Top 5 Most Completed Lessons",
+        "topPruebas": "Top 5 Best Performing Tests",
+        "completions": "Completions",
+        "average": "Average (%)",
+        "attempts": "Attempts"
+      },
+      "activity": {
+        "recentUsers": "Recent Users",
+        "recentLessons": "Recent Lessons",
+        "recentContents": "Recent Contents",
+        "recentPruebas": "Recent Tests",
+        "noUsers": "No recent users",
+        "noLessons": "No recent lessons",
+        "noContents": "No recent contents",
+        "noPruebas": "No recent tests"
+      },
+      "quickLinks": {
+        "title": "Quick Links",
+        "users": "User Management",
+        "usersDesc": "Manage all system users",
+        "contents": "All Contents",
+        "contentsDesc": "View and manage all contents",
+        "pruebas": "All Tests",
+        "pruebasDesc": "View and manage all tests",
+        "performance": "Performance Panel",
+        "performanceDesc": "View all students performance",
+        "addContent": "Add Content",
+        "addContentDesc": "Create new content or lesson"
+      }
+    },
+    "modelos": {
+      "title": "AR Models Management",
+      "subtitle": "Manage Augmented Reality models on the platform",
+      "search": "Search by name or description...",
+      "create": "New Model",
+      "errorLoading": "Error loading models",
+      "table": {
+        "name": "Name",
+        "type": "Type",
+        "lesson": "Lesson",
+        "description": "Description",
+        "createdBy": "Created by",
+        "actions": "Actions",
+        "noModels": "No models registered yet",
+        "showing": "Showing",
+        "of": "of",
+        "models": "models"
+      },
+      "filters": {
+        "allTypes": "All types"
+      },
+      "actions": {
+        "view": "View",
+        "edit": "Edit",
+        "delete": "Delete"
+      },
+      "success": {
+        "created": "Model created successfully",
+        "updated": "Model updated successfully",
+        "deleted": "Model deleted successfully"
+      },
+      "errors": {
+        "loadError": "Error loading models",
+        "createError": "Error creating model",
+        "updateError": "Error updating model",
+        "deleteError": "Error deleting model"
+      },
+      "modal": {
+        "createTitle": "Create New Model",
+        "editTitle": "Edit Model",
+        "viewTitle": "Model Details",
+        "nameLabel": "Model Name",
+        "descriptionLabel": "Description",
+        "typeLabel": "Type",
+        "lessonLabel": "Lesson",
+        "fileLabel": "File",
+        "fileHint": "Click or drag a file",
+        "fileUploading": "Uploading...",
+        "fileUploaded": "✓ File uploaded",
+        "fileChange": "Change",
+        "cancel": "Cancel",
+        "create": "Create Model",
+        "save": "Save Changes",
+        "saving": "Saving...",
+        "creating": "Creating...",
+        "close": "Close",
+        "nameRequired": "Name is required",
+        "fileRequired": "You must upload a file",
+        "uploadSuccess": "File uploaded successfully",
+        "uploadError": "Error uploading file"
+      }
+    }
+  },
+
+  "settingsPage": {
+    "title": "Settings",
+    "subtitle": "Manage your profile, security, preferences and account information",
+    "profile": {
+      "title": "Profile",
+      "description": "Personal information and account details",
+      "firstName": "First name",
+      "lastName": "Last name",
+      "displayName": "Display name",
+      "phone": "Phone",
+      "email": "Email",
+      "role": "Role",
+      "thumbnail": "Profile picture",
+      "changeThumbnail": "Change photo",
+      "removeThumbnail": "Remove photo",
+      "saveProfile": "Save profile",
+      "saving": "Saving...",
+      "saveSuccess": "Profile updated successfully",
+      "saveError": "Error updating profile",
+      "firstNamePlaceholder": "Your first name",
+      "lastNamePlaceholder": "Your last name",
+      "displayNamePlaceholder": "Name visible to others",
+      "phonePlaceholder": "+1 555 555 5555"
+    },
+    "security": {
+      "title": "Security",
+      "description": "Manage your password and access security",
+      "changePassword": "Change password",
+      "currentPassword": "Current password",
+      "newPassword": "New password",
+      "confirmPassword": "Confirm new password",
+      "updatePassword": "Update password",
+      "updating": "Updating...",
+      "passwordSuccess": "Password updated successfully",
+      "passwordError": "Error updating password",
+      "passwordMismatch": "Passwords do not match",
+      "passwordTooShort": "Password must be at least 6 characters",
+      "lastSignIn": "Last sign in",
+      "never": "Never"
+    },
+    "language": {
+      "title": "Language",
+      "description": "Select the interface language",
+      "spanish": "Spanish",
+      "english": "English",
+      "changeSuccess": "Language changed successfully"
+    },
+    "notifications": {
+      "title": "Notifications",
+      "description": "Configure application alerts and voice reading",
+      "visualAlerts": "Visual alerts",
+      "visualAlertsDesc": "Show visual notifications for important changes",
+      "voiceReading": "Voice reading",
+      "voiceReadingDesc": "Read content aloud using speech synthesis"
+    },
+    "roleRequest": {
+      "title": "Role request",
+      "description": "Request a role change on the platform",
+      "currentRole": "Your current role",
+      "requestedRole": "Requested role",
+      "requestChange": "Request change",
+      "requesting": "Requesting...",
+      "pendingRequest": "Pending request",
+      "requestSuccess": "Request sent. An administrator will review it.",
+      "requestError": "Error sending request",
+      "alreadyRequested": "You already have a pending request",
+      "selectRole": "Select a role",
+      "student": "Student",
+      "teacher": "Teacher",
+      "admin": "Administrator",
+      "cancelRequest": "Cancel request",
+      "cancelSuccess": "Request cancelled"
+    },
+    "account": {
+      "title": "Account",
+      "description": "General account information",
+      "createdAt": "Account created",
+      "verified": "Verified",
+      "notVerified": "Not verified",
+      "verificationStatus": "Verification status",
+      "signOut": "Sign out",
+      "signOutConfirm": "Are you sure you want to sign out?"
+    },
+    "roles": {
+      "student": "Student",
+      "teacher": "Teacher",
+      "admin": "Administrator"
+    }
+  }
+
+}

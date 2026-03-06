@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "skills": {
+    "feature-arch": {
+      "source": "pproenca/dot-skills",
+      "sourceType": "github",
+      "computedHash": "9f2de35557d1818e603c6f4a552c6a615598ef2da8ce6b7476096584a01e3aef"
+    }
+  }
+}

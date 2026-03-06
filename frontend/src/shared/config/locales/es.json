@@ -1,0 +1,1164 @@
+{
+  "addcontent": {
+    "formTitle" : "Formulario de contenido",
+    "title": "Añadir Contenido",
+    "form": {
+      "title": "Título",
+      "type": "Tipo",
+      "selectLesson": "Selecciona una lección",
+      "createLesson": "Nueva lección",
+      "author": "Autor",
+      "difficulty": "Nivel de dificultad",
+      "description": "Descripción",
+      "tags": "Etiquetas",
+      "resources": "Recursos",
+      "addResource": "Agregar recurso",
+      "clear": "Limpiar",
+      "read": "Leer",
+      "reading": "Leyendo...",
+      "save": "Guardar",
+      "update": "Actualizar",
+      "headerSubtitle": "Crea y organiza contenido educativo para tus lecciones",
+      "lessonSection": "Lección asociada",
+      "basicInfo": "Información básica",
+      "titlePlaceholder": "Ej: Estructura molecular del agua",
+      "descriptionPlaceholder": "Describe el contenido de forma breve...",
+      "authorPlaceholder": "Nombre del autor",
+      "tagsAndResources": "Etiquetas y recursos",
+      "tagPlaceholder": "Escribe y presiona Enter para agregar...",
+      "selectLessonRequired": "Selecciona una lección",
+      "typeOptions": {
+        "molecule": "Molécula",
+        "atom": "Átomo",
+        "experiment": "Experimento",
+        "chemicalReactions": "Reacciones químicas",
+        "periodicTable": "Tabla periódica",
+        "article": "Artículo",
+        "slide": "Presentación/Slides",
+        "document": "Documento",
+        "video": "Video"
+      },
+      "difficultyOptions": {
+        "easy": "Fácil",
+        "medium": "Media",
+        "hard": "Difícil"
+      },
+      "multimediaContent": "Contenido multimedia",
+      "multimedia": {
+        "content": "Contenido Multimedia"
+      }
+    },
+    "read": "Leer",
+    "table": {
+      "title": "Contenidos existentes",
+      "filter": "Filtrar...",
+      "noRecords": "No hay registros",
+      "columns": {
+        "title": "Título",
+        "type": "Tipo",
+        "difficulty": "Nivel dificultad",
+        "tags": "Etiquetas",
+        "actions": "Acciones"
+      },
+      "actions": {
+        "edit": "Editar",
+        "delete": "Eliminar"
+      }
+    },
+    "history": {
+      "title": "Historial de cambios",
+      "noHistory": "No hay historial",
+      "columns": {
+        "record": "Registro",
+        "action": "Acción",
+        "author": "Autor",
+        "date": "Fecha"
+      }
+    },
+    "validation": {
+      "titleRequired": "Título requerido",
+      "authorRequired": "Autor requerido",
+      "selectLessonRequired": "Selecciona una lección"
+    },
+    "errors": {
+      "lessonAlreadyAssigned": "La lección ya está asignada a otro contenido"
+    },
+    "toast": {
+      "updateError": "Error actualizando registro",
+      "updateSuccess": "Registro actualizado",
+      "saveError": "Error guardando registro",
+      "saveSuccess": "Registro guardado",
+      "deleteError": "Error eliminando registro",
+      "deleteSuccess": "Registro eliminado",
+      "undoError": "Error deshaciendo: {{message}}",
+      "deleteSuccessDetailed": "🗑️ Dato eliminado correctamente",
+      "loadLessonsError": "Error al cargar lecciones",
+      "loadRecordsError": "Error al cargar contenidos"
+    },
+    "tabs": {
+      "text": "Texto",
+      "slides": "Diapositivas",
+      "media": "Media",
+      "textDescription": "El texto descriptivo se edita arriba en el campo 'Descripción'."
+    }
+  },
+  "sidebarNav": "Barra lateral de navegación",
+  "sidebarLabel": "Navegación principal",
+  "learn": "Aprende",
+  "molecules": "Moléculas",
+  "atoms": "Átomos",
+  "periodicTable": "Tabla Periódica",
+  "chemicalReactions": "Reacciones Químicas",
+  "experiments": "Experimentos",
+  "accessibility": "Accesibilidad",
+  "accessibility.visualAlertsToggled": "Alertas visuales alternadas",
+  "accessibility.visualAlertsEnabled": "Alertas visuales activadas",
+  "accessibility.visualAlertsDisabled": "Alertas visuales desactivadas",
+  "accessibility.voiceReadingToggled": "Lectura por voz alternada",
+  "accessibility.voiceReadingEnabled": "Lectura por voz activada",
+  "accessibility.voiceReadingDisabled": "Lectura por voz desactivada",
+  "accessibility.textSizeToggled": "Tamaño de texto alternado",
+  "accessibility.textSizeEnabled": "Tamaño de texto habilitado",
+  "accessibility.textSizeDisabled": "Tamaño de texto deshabilitado",
+  "accessibility.highContrastToggled": "Alto contraste alternado",
+  "accessibility.highContrastEnabled": "Alto contraste activado",
+  "accessibility.highContrastDisabled": "Alto contraste desactivado",
+  "accessibility.description": "Ajusta las opciones de accesibilidad como alertas visuales, tamaño de texto y alto contraste.",
+  "accessibility.visualAlertsDesc": "Muestra señales visuales para cambios importantes en la interfaz.",
+  "accessibility.voiceReadingDesc": "Lee el contenido en voz alta usando la síntesis de voz del navegador.",
+  "accessibility.largeTextDesc": "Aumenta el tamaño del texto en toda la aplicación.",
+  "accessibility.highContrastDesc": "Usa un esquema de colores de alto contraste para mejor visibilidad.",
+  "enable": "Activar",
+  "enabled": "Activado",
+  "visualAlerts": "Alertas Visuales",
+  "voiceReading": "Lectura por Voz",
+  "textSize": "Tamaño de Texto",
+  "highContrast": "Alto Contraste",
+  "settings": "Configuración",
+  "addContent": "Agregar contenido",
+  "close": "Cerrar",
+  "titleLabel": "Título",
+  "titlePlaceholder": "Ingrese un título (3-150 caracteres)",
+  "typeLabel": "Tipo",
+  "chooseType": "Elija un tipo",
+  "tagsLabel": "Etiquetas (separadas por comas)",
+  "tagsPlaceholder": "ej. reacción, agua, orgánico",
+  "descriptionLabel": "Descripción",
+  "resourcesLabel": "Recursos (URLs)",
+  "resourcePlaceholder": "https://",
+  "addResource": "Agregar recurso",
+  "safetyLabel": "Nivel de seguridad",
+  "safetyLow": "Bajo",
+  "safetyMedium": "Medio",
+  "safetyHigh": "Alto",
+  "authorLabel": "Autor",
+  "newBtn": "Nuevo",
+  "saveBtn": "Guardar",
+  "updateBtn": "Actualizar",
+  "smartFilterBtn": "Filtro inteligente",
+  "clearBtn": "Limpiar",
+  "savedToast": "Contenido guardado (simulación)",
+    "undo": "Deshacer",
+    "undoSuccess": "Acción deshecha",
+    "titleHelp": "Este título será el encabezado de la lección",
+    "typeHelp": "Selecciona el tipo de contenido (molécula, átomo, experimento, artículo)",
+    "addContentHelpTitle": "Ayuda - Añadir Contenido",
+    "shortcuts": "Atajos",
+    "shortcut": {
+      "save": "Guardar (Ctrl/Cmd + S)",
+      "close": "Cerrar modal (Esc)",
+      "navigateSuggestions": "Navegar sugerencias (↑/↓)",
+      "applySuggestion": "Aplicar sugerencia (Enter)",
+         "tabNavigate": "Navegar entre campos (Tab)",
+         "openSidebar": "Abrir / cerrar la barra lateral",
+         "toggleHighContrast": "Alternar modo alto contraste",
+         "adjustTextSize": "Aumentar / reducir tamaño de texto",
+         "reload": "Recargar",
+         "closeModal": "Cerrar modales / overlays"
+    },
+    "history": {
+      "title": "Historial de cambios",
+      "clear": "Limpiar historial",
+      "confirmClear": "¿Estás seguro que deseas limpiar el historial?",
+      "cleared": "Historial limpiado",
+      "filters": {
+        "title": "Filtros",
+        "actionAll": "Todas las acciones",
+        "authorAll": "Todos los autores",
+        "typeAll": "Todos los tipos",
+        "search": "Buscar por título o descripción..."
+      },
+      "table": {
+        "action": "Acción",
+        "title": "Título",
+        "author": "Autor",
+        "type": "Tipo",
+        "when": "Fecha"
+      }
+      ,
+      "subtitle": "Todos los cambios y acciones en tu contenido",
+      "items": "elementos",
+      "resetFilters": "Restablecer",
+      "noItems": "No se encontraron elementos de historial",
+      "noItemsHint": "Intenta ajustar los filtros",
+      "preview": "Vista previa",
+      "read": "Leer",
+      "reading": "Leyendo...",
+      "previewEmpty": "Selecciona un elemento para ver detalles",
+      "open": "Abrir",
+      "copy": "Copiar",
+      "copied": "Copiado al portapapeles"
+    },
+  "updatedToast": "Contenido actualizado (simulación)",
+  "validationTitleRequired": "El título es requerido y debe tener al menos 3 caracteres.",
+  "validationTypeRequired": "Por favor elija un tipo.",
+  "article": "Artículo",
+  "visualAlertsEnabled": "Alertas visuales activadas (simulación)",
+  "voiceReadingEnabled": "Lectura por voz activada (simulación)",
+  "welcome": "Bienvenido a QuimicaUleam",
+  "exploreChemistry": "Explora el fascinante mundo de la química básica",
+  "learnInteractive": "Aprende química de forma interactiva con modelos 3D y realidad aumentada. Visualiza moléculas, átomos y reacciones directamente desde tu navegador.",
+  "news": "Noticias",
+  "newsHelp": "Aquí encontrarás las últimas noticias, nuevos modelos y experimentos disponibles en QuimicaUleam.",
+  "newWaterMolecule": "Nueva molécula de agua 3D",
+  "newWaterMoleculeDesc": "Explora la estructura molecular del H₂O con nuestro nuevo modelo interactivo.",
+  "updatedPeriodicTable": "Tabla periódica actualizada",
+  "updatedPeriodicTableDesc": "Accede a información detallada sobre todos los elementos químicos.",
+  "virtualExperiments": "Experimentos virtuales disponibles",
+  "virtualExperimentsDesc": "Realiza experimentos químicos sencillos directamente desde tu navegador.",
+
+  "home": {
+    "heroTitle": "Explora el mundo de la ciencia de forma interactiva",
+    "heroSubtitle": "Descubre conceptos, experimentos virtuales y avances científicos en un entorno diseñado para el aprendizaje dinámico.",
+    "heroButton": "Comienza a aprender",
+    "recentLessons": "Lecciones Recientes",
+    "recentLessonsHelp": "Las últimas lecciones añadidas a la plataforma",
+    "noLessonsYet": "Aún no hay lecciones disponibles",
+    "noDescription": "Sin descripción",
+    "sessionStarted": "Sesión iniciada correctamente",
+    "registerOrLogin": "Regístrate o inicia sesión"
+  },
+  "contents": {
+    "title": "Contenido General",
+    "noRecords": "No hay registros",
+    "follow": "Seguir",
+    "unfollow": "Dejar de seguir",
+    "following": "Siguiendo",
+    "followed": "Ahora sigues este contenido",
+    "unfollowed": "Dejaste de seguir este contenido",
+    "followError": "Error al actualizar seguimiento"
+  },
+  "lessons": {
+    "title": "Lecciones",
+    "noRecords": "No hay lecciones",
+    "loadError": "Error al cargar lecciones",
+    "back": "Volver a lecciones",
+    "invalidId": "ID de lección inválido",
+    "notFound": "Lección no encontrada",
+    "markComplete": "Marcar como completada",
+    "markedCompleted": "Lección marcada como completada",
+    "completed": "Completada",
+    "card": {
+      "viewClass": "Ver clase",
+      "noThumbnail": "Sin thumbnail",
+      "continue": "Continuar",
+      "complete": "Completada"
+    }
+    ,
+    "status": {
+      "completed": "Completada — revisa recursos y resultados",
+      "inProgress": "En progreso — puntaje actual {{score}}%",
+      "notStarted": "No iniciada — comienza la lección para avanzar"
+    }
+  },
+  "contents.loadLessonsError": "Error al cargar lecciones",
+  "contents.loadRecordsError": "Error al cargar contenidos",
+  "contents.table": {
+    "title": "Título",
+    "type": "Tipo",
+    "lesson": "Lección",
+    "difficulty": "Dificultad",
+    "tags": "Etiquetas",
+    "actions": "Acciones",
+    "copy": "Copiar",
+    "copied": "Copiado al portapapeles"
+  },
+  "contents.card": {
+    "viewLesson": "Ver lección",
+    "edit": "Editar contenido",
+    "noDescription": "Sin descripción"
+  },
+  "common": {
+    "percentCompleted": "{{percent}}% completado"
+  },
+
+  "register": {
+    "title": "Crear cuenta",
+    "firstName": "Nombre",
+    "lastName": "Apellido",
+    "email": "Correo electrónico", 
+    "confirmEmail": "Confirmar correo",
+    "password": "Contraseña",
+    "confirmPassword": "Confirmar contraseña",
+    "phone": "Teléfono",
+    "role": "Rol",
+    "placeholders": {
+      "firstName": "Tu nombre",
+      "lastName": "Tu apellido",
+      "email": "usuario@ejemplo.com",
+      "confirmEmail": "Repite tu correo",
+      "password": "Mínimo 8 caracteres",
+      "confirmPassword": "Repite tu contraseña",
+      "phone": "+593 9XXXXXXXX"
+    },
+    "terms": "Acepto los términos y condiciones",
+    "roles": {
+      "student": "Estudiante",
+      "teacher": "Profesor",
+      "other": "Otro",
+      "admin": "Administrador"
+    },
+    "buttons": {
+      "create": "Crear cuenta",
+      "creating": "Registrando...",
+      "haveAccount": "Ya tengo cuenta"
+    },
+    "success": "Registro exitoso. Revisa tu correo para verificar tu cuenta.",
+    "teacherApprovalNote": "El rol de profesor requiere aprobación de un administrador. Serás registrado como estudiante hasta que se apruebe tu solicitud.",
+    "teacherPendingApproval": "Te has registrado como estudiante. Tu solicitud para ser profesor será revisada por un administrador.",
+    "verifyEmail": {
+      "title": "Revisa tu correo",
+      "description": "Hemos enviado un enlace de verificación a {{email}}. Haz clic en el enlace para activar tu cuenta.",
+      "checkSpam": "Si no ves el correo, revisa tu carpeta de spam o correo no deseado.",
+      "goToLogin": "Ir a iniciar sesión"
+    },
+    "errors": {
+      "required": {
+        "firstName": "Nombre es requerido",
+        "lastName": "Apellido es requerido", 
+        "email": "Email es requerido",
+        "password": "Contraseña es requerida",
+        "phone": "Teléfono es requerido",
+        "terms": "Debes aceptar los términos"
+      },
+      "invalid": {
+        "email": "Email inválido",
+        "phone": "Teléfono inválido",
+        "password": "Debe tener al menos 6 caracteres"
+      },
+      "mismatch": {
+        "email": "Los emails no coinciden",
+        "password": "Las contraseñas no coinciden"
+      }
+      ,
+      "models": {
+        "quickModel": {
+          "title": "Crear Modelo RA",
+          "description": "Genera modelos 3D rápidamente",
+          "nameLabel": "Nombre del modelo",
+          "namePlaceholder": "Ej: Molécula de agua",
+          "typeLabel": "Tipo",
+          "fileLabel": "Archivo (opcional)",
+          "upload": "Subir",
+          "change": "Cambiar",
+          "generateFromImage": "Generar desde imagen",
+          "generateModes": {
+            "billboard": "Billboard",
+            "ai3d": "3D con IA"
+          },
+          "generateDesc": {
+            "billboard": "⚡ Crea un plano texturizado con tu imagen (instantáneo)",
+            "ai3d": "✨ Genera un modelo 3D real usando Meshy.ai (1-3 minutos)"
+          },
+          "apiKeyLabel": "API Key de Meshy.ai",
+          "apiKeyGet": "obtener aquí",
+          "apiKeyPlaceholder": "msy_...",
+          "apiKeyConfigured": "API Key configurada",
+          "selectImage": "Seleccionar imagen",
+          "save": "Guardar",
+          "processing": "Procesando...",
+          "generatingWithProgress": "Generando... {{progress}}%",
+          "buttons": {
+            "generateAi": "Generar Modelo 3D",
+            "generateBillboard": "Generar Billboard",
+            "cancel": "Cancelar",
+            "create": "Crear Modelo",
+            "creating": "Creando..."
+          },
+          "success": {
+            "modelCreated": "Modelo creado",
+            "glbGenerated": "GLB generado correctamente",
+            "modelAiCreated": "¡Modelo 3D generado con IA exitosamente!",
+            "glbReady": "GLB listo"
+            ,
+            "apiKeySaved": "API Key guardada"
+          },
+          "attachedToLesson": "Se adjuntará a la lección #{{id}}",
+          "ai": {
+            "preparing": "Preparando imagen...",
+            "processing": "Procesando imagen...",
+            "creatingTask": "Creando tarea en Meshy.ai...",
+            "generating": "Generando modelo 3D con IA...",
+            "downloading": "Descargando modelo...",
+            "completed": "¡Completado!",
+            "status": "Estado: {{status}}"
+          },
+          "errors": {
+            "requiredName": "Nombre del modelo requerido",
+            "notAuthenticated": "Debes iniciar sesión para crear un modelo",
+            "invalidFileType": "Tipo de archivo no válido",
+            "fileTooLarge": "Archivo demasiado grande (max 50MB)",
+            "rlsError": "No se pudo crear el modelo por políticas RLS. Verifica sesión y políticas en el dashboard.",
+            "createError": "Error creando modelo",
+            "missingImage": "Sube una imagen primero",
+            "missingApiKey": "Necesitas una API Key de Meshy.ai",
+            "timeout": "Tiempo de espera agotado (10 min)",
+            "generationFailed": "Falló la generación 3D",
+            "loginToManageModel": "Inicia sesión para gestionar el modelo"
+          }
+        }
+      }
+    },
+    "modelos": {
+      "title": "Gestión de Modelos RA",
+      "subtitle": "Administra los modelos de Realidad Aumentada de la plataforma",
+      "search": "Buscar por nombre o descripción...",
+      "create": "Nuevo Modelo",
+      "errorLoading": "Error al cargar modelos",
+      "table": {
+        "name": "Nombre",
+        "type": "Tipo",
+        "lesson": "Lección",
+        "description": "Descripción",
+        "createdBy": "Creado por",
+        "actions": "Acciones",
+        "noModels": "No hay modelos registrados aún",
+        "showing": "Mostrando",
+        "of": "de",
+        "models": "modelos"
+      },
+      "filters": {
+        "allTypes": "Todos los tipos"
+      },
+      "actions": {
+        "view": "Ver",
+        "edit": "Editar",
+        "delete": "Eliminar"
+      },
+      "success": {
+        "created": "Modelo creado correctamente",
+        "updated": "Modelo actualizado correctamente",
+        "deleted": "Modelo eliminado correctamente"
+      },
+      "errors": {
+        "loadError": "Error al cargar modelos",
+        "createError": "Error al crear modelo",
+        "updateError": "Error al actualizar modelo",
+        "deleteError": "Error al eliminar modelo"
+      },
+      "modal": {
+        "createTitle": "Crear Nuevo Modelo",
+        "editTitle": "Editar Modelo",
+        "viewTitle": "Detalles del Modelo",
+        "nameLabel": "Nombre del Modelo",
+        "descriptionLabel": "Descripción",
+        "typeLabel": "Tipo",
+        "lessonLabel": "Lección",
+        "fileLabel": "Archivo",
+        "fileHint": "Haz clic o arrastra un archivo",
+        "fileUploading": "Subiendo...",
+        "fileUploaded": "✓ Archivo subido",
+        "fileChange": "Cambiar",
+        "cancel": "Cancelar",
+        "create": "Crear Modelo",
+        "save": "Guardar Cambios",
+        "saving": "Guardando...",
+        "creating": "Creando...",
+        "close": "Cerrar",
+        "nameRequired": "El nombre es requerido",
+        "fileRequired": "Debes subir un archivo",
+        "uploadSuccess": "Archivo subido correctamente",
+        "uploadError": "Error al subir archivo"
+      }
+    }
+  },
+  "teacher": {
+    "myContents": "Mis contenidos",
+    "newContent": "Nuevo contenido",
+    "edit": "Editar",
+    "newLesson": "Nueva lección",
+    "lessons": "Lecciones",
+    "contents": {
+      "title": "Mis Contenidos",
+      "titleAll": "Todos los Contenidos",
+      "viewingAll": "Vista de administrador: viendo todos los contenidos del sistema",
+      "description": "Gestiona todos tus contenidos y lecciones",
+      "searchPlaceholder": "Buscar contenidos...",
+      "noContents": "No tienes contenidos aún",
+      "noResults": "No se encontraron resultados",
+      "tryDifferentSearch": "Intenta con otros términos de búsqueda",
+      "createFirst": "Crea tu primer contenido para comenzar",
+      "loadError": "Error al cargar contenido",
+      "deleteSuccess": "Contenido eliminado correctamente",
+      "deleteError": "Error al eliminar contenido",
+      "confirmDelete": "¿Estás seguro de que deseas eliminar este contenido?",
+      "editContent": "Editar Contenido",
+      "editContentDescription": "Modifica los campos del contenido",
+      "order": "Orden",
+      "addTag": "Escribe y presiona Enter para agregar",
+      "lessons": "Lecciones",
+      "noLessonsAvailable": "No hay lecciones disponibles",
+      "moreLessons": "lecciones más"
+    },
+    "pruebas": {
+      "title": "Pruebas",
+      "titleAll": "Todas las Pruebas",
+      "description": "Crea y gestiona pruebas para tus lecciones",
+      "descriptionAll": "Vista de administrador: todas las pruebas del sistema",
+      "newPrueba": "Nueva Prueba",
+      "searchPlaceholder": "Buscar pruebas...",
+      "noPruebas": "No tienes pruebas aún",
+      "noResults": "No se encontraron resultados",
+      "tryDifferentSearch": "Intenta con otros términos de búsqueda",
+      "createFirst": "Crea tu primera prueba para comenzar",
+      "loadError": "Error al cargar prueba",
+      "deleteSuccess": "Prueba eliminada correctamente",
+      "deleteError": "Error al eliminar prueba",
+      "confirmDelete": "¿Estás seguro de que deseas eliminar esta prueba?",
+      "editPrueba": "Editar Prueba",
+      "saveSuccess": "Prueba guardada correctamente",
+      "saveError": "Error al guardar prueba",
+      "saving": "Guardando...",
+      "save": "Guardar",
+      "titulo": "Título",
+      "descripcion": "Descripción",
+      "leccion": "Lección",
+      "selectLeccion": "Selecciona una lección",
+      "orden": "Orden",
+      "tiempoLimite": "Tiempo límite (minutos)",
+      "tiempoLimitePlaceholder": "Opcional",
+      "puntajeMinimo": "Puntaje mínimo (%)",
+      "activa": "Prueba activa",
+      "preguntas": "Preguntas",
+      "addPregunta": "Agregar Pregunta",
+      "noPreguntas": "No hay preguntas. Agrega al menos una.",
+      "noQuestions": "Esta prueba no tiene preguntas",
+      "pregunta": "Pregunta",
+      "preguntaTexto": "Texto de la pregunta",
+      "tipoPregunta": "Tipo",
+      "opcionMultiple": "Opción múltiple",
+      "verdaderoFalso": "Verdadero/Falso",
+      "respuestas": "Respuestas",
+      "addRespuesta": "Agregar",
+      "respuestaPlaceholder": "Texto de la respuesta",
+      "validation": {
+        "titleRequired": "El título es requerido",
+        "leccionRequired": "Selecciona una lección",
+        "preguntasRequired": "Agrega al menos una pregunta",
+        "preguntaTextRequired": "La pregunta {{num}} debe tener texto",
+        "minRespuestas": "La pregunta {{num}} debe tener al menos 2 respuestas",
+        "correctaRequired": "La pregunta {{num}} debe tener al menos una respuesta correcta",
+        "respuestaTextRequired": "La respuesta {{resp}} de la pregunta {{num}} debe tener texto"
+      },
+      "active": "Activa",
+      "inactive": "Inactiva",
+      "takingPrueba": "Tomando Prueba",
+      "results": "Resultados de la Prueba",
+      "approved": "¡Aprobado!",
+      "notApproved": "No Aprobado",
+      "scoreDetails": "{{correctas}} de {{total}} preguntas correctas",
+      "minimumRequired": "Puntaje mínimo requerido: {{min}}%",
+      "timeSpent": "Tiempo empleado: {{minutes}}:{{seconds}}",
+      "review": "Revisión de Respuestas",
+      "yourAnswer": "Tu respuesta",
+      "noAnswer": "Sin respuesta",
+      "correctAnswer": "Respuesta correcta",
+      "submit": "Enviar Prueba",
+      "confirmSubmitIncomplete": "No has respondido todas las preguntas. ¿Deseas enviar de todas formas?",
+      "finish": "Finalizar evaluación",
+      "reviewBeforeSubmit": "Revisar antes de enviar",
+      "reviewTitle": "Revisión de la evaluación",
+      "answered": "Respondida",
+      "unanswered": "Sin responder",
+      "submitConfirm": "Enviar ahora",
+      "mustAnswerAll": "Debes responder todas las preguntas antes de enviar",
+      "answerCurrent": "Responde la pregunta antes de continuar",
+      "next": "Siguiente",
+      "previous": "Anterior",
+      "questions": "preguntas",
+      "progress": "Pregunta",
+      "of": "de",
+      "noQuestionSelected": "Pregunta no disponible",
+      "saveResultError": "Error al guardar resultado",
+      "notActive": "Esta prueba no está activa",
+      "saveLessonFirst": "Debes guardar la lección primero",
+      "leccionPreselected": "Lección pre-seleccionada desde la edición de lección",
+      "timeLimit": "Tiempo límite",
+      "edit": "Editar",
+      "delete": "Eliminar",
+      "deleted": "Prueba eliminada"
+    },
+    "performance": {
+      "title": "Panel de Desempeño del Estudiante",
+      "titleAll": "Panel de Desempeño - Todos los Estudiantes",
+      "description": "Analiza el desempeño de los estudiantes en tus lecciones y pruebas",
+      "descriptionAll": "Vista de administrador: analiza el desempeño de todos los estudiantes del sistema",
+      "loadError": "Error al cargar datos de desempeño",
+      "noData": "No hay datos para mostrar",
+      "noStudents": "No hay estudiantes",
+      "noStudentsFound": "No se encontraron estudiantes",
+      "searchStudents": "Buscar estudiantes...",
+      "showing": "Mostrando",
+      "of": "de",
+      "page": "Página",
+      "view": "Ver",
+      "filters": {
+        "title": "Filtros",
+        "student": "Estudiante",
+        "lesson": "Lección",
+        "test": "Prueba"
+      },
+      "allStudents": "Todos los estudiantes",
+      "allLessons": "Todas las lecciones",
+      "allTests": "Todas las pruebas",
+      "studentsList": "Lista de Estudiantes",
+      "metrics": {
+        "totalStudents": "Total de Estudiantes",
+        "averageScore": "Promedio de Puntajes",
+        "approvalRate": "Tasa de Aprobación",
+        "failureRate": "Tasa de Reprobación"
+      },
+      "table": {
+        "student": "Estudiante",
+        "attempts": "Intentos",
+        "tests": "Pruebas",
+        "average": "Promedio",
+        "approved": "Aprobados",
+        "lessons": "Lecciones",
+        "contents": "Contenidos",
+        "following": "Siguiendo",
+        "lastActivity": "Última Actividad",
+        "actions": "Acciones"
+      },
+      "charts": {
+        "trends": "Tendencias de Puntajes por Prueba",
+        "distribution": "Distribución de Resultados",
+        "evolution": "Evolución de Puntajes"
+      },
+      "average": "Promedio",
+      "approved": "Aprobados",
+      "failed": "Reprobados",
+      "score": "Puntaje",
+      "export": {
+        "csv": "Exportar CSV",
+        "pdf": "Exportar PDF",
+        "success": "Datos exportados correctamente",
+        "error": "Error al exportar datos",
+        "pdfNotImplemented": "Exportación a PDF próximamente"
+      },
+      "exporting": "Exportando...",
+      "loading": "Cargando...",
+      "studentPerformance": "Desempeño",
+      "generalInfo": "Información General",
+      "email": "Email",
+      "lastActivity": "Última Actividad",
+      "testHistory": "Historial de Pruebas",
+      "noTests": "No hay pruebas registradas",
+      "test": "Prueba",
+      "attempts": "Intentos",
+      "bestScore": "Mejor Puntaje",
+      "status": "Estado",
+      "lastAttempt": "Último Intento",
+      "lessonProgress": "Progreso en Lecciones",
+      "noLessons": "No hay lecciones registradas",
+      "completed": "Completada",
+      "inProgress": "En Progreso",
+      "lastAccess": "Último acceso",
+      "contentProgress": "Progreso en Contenidos",
+      "noContents": "No hay contenidos registrados",
+      "lessonsLabel": "lecciones",
+      "averageScore": "Promedio",
+      "followedContents": "Contenidos que sigue"
+    }
+  },
+  "lesson": {
+    "contents": "Contenidos",
+    "relatedLessons": "Lecciones relacionadas",
+    "pruebas": "Pruebas",
+    "takePrueba": "Tomar Prueba",
+    "noContent": "Esta lección aún no tiene contenidos ni pruebas",
+    "noPruebas": "Esta lección aún no tiene pruebas",
+    "back": "Volver a lecciones",
+    "notFound": "Lección no encontrada"
+  },
+
+  "login": {
+    "title": "Iniciar Sesión",
+    "email": "Correo electrónico",
+    "emailPlaceholder": "usuario@ejemplo.com",
+    "password": "Contraseña",
+    "passwordPlaceholder": "••••••••",
+    "rememberMe": "Recordarme",
+    "forgotPassword": "¿Olvidaste tu contraseña?",
+    "noAccount": "¿No tienes cuenta?",
+    "submit": "Entrar",
+    "loading": "Iniciando...",
+    "success": "Inicio de sesión exitoso ✅",
+    "errors": {
+      "allFields": "Por favor, completa todos los campos.",
+      "invalid": "Correo o contraseña incorrectos ❌"
+      ,
+      "blocked": "Demasiados intentos. Inténtalo de nuevo más tarde.",
+      "blockedTimer": "Intenta de nuevo en {{count}} segundos.",
+      "connection": "Error de conexión. Por favor verifica tu conexión a internet.",
+      "unconfirmed": "Cuenta no confirmada. Revisa tu correo para confirmar tu cuenta."
+    },
+    "signIn": "Iniciar sesión",
+    "signOut": "Cerrar sesión",
+    "resendVerification": "Reenviar correo de verificación",
+    "verificationResent": "Correo de verificación reenviado. Revisa tu bandeja.",
+    "signoutSuccess": "Sesión cerrada correctamente",
+    "signoutError": "No se pudo cerrar la sesión",
+    "help": {
+      "passwordTips": "Consejos: contraseña de al menos 6 caracteres, evita reutilizar contraseñas.",
+      "shortcuts": "Atajos: Ctrl+B (barra lateral), Ctrl+H (alto contraste), Ctrl+R (recargar)",
+      "rememberMeTooltip": "Recordar correo en este equipo"
+    }
+  },
+  "verify": {
+    "loading": "Verificando tu cuenta...",
+    "successTitle": "¡Cuenta Verificada!",
+    "success": "Tu cuenta ha sido verificada exitosamente. Ya puedes iniciar sesión.",
+    "errorTitle": "Error de Verificación",
+    "error": "El enlace de verificación es inválido o ha expirado.",
+    "noToken": "No se proporcionó token de verificación.",
+    "goToLogin": "Ir a iniciar sesión"
+  },
+  "createLesson": {
+    "title": "Crear Lección",
+    "fields": {
+      "title": "Título",
+      "description": "Descripción",
+      "level": "Nivel",
+      "thumbnail": "Imagen de portada",
+      "uploadThumbnail": "Subir imagen",
+      "removeThumbnail": "Eliminar thumbnail",
+      "thumbnailHint": "Pega un enlace o sube una imagen (JPG, PNG, WebP, GIF, máx 5 MB)",
+      "levelOptions": {
+        "basic": "Básico",
+        "intermediate": "Intermedio",
+        "advanced": "Avanzado"
+      }
+    },
+    "placeholders": {
+      "title": "Ej: Introducción a la Química Orgánica",
+      "description": "Describe brevemente el contenido de la lección...",
+      "thumbnailUrl": "https://... o sube una imagen"
+    },
+    "buttons": {
+      "create": "Crear",
+      "cancel": "Cancelar",
+      "creating": "Creando...",
+      "update": "Actualizar",
+      "updating": "Actualizando..."
+    },
+    "errors": {
+      "titleRequired": "El título es requerido",
+      "notAuthenticatedToLinkModel": "Debes iniciar sesión para asociar el modelo a la lección",
+      "invalidFileType": "Tipo de archivo no válido. Usa .glb, .gltf o .usdz",
+      "invalidImageType": "Solo se permiten imágenes (JPG, PNG, WebP, GIF)",
+      "imageTooLarge": "La imagen no debe superar 5 MB",
+      "fileTooLarge": "Archivo demasiado grande. Máximo 50 MB",
+      "uploadError": "Error subiendo modelo",
+      "linkModelError": "Error asociando el modelo: {{message}}",
+      "createError": "Error creando lección"
+    },
+    "thumbnailUploaded": "Thumbnail subido correctamente",
+    "headerDescription": "Completa los campos para crear tu lección",
+    "openInNewTab": "Abrir en nueva pestaña",
+    "success": {
+      "created": "Lección creada",
+      "modelUploadedAndLinked": "Modelo de RA subido y asociado a la lección",
+      "updated": "Lección actualizada"
+      ,
+      "createdAndAssigned": "Lección creada y asignada"
+    }
+  },
+  "previewUnavailable": "Previsualización no disponible.",
+  "openModel": "Abrir modelo"
+
+  ,
+  "resetPassword": {
+    "title": "Recuperar contraseña",
+    "checkingSession": "Verificando enlace...",
+    "invalidOrExpired": "El enlace ha expirado o no es válido. Introduce tu correo y solicitaremos un nuevo enlace.",
+    "emailPlaceholder": "Correo electrónico",
+    "newPassword": "Nueva contraseña",
+    "newPasswordPlaceholder": "Nueva contraseña",
+    "confirmPassword": "Confirmar contraseña",
+    "confirmPlaceholder": "Confirmar contraseña",
+    "submit": "Actualizar contraseña",
+    "updating": "Actualizando...",
+    "resend": "Enviar correo de recuperación",
+    "resending": "Enviando...",
+    "resendSuccess": "Correo de recuperación enviado. Revisa tu bandeja.",
+    "success": "Contraseña actualizada. Ya puedes iniciar sesión.",
+    "errors": {
+      "invalidLink": "Enlace inválido o expirado.",
+      "tooShort": "La contraseña debe tener al menos 6 caracteres.",
+      "mismatch": "Las contraseñas no coinciden.",
+      "required": "Introduce la contraseña y la confirmación.",
+      "enterEmail": "Debes indicar un correo.",
+      "resendFailed": "No se pudo reenviar el correo.",
+      "updateFailed": "Error al actualizar la contraseña."
+
+    }
+  },
+  "footer": {
+    "brand": "QuimicaUleam",
+    "addressLabel": "Dirección:",
+    "address": "Av. SantaMarta, Manta",
+    "authorLabel": "Autor:",
+    "author": "Dr. Josue Vinces",
+    "foundationLabel": "Fundación:",
+    "foundation": "20 de Octubre del 2025",
+    "support": "Soporte / Contacto",
+    "helpCenter": "Centro de ayuda",
+    "contactEmail": "josuvince@gmail.com",
+    "callUs": "Llámanos: 0984563204",
+    "policies": "Política y Términos de Uso",
+    "privacyPolicy": "Política de privacidad",
+    "termsOfUse": "Términos de uso",
+    "accessibility": "Accesibilidad",
+    "rightsReserved": "Todos los derechos reservados"
+  },
+  "nav": {
+    "home": "Inicio",
+    "login": "Iniciar sesión",
+    "register": "Registro",
+    "addContent": "Añadir contenido",
+    "resetPassword": "Recuperar contraseña"
+  },
+  "help": "Ayuda",
+  "search": {
+    "placeholder": "Buscar..."
+  },
+  "sidebarOpen": "Abrir barra lateral",
+  "sidebarClose": "Cerrar barra lateral",
+  "admin": {
+    "users": {
+      "title": "Gestión de Usuarios",
+      "description": "Administra todos los usuarios del sistema",
+      "search": "Buscar por email, nombre...",
+      "create": {
+        "title": "Crear Nuevo Usuario",
+        "button": "Crear Usuario"
+      },
+      "edit": {
+        "title": "Editar Usuario"
+      },
+      "export": "Exportar",
+      "loading": "Cargando usuario...",
+      "saving": "Guardando...",
+      "creating": "Creando...",
+      "save": "Guardar Cambios",
+      "cancel": "Cancelar",
+      "form": {
+        "email": "Email",
+        "password": "Contraseña",
+        "confirmPassword": "Confirmar Contraseña",
+        "firstName": "Nombre",
+        "lastName": "Apellido",
+        "displayName": "Nombre para Mostrar",
+        "phone": "Teléfono",
+        "role": "Rol",
+        "isVerified": "Usuario Verificado",
+        "sendVerificationEmail": "Enviar email de verificación",
+        "emailNote": "Nota: Cambiar el email puede requerir verificación adicional",
+        "passwordMinLength": "Mínimo 6 caracteres"
+      },
+      "table": {
+        "email": "Email",
+        "name": "Nombre",
+        "role": "Rol",
+        "status": "Estado",
+        "createdAt": "Fecha Registro",
+        "actions": "Acciones",
+        "noUsers": "No hay usuarios para mostrar",
+        "noEmail": "Sin email",
+        "showing": "Mostrando",
+        "of": "de",
+        "users": "usuarios",
+        "page": "Página"
+      },
+      "status": {
+        "active": "Activo",
+        "inactive": "Inactivo",
+        "verified": "Verificado"
+      },
+      "filters": {
+        "title": "Filtros",
+        "role": "Rol",
+        "verificationStatus": "Estado de Verificación",
+        "activeStatus": "Estado Activo",
+        "dateFrom": "Fecha Desde",
+        "dateTo": "Fecha Hasta",
+        "all": "Todos",
+        "allRoles": "Todos",
+        "verified": "Verificado",
+        "notVerified": "No Verificado",
+        "active": "Activo",
+        "inactive": "Inactivo",
+        "pendingRequests": "Solicitudes Pendientes",
+        "withPendingRequest": "Con solicitud pendiente",
+        "clear": "Limpiar Filtros"
+      },
+      "actions": {
+        "edit": "Editar",
+        "delete": "Eliminar",
+        "approveRole": "Aprobar solicitud de rol",
+        "rejectRole": "Rechazar solicitud de rol"
+      },
+      "warnings": {
+        "roleChange": "Advertencia: Estás cambiando el rol a Administrador. Esto otorgará permisos completos al usuario.",
+        "adminRole": "Advertencia: Estás creando un usuario con rol de Administrador. Esto otorgará permisos completos al usuario."
+      },
+      "confirmDelete": "¿Estás seguro de que deseas eliminar al usuario {{email}}?",
+      "confirmApproveRole": "¿Aprobar la solicitud de {{email}} para ser {{role}}?",
+      "confirmRejectRole": "¿Rechazar la solicitud de rol de {{email}}?",
+      "pendingRole": "Solicita: {{role}}",
+      "success": {
+        "created": "Usuario creado exitosamente",
+        "updated": "Usuario actualizado exitosamente",
+        "deleted": "Usuario eliminado correctamente",
+        "exported": "Usuarios exportados exitosamente",
+        "roleApproved": "Solicitud de rol aprobada exitosamente",
+        "roleRejected": "Solicitud de rol rechazada"
+      },
+      "errors": {
+        "loadError": "Error al cargar usuarios",
+        "createError": "Error al crear usuario",
+        "updateError": "Error al actualizar usuario",
+        "deleteError": "Error al eliminar usuario",
+        "exportError": "Error al exportar usuarios",
+        "emailRequired": "El email es requerido",
+        "passwordRequired": "La contraseña es requerida",
+        "passwordMinLength": "La contraseña debe tener al menos 6 caracteres",
+        "passwordMismatch": "Las contraseñas no coinciden",
+        "userExists": "El usuario ya existe",
+        "approveError": "Error al aprobar solicitud de rol",
+        "rejectError": "Error al rechazar solicitud de rol"
+      }
+    },
+    "dashboard": {
+      "title": "Dashboard General",
+      "description": "Vista general del sistema",
+      "errors": {
+        "loadError": "Error al cargar datos del dashboard"
+      },
+      "kpis": {
+        "totalUsers": "Total Usuarios",
+        "totalTeachers": "Total Profesores",
+        "totalStudents": "Total Estudiantes",
+        "totalLessons": "Total Lecciones",
+        "totalContents": "Total Contenidos",
+        "totalPruebas": "Total Pruebas",
+        "approvalRate": "Tasa de Aprobación",
+        "pendingRequests": "Solicitudes Pendientes",
+        "monthlyActivity": "Actividad del Mes"
+      },
+      "charts": {
+        "userGrowth": "Crecimiento de Usuarios",
+        "newUsers": "Nuevos Usuarios",
+        "pruebaActivity": "Actividad de Pruebas",
+        "totalAttempts": "Total Intentos",
+        "approved": "Aprobados",
+        "lessonCompletion": "Completación de Lecciones",
+        "completed": "Completadas",
+        "inProgress": "En Progreso",
+        "roleDistribution": "Distribución de Roles",
+        "topLessons": "Top 5 Lecciones Más Completadas",
+        "topPruebas": "Top 5 Pruebas con Mejor Desempeño",
+        "completions": "Completaciones",
+        "average": "Promedio (%)",
+        "attempts": "Intentos"
+      },
+      "activity": {
+        "recentUsers": "Usuarios Recientes",
+        "recentLessons": "Lecciones Recientes",
+        "recentContents": "Contenidos Recientes",
+        "recentPruebas": "Pruebas Recientes",
+        "noUsers": "No hay usuarios recientes",
+        "noLessons": "No hay lecciones recientes",
+        "noContents": "No hay contenidos recientes",
+        "noPruebas": "No hay pruebas recientes"
+      },
+      "quickLinks": {
+        "title": "Enlaces Rápidos",
+        "users": "Gestión de Usuarios",
+        "usersDesc": "Administrar todos los usuarios del sistema",
+        "contents": "Todos los Contenidos",
+        "contentsDesc": "Ver y gestionar todos los contenidos",
+        "pruebas": "Todas las Pruebas",
+        "pruebasDesc": "Ver y gestionar todas las pruebas",
+        "performance": "Panel de Desempeño",
+        "performanceDesc": "Ver desempeño de todos los estudiantes",
+        "addContent": "Añadir Contenido",
+        "addContentDesc": "Crear nuevo contenido o lección"
+      }
+    },
+    "modelos": {
+      "title": "Gestión de Modelos RA",
+      "subtitle": "Administra los modelos de Realidad Aumentada de la plataforma",
+      "search": "Buscar por nombre o descripción...",
+      "create": "Nuevo Modelo",
+      "errorLoading": "Error al cargar modelos",
+      "table": {
+        "name": "Nombre",
+        "type": "Tipo",
+        "lesson": "Lección",
+        "description": "Descripción",
+        "createdBy": "Creado por",
+        "actions": "Acciones",
+        "noModels": "No hay modelos registrados aún",
+        "showing": "Mostrando",
+        "of": "de",
+        "models": "modelos"
+      },
+      "filters": {
+        "allTypes": "Todos los tipos"
+      },
+      "actions": {
+        "view": "Ver",
+        "edit": "Editar",
+        "delete": "Eliminar"
+      },
+      "success": {
+        "created": "Modelo creado correctamente",
+        "updated": "Modelo actualizado correctamente",
+        "deleted": "Modelo eliminado correctamente"
+      },
+      "errors": {
+        "loadError": "Error al cargar modelos",
+        "createError": "Error al crear modelo",
+        "updateError": "Error al actualizar modelo",
+        "deleteError": "Error al eliminar modelo"
+      },
+      "modal": {
+        "createTitle": "Crear Nuevo Modelo",
+        "editTitle": "Editar Modelo",
+        "viewTitle": "Detalles del Modelo",
+        "nameLabel": "Nombre del Modelo",
+        "descriptionLabel": "Descripción",
+        "typeLabel": "Tipo",
+        "lessonLabel": "Lección",
+        "fileLabel": "Archivo",
+        "fileHint": "Haz clic o arrastra un archivo",
+        "fileUploading": "Subiendo...",
+        "fileUploaded": "✓ Archivo subido",
+        "fileChange": "Cambiar",
+        "cancel": "Cancelar",
+        "create": "Crear Modelo",
+        "save": "Guardar Cambios",
+        "saving": "Guardando...",
+        "creating": "Creando...",
+        "close": "Cerrar",
+        "nameRequired": "El nombre es requerido",
+        "fileRequired": "Debes subir un archivo",
+        "uploadSuccess": "Archivo subido correctamente",
+        "uploadError": "Error al subir archivo"
+      }
+    }
+  },
+
+  "settingsPage": {
+    "title": "Configuración",
+    "subtitle": "Administra tu perfil, seguridad, preferencias e información de cuenta",
+    "profile": {
+      "title": "Perfil",
+      "description": "Información personal y datos de tu cuenta",
+      "firstName": "Nombre",
+      "lastName": "Apellido",
+      "displayName": "Nombre para mostrar",
+      "phone": "Teléfono",
+      "email": "Correo electrónico",
+      "role": "Rol",
+      "thumbnail": "Foto de perfil",
+      "changeThumbnail": "Cambiar foto",
+      "removeThumbnail": "Eliminar foto",
+      "saveProfile": "Guardar perfil",
+      "saving": "Guardando...",
+      "saveSuccess": "Perfil actualizado correctamente",
+      "saveError": "Error al actualizar perfil",
+      "firstNamePlaceholder": "Tu nombre",
+      "lastNamePlaceholder": "Tu apellido",
+      "displayNamePlaceholder": "Nombre visible para otros",
+      "phonePlaceholder": "+593 999 999 999"
+    },
+    "security": {
+      "title": "Seguridad",
+      "description": "Gestiona tu contraseña y seguridad de acceso",
+      "changePassword": "Cambiar contraseña",
+      "currentPassword": "Contraseña actual",
+      "newPassword": "Nueva contraseña",
+      "confirmPassword": "Confirmar nueva contraseña",
+      "updatePassword": "Actualizar contraseña",
+      "updating": "Actualizando...",
+      "passwordSuccess": "Contraseña actualizada correctamente",
+      "passwordError": "Error al actualizar la contraseña",
+      "passwordMismatch": "Las contraseñas no coinciden",
+      "passwordTooShort": "La contraseña debe tener al menos 6 caracteres",
+      "lastSignIn": "Último inicio de sesión",
+      "never": "Nunca"
+    },
+    "language": {
+      "title": "Idioma",
+      "description": "Selecciona el idioma de la interfaz",
+      "spanish": "Español",
+      "english": "Inglés",
+      "changeSuccess": "Idioma cambiado correctamente"
+    },
+    "notifications": {
+      "title": "Notificaciones",
+      "description": "Configura las alertas y lectura por voz de la aplicación",
+      "visualAlerts": "Alertas visuales",
+      "visualAlertsDesc": "Muestra notificaciones visuales para cambios importantes",
+      "voiceReading": "Lectura por voz",
+      "voiceReadingDesc": "Lee el contenido en voz alta usando síntesis de voz"
+    },
+    "roleRequest": {
+      "title": "Solicitud de rol",
+      "description": "Solicita un cambio de rol en la plataforma",
+      "currentRole": "Tu rol actual",
+      "requestedRole": "Rol solicitado",
+      "requestChange": "Solicitar cambio",
+      "requesting": "Solicitando...",
+      "pendingRequest": "Solicitud pendiente",
+      "requestSuccess": "Solicitud enviada. Un administrador la revisará.",
+      "requestError": "Error al enviar solicitud",
+      "alreadyRequested": "Ya tienes una solicitud pendiente",
+      "selectRole": "Selecciona un rol",
+      "student": "Estudiante",
+      "teacher": "Profesor",
+      "admin": "Administrador",
+      "cancelRequest": "Cancelar solicitud",
+      "cancelSuccess": "Solicitud cancelada"
+    },
+    "account": {
+      "title": "Cuenta",
+      "description": "Información general de tu cuenta",
+      "createdAt": "Cuenta creada",
+      "verified": "Verificada",
+      "notVerified": "No verificada",
+      "verificationStatus": "Estado de verificación",
+      "signOut": "Cerrar sesión",
+      "signOutConfirm": "¿Estás seguro de que deseas cerrar sesión?"
+    },
+    "roles": {
+      "student": "Estudiante",
+      "teacher": "Profesor",
+      "admin": "Administrador"
+    }
+  }
+
+}
