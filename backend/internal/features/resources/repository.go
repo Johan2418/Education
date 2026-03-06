@@ -3,14 +3,15 @@ package resources
 import (
 	"context"
 
-	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/lib/pq"
+	"gorm.io/gorm"
 )
 
 type Repository struct {
-	db *pgxpool.Pool
+	db *gorm.DB
 }
 
-func NewRepository(db *pgxpool.Pool) *Repository {
+func NewRepository(db *gorm.DB) *Repository {
 	return &Repository{db: db}
 }
 
@@ -19,82 +20,75 @@ func NewRepository(db *pgxpool.Pool) *Repository {
 // ═══════════════════════════════════════════════════════════════
 
 func (r *Repository) ListRecursos(ctx context.Context) ([]Recurso, error) {
-	rows, err := r.db.Query(ctx, `
-		SELECT id, titulo, descripcion, tipo, archivo_url, texto_html, tags, es_publico, created_by, created_at, updated_at
-		FROM internal.recurso ORDER BY created_at DESC
-	`)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
 	var items []Recurso
-	for rows.Next() {
-		var rc Recurso
-		if err := rows.Scan(&rc.ID, &rc.Titulo, &rc.Descripcion, &rc.Tipo, &rc.ArchivoURL, &rc.TextoHTML,
-			&rc.Tags, &rc.EsPublico, &rc.CreatedBy, &rc.CreatedAt, &rc.UpdatedAt); err != nil {
-			return nil, err
-		}
-		items = append(items, rc)
-	}
-	return items, nil
+	err := r.db.WithContext(ctx).Order("created_at DESC").Find(&items).Error
+	return items, err
 }
 
 func (r *Repository) GetRecurso(ctx context.Context, id string) (*Recurso, error) {
 	var rc Recurso
-	err := r.db.QueryRow(ctx, `
-		SELECT id, titulo, descripcion, tipo, archivo_url, texto_html, tags, es_publico, created_by, created_at, updated_at
-		FROM internal.recurso WHERE id = $1
-	`, id).Scan(&rc.ID, &rc.Titulo, &rc.Descripcion, &rc.Tipo, &rc.ArchivoURL, &rc.TextoHTML,
-		&rc.Tags, &rc.EsPublico, &rc.CreatedBy, &rc.CreatedAt, &rc.UpdatedAt)
-	if err != nil {
+	if err := r.db.WithContext(ctx).Where("id = ?", id).First(&rc).Error; err != nil {
 		return nil, err
 	}
 	return &rc, nil
 }
 
 func (r *Repository) CreateRecurso(ctx context.Context, req RecursoRequest, createdBy string) (*Recurso, error) {
-	var rc Recurso
-	err := r.db.QueryRow(ctx, `
-		INSERT INTO internal.recurso (titulo, descripcion, tipo, archivo_url, texto_html, tags, es_publico, created_by)
-		VALUES ($1, $2, $3::internal.tipo_recurso, $4, $5, $6, COALESCE($7, TRUE), $8)
-		RETURNING id, titulo, descripcion, tipo, archivo_url, texto_html, tags, es_publico, created_by, created_at, updated_at
-	`, req.Titulo, req.Descripcion, req.Tipo, req.ArchivoURL, req.TextoHTML, req.Tags, req.EsPublico, createdBy).Scan(
-		&rc.ID, &rc.Titulo, &rc.Descripcion, &rc.Tipo, &rc.ArchivoURL, &rc.TextoHTML,
-		&rc.Tags, &rc.EsPublico, &rc.CreatedBy, &rc.CreatedAt, &rc.UpdatedAt,
-	)
-	if err != nil {
+	rc := Recurso{
+		Titulo:      req.Titulo,
+		Descripcion: req.Descripcion,
+		Tipo:        req.Tipo,
+		ArchivoURL:  req.ArchivoURL,
+		TextoHTML:   req.TextoHTML,
+		CreatedBy:   &createdBy,
+	}
+	if req.Tags != nil {
+		rc.Tags = pq.StringArray(req.Tags)
+	}
+	if req.EsPublico != nil {
+		rc.EsPublico = *req.EsPublico
+	} else {
+		rc.EsPublico = true
+	}
+	if err := r.db.WithContext(ctx).Create(&rc).Error; err != nil {
 		return nil, err
 	}
 	return &rc, nil
 }
 
 func (r *Repository) UpdateRecurso(ctx context.Context, id string, req RecursoRequest) (*Recurso, error) {
-	var rc Recurso
-	err := r.db.QueryRow(ctx, `
-		UPDATE internal.recurso
-		SET titulo = COALESCE(NULLIF($2, ''), titulo),
-		    descripcion = COALESCE($3, descripcion),
-		    tipo = COALESCE(NULLIF($4, '')::internal.tipo_recurso, tipo),
-		    archivo_url = COALESCE($5, archivo_url),
-		    texto_html = COALESCE($6, texto_html),
-		    tags = COALESCE($7, tags),
-		    es_publico = COALESCE($8, es_publico)
-		WHERE id = $1
-		RETURNING id, titulo, descripcion, tipo, archivo_url, texto_html, tags, es_publico, created_by, created_at, updated_at
-	`, id, req.Titulo, req.Descripcion, req.Tipo, req.ArchivoURL, req.TextoHTML, req.Tags, req.EsPublico).Scan(
-		&rc.ID, &rc.Titulo, &rc.Descripcion, &rc.Tipo, &rc.ArchivoURL, &rc.TextoHTML,
-		&rc.Tags, &rc.EsPublico, &rc.CreatedBy, &rc.CreatedAt, &rc.UpdatedAt,
-	)
-	if err != nil {
-		return nil, err
+	updates := map[string]interface{}{}
+	if req.Titulo != "" {
+		updates["titulo"] = req.Titulo
 	}
-	return &rc, nil
+	if req.Descripcion != nil {
+		updates["descripcion"] = *req.Descripcion
+	}
+	if req.Tipo != "" {
+		updates["tipo"] = gorm.Expr("?::internal.tipo_recurso", req.Tipo)
+	}
+	if req.ArchivoURL != nil {
+		updates["archivo_url"] = *req.ArchivoURL
+	}
+	if req.TextoHTML != nil {
+		updates["texto_html"] = *req.TextoHTML
+	}
+	if req.Tags != nil {
+		updates["tags"] = pq.StringArray(req.Tags)
+	}
+	if req.EsPublico != nil {
+		updates["es_publico"] = *req.EsPublico
+	}
+	if len(updates) > 0 {
+		if err := r.db.WithContext(ctx).Model(&Recurso{}).Where("id = ?", id).Updates(updates).Error; err != nil {
+			return nil, err
+		}
+	}
+	return r.GetRecurso(ctx, id)
 }
 
 func (r *Repository) DeleteRecurso(ctx context.Context, id string) error {
-	_, err := r.db.Exec(ctx, `DELETE FROM internal.recurso WHERE id = $1`, id)
-	return err
+	return r.db.WithContext(ctx).Where("id = ?", id).Delete(&Recurso{}).Error
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -102,80 +96,73 @@ func (r *Repository) DeleteRecurso(ctx context.Context, id string) error {
 // ═══════════════════════════════════════════════════════════════
 
 func (r *Repository) ListModelos(ctx context.Context) ([]ModeloRA, error) {
-	rows, err := r.db.Query(ctx, `
-		SELECT id, nombre_modelo, archivo_url, tipo, keywords, molecule_formula, categoria, es_publico, created_by, created_at, updated_at
-		FROM internal.modelo_ra ORDER BY created_at DESC
-	`)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
 	var items []ModeloRA
-	for rows.Next() {
-		var m ModeloRA
-		if err := rows.Scan(&m.ID, &m.NombreModelo, &m.ArchivoURL, &m.Tipo, &m.Keywords,
-			&m.MoleculeFormula, &m.Categoria, &m.EsPublico, &m.CreatedBy, &m.CreatedAt, &m.UpdatedAt); err != nil {
-			return nil, err
-		}
-		items = append(items, m)
-	}
-	return items, nil
+	err := r.db.WithContext(ctx).Order("created_at DESC").Find(&items).Error
+	return items, err
 }
 
 func (r *Repository) GetModelo(ctx context.Context, id string) (*ModeloRA, error) {
 	var m ModeloRA
-	err := r.db.QueryRow(ctx, `
-		SELECT id, nombre_modelo, archivo_url, tipo, keywords, molecule_formula, categoria, es_publico, created_by, created_at, updated_at
-		FROM internal.modelo_ra WHERE id = $1
-	`, id).Scan(&m.ID, &m.NombreModelo, &m.ArchivoURL, &m.Tipo, &m.Keywords,
-		&m.MoleculeFormula, &m.Categoria, &m.EsPublico, &m.CreatedBy, &m.CreatedAt, &m.UpdatedAt)
-	if err != nil {
+	if err := r.db.WithContext(ctx).Where("id = ?", id).First(&m).Error; err != nil {
 		return nil, err
 	}
 	return &m, nil
 }
 
 func (r *Repository) CreateModelo(ctx context.Context, req ModeloRARequest, createdBy string) (*ModeloRA, error) {
-	var m ModeloRA
-	err := r.db.QueryRow(ctx, `
-		INSERT INTO internal.modelo_ra (nombre_modelo, archivo_url, tipo, keywords, molecule_formula, categoria, es_publico, created_by)
-		VALUES ($1, $2, $3, $4, $5, $6, COALESCE($7, TRUE), $8)
-		RETURNING id, nombre_modelo, archivo_url, tipo, keywords, molecule_formula, categoria, es_publico, created_by, created_at, updated_at
-	`, req.NombreModelo, req.ArchivoURL, req.Tipo, req.Keywords, req.MoleculeFormula, req.Categoria, req.EsPublico, createdBy).Scan(
-		&m.ID, &m.NombreModelo, &m.ArchivoURL, &m.Tipo, &m.Keywords,
-		&m.MoleculeFormula, &m.Categoria, &m.EsPublico, &m.CreatedBy, &m.CreatedAt, &m.UpdatedAt,
-	)
-	if err != nil {
+	m := ModeloRA{
+		NombreModelo:    req.NombreModelo,
+		ArchivoURL:      req.ArchivoURL,
+		Tipo:            req.Tipo,
+		MoleculeFormula: req.MoleculeFormula,
+		Categoria:       req.Categoria,
+		CreatedBy:       &createdBy,
+	}
+	if req.Keywords != nil {
+		m.Keywords = pq.StringArray(req.Keywords)
+	}
+	if req.EsPublico != nil {
+		m.EsPublico = *req.EsPublico
+	} else {
+		m.EsPublico = true
+	}
+	if err := r.db.WithContext(ctx).Create(&m).Error; err != nil {
 		return nil, err
 	}
 	return &m, nil
 }
 
 func (r *Repository) UpdateModelo(ctx context.Context, id string, req ModeloRARequest) (*ModeloRA, error) {
-	var m ModeloRA
-	err := r.db.QueryRow(ctx, `
-		UPDATE internal.modelo_ra
-		SET nombre_modelo = COALESCE(NULLIF($2, ''), nombre_modelo),
-		    archivo_url = COALESCE($3, archivo_url),
-		    tipo = COALESCE($4, tipo),
-		    keywords = COALESCE($5, keywords),
-		    molecule_formula = COALESCE($6, molecule_formula),
-		    categoria = COALESCE($7, categoria),
-		    es_publico = COALESCE($8, es_publico)
-		WHERE id = $1
-		RETURNING id, nombre_modelo, archivo_url, tipo, keywords, molecule_formula, categoria, es_publico, created_by, created_at, updated_at
-	`, id, req.NombreModelo, req.ArchivoURL, req.Tipo, req.Keywords, req.MoleculeFormula, req.Categoria, req.EsPublico).Scan(
-		&m.ID, &m.NombreModelo, &m.ArchivoURL, &m.Tipo, &m.Keywords,
-		&m.MoleculeFormula, &m.Categoria, &m.EsPublico, &m.CreatedBy, &m.CreatedAt, &m.UpdatedAt,
-	)
-	if err != nil {
-		return nil, err
+	updates := map[string]interface{}{}
+	if req.NombreModelo != "" {
+		updates["nombre_modelo"] = req.NombreModelo
 	}
-	return &m, nil
+	if req.ArchivoURL != nil {
+		updates["archivo_url"] = *req.ArchivoURL
+	}
+	if req.Tipo != nil {
+		updates["tipo"] = *req.Tipo
+	}
+	if req.Keywords != nil {
+		updates["keywords"] = pq.StringArray(req.Keywords)
+	}
+	if req.MoleculeFormula != nil {
+		updates["molecule_formula"] = *req.MoleculeFormula
+	}
+	if req.Categoria != nil {
+		updates["categoria"] = *req.Categoria
+	}
+	if req.EsPublico != nil {
+		updates["es_publico"] = *req.EsPublico
+	}
+	if len(updates) > 0 {
+		if err := r.db.WithContext(ctx).Model(&ModeloRA{}).Where("id = ?", id).Updates(updates).Error; err != nil {
+			return nil, err
+		}
+	}
+	return r.GetModelo(ctx, id)
 }
 
 func (r *Repository) DeleteModelo(ctx context.Context, id string) error {
-	_, err := r.db.Exec(ctx, `DELETE FROM internal.modelo_ra WHERE id = $1`, id)
-	return err
+	return r.db.WithContext(ctx).Where("id = ?", id).Delete(&ModeloRA{}).Error
 }

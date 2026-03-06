@@ -30,11 +30,15 @@ func main() {
 	cfg := config.Load()
 
 	// ── Database ────────────────────────────────────────────
-	pool, err := database.Connect(cfg.Database)
+	db, err := database.Connect(cfg.Database)
 	if err != nil {
 		log.Fatalf("db: %v", err)
 	}
-	defer pool.Close()
+	sqlDB, err := db.DB()
+	if err != nil {
+		log.Fatalf("db underlying: %v", err)
+	}
+	defer sqlDB.Close()
 
 	// ── JWT service ─────────────────────────────────────────
 	jwtSvc := jwtpkg.NewService(cfg.JWT.Secret, cfg.JWT.ExpireHours)
@@ -42,19 +46,19 @@ func main() {
 	// ── Dependency injection ────────────────────────────────
 	emailSvc := email.NewService(cfg.Email)
 
-	authRepo := auth.NewRepository(pool)
+	authRepo := auth.NewRepository(db)
 	authSvc := auth.NewService(authRepo, jwtSvc, emailSvc)
 	authH := auth.NewHandler(authSvc)
 
-	acadRepo := academic.NewRepository(pool)
+	acadRepo := academic.NewRepository(db)
 	acadSvc := academic.NewService(acadRepo)
 	acadH := academic.NewHandler(acadSvc)
 
-	resRepo := resources.NewRepository(pool)
+	resRepo := resources.NewRepository(db)
 	resSvc := resources.NewService(resRepo)
 	resH := resources.NewHandler(resSvc)
 
-	evalRepo := evaluations.NewRepository(pool)
+	evalRepo := evaluations.NewRepository(db)
 	evalSvc := evaluations.NewService(evalRepo)
 	evalH := evaluations.NewHandler(evalSvc)
 

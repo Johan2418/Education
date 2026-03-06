@@ -72,12 +72,12 @@ func (s *Service) Register(ctx context.Context, req RegisterRequest) (*RegisterR
 }
 
 func (s *Service) Login(ctx context.Context, req LoginRequest) (*TokenResponse, error) {
-	user, passwordHash, err := s.repo.GetByEmail(ctx, req.Email)
+	user, err := s.repo.GetByEmail(ctx, req.Email)
 	if err != nil {
 		return nil, errors.New("credenciales inválidas")
 	}
 
-	if err := bcrypt.CompareHashAndPassword([]byte(passwordHash), []byte(req.Password)); err != nil {
+	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.Password)); err != nil {
 		return nil, errors.New("credenciales inválidas")
 	}
 
@@ -175,7 +175,7 @@ func (s *Service) ResendVerification(ctx context.Context, emailAddr string) erro
 	if emailAddr == "" {
 		return errors.New("el email es obligatorio")
 	}
-	user, _, err := s.repo.GetByEmail(ctx, emailAddr)
+	user, err := s.repo.GetByEmail(ctx, emailAddr)
 	if err != nil {
 		return errors.New("email no encontrado")
 	}
