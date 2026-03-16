@@ -2,3 +2,10 @@
 .env.example
 pgdata/
 node_modules/
+tmp_trabajos_results.csv
+tmp_trabajos_results.json
+tmp_trabajos_test.ps1
+qa-reports/
+tmp_trabajos_sprint2_results.csv
+tmp_trabajos_sprint2_results.json
+tmp_trabajos_sprint2_test.ps1

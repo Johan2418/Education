@@ -19,17 +19,17 @@ export default function AdminDashboard() {
           navigate("/login");
           return;
         }
-        const [users, cursos, modelos, recursos] = await Promise.all([
-          api.get("/admin/users").catch(() => []),
-          api.get("/cursos").catch(() => []),
-          api.get("/modelos").catch(() => []),
-          api.get("/recursos").catch(() => []),
+        const [usersRes, cursosRes, modelosRes, recursosRes] = await Promise.all([
+          api.get<{ data: any[] }>("/admin/users").catch(() => ({ data: [] })),
+          api.get<{ data: any[] }>("/cursos").catch(() => ({ data: [] })),
+          api.get<{ data: any[] }>("/modelos").catch(() => ({ data: [] })),
+          api.get<{ data: any[] }>("/recursos").catch(() => ({ data: [] })),
         ]);
         setStats({
-          users: (users as any[])?.length ?? 0,
-          cursos: (cursos as any[])?.length ?? 0,
-          modelos: (modelos as any[])?.length ?? 0,
-          recursos: (recursos as any[])?.length ?? 0,
+          users: usersRes.data?.length ?? 0,
+          cursos: cursosRes.data?.length ?? 0,
+          modelos: modelosRes.data?.length ?? 0,
+          recursos: recursosRes.data?.length ?? 0,
         });
       } finally {
         setLoading(false);
@@ -47,7 +47,7 @@ export default function AdminDashboard() {
 
   const cards = [
     { label: t("admin.dashboard.users", { defaultValue: "Usuarios" }), count: stats.users, icon: Users, color: "blue", path: "/admin/users" },
-    { label: t("admin.dashboard.cursos", { defaultValue: "Cursos" }), count: stats.cursos, icon: BookOpen, color: "green", path: "/teacher/contents" },
+    { label: t("admin.dashboard.cursos", { defaultValue: "Cursos" }), count: stats.cursos, icon: BookOpen, color: "green", path: "/admin/cursos" },
     { label: t("admin.dashboard.modelos", { defaultValue: "Modelos 3D" }), count: stats.modelos, icon: FileText, color: "purple", path: "/admin/modelos" },
     { label: t("admin.dashboard.recursos", { defaultValue: "Recursos" }), count: stats.recursos, icon: Shield, color: "amber", path: "#" },
   ];

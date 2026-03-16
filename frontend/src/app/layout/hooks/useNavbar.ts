@@ -26,6 +26,9 @@ export function useNavbar() {
       setSession(!!user);
     };
     load();
+    const onAuthChange = () => { load(); };
+    window.addEventListener("auth-change", onAuthChange);
+    return () => window.removeEventListener("auth-change", onAuthChange);
   }, [location.pathname]);
 
   const isAdmin = profile?.role === "admin" || profile?.role === "super_admin";

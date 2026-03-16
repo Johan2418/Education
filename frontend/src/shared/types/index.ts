@@ -7,6 +7,7 @@ export type {
   Leccion,
   LeccionSeccion,
   MateriaSeguimiento,
+  EstudianteCursoDetail,
 } from "./academic";
 export type { Recurso, ModeloRA } from "./resources";
 export type {
@@ -18,3 +19,14 @@ export type {
   ProgresoSeccion,
   PruebaCompleta,
 } from "./evaluations";
+export type {
+  EstadoTrabajo,
+  EstadoEntregaTrabajo,
+  Trabajo,
+  TrabajoEntrega,
+  TrabajoCalificacion,
+  EntregaConCalificacion,
+  CreateTrabajoRequest,
+  CreateEntregaRequest,
+  CalificarEntregaRequest,
+} from "./trabajos";

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
-import { getMe, updateProfile, signOut as apiSignOut } from "@/shared/lib/auth";
+import { getMe, updateProfile, resendVerification, signOut as apiSignOut } from "@/shared/lib/auth";
 import api from "@/shared/lib/api";
 import toast from "react-hot-toast";
 import type { Profile } from "@/shared/types";
@@ -34,6 +34,8 @@ export interface UseSettingsReturn {
   requestingRole: boolean;
   handleRequestRole: () => Promise<void>;
   handleCancelRoleRequest: () => Promise<void>;
+  handleResendVerification: () => Promise<void>;
+  resendingVerification: boolean;
   handleSignOut: () => Promise<void>;
   t: (key: string, opts?: any) => string;
 }
@@ -62,6 +64,7 @@ export function useSettings(): UseSettingsReturn {
 
   const [requestedRole, setRequestedRole] = useState("");
   const [requestingRole, setRequestingRole] = useState(false);
+  const [resendingVerification, setResendingVerification] = useState(false);
 
   useEffect(() => {
     if (initRef.current) return;
@@ -169,6 +172,19 @@ export function useSettings(): UseSettingsReturn {
     }
   }, [isLoggedIn, t]);
 
+  const handleResendVerification = useCallback(async () => {
+    if (!profile?.email) return;
+    setResendingVerification(true);
+    try {
+      await resendVerification(profile.email);
+      toast.success(t("settingsPage.account.verificationSent"));
+    } catch {
+      toast.error(t("settingsPage.account.verificationError"));
+    } finally {
+      setResendingVerification(false);
+    }
+  }, [profile, t]);
+
   const handleSignOut = useCallback(async () => {
     apiSignOut();
     navigate("/login");
@@ -202,6 +218,8 @@ export function useSettings(): UseSettingsReturn {
     requestingRole,
     handleRequestRole,
     handleCancelRoleRequest,
+    handleResendVerification,
+    resendingVerification,
     handleSignOut,
     t,
   };

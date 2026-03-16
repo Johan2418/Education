@@ -22,7 +22,17 @@ func NewHandler(svc *Service) *Handler {
 // ═══════════════════════════════════════════════════════════════
 
 func (h *Handler) ListCursos(w http.ResponseWriter, r *http.Request) {
-	items, err := h.svc.ListCursos(r.Context())
+	claims := middleware.GetClaims(r.Context())
+
+	var items []Curso
+	var err error
+
+	if claims != nil && claims.UserRole == "teacher" {
+		items, err = h.svc.ListCursosByTeacher(r.Context(), claims.Subject)
+	} else {
+		items, err = h.svc.ListCursos(r.Context())
+	}
+
 	if err != nil {
 		shared.Error(w, http.StatusInternalServerError, "Error listando cursos")
 		return
@@ -81,11 +91,18 @@ func (h *Handler) DeleteCurso(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) ListEstudianteCursos(w http.ResponseWriter, r *http.Request) {
 	claims := middleware.GetClaims(r.Context())
-	estudianteID := r.URL.Query().Get("estudiante_id")
-	if estudianteID == "" {
-		estudianteID = claims.Subject
+	cursoID := chi.URLParam(r, "cursoId")
+
+	// Teachers can only list students of their own course
+	if claims.UserRole == "teacher" {
+		curso, err := h.svc.GetCurso(r.Context(), cursoID)
+		if err != nil || curso.TeacherID == nil || *curso.TeacherID != claims.Subject {
+			shared.Error(w, http.StatusForbidden, "No autorizado para este curso")
+			return
+		}
 	}
-	items, err := h.svc.ListEstudianteCursos(r.Context(), estudianteID)
+
+	items, err := h.svc.ListEstudiantesByCurso(r.Context(), cursoID)
 	if err != nil {
 		shared.Error(w, http.StatusInternalServerError, "Error listando inscripciones")
 		return
@@ -94,11 +111,28 @@ func (h *Handler) ListEstudianteCursos(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) EnrollStudent(w http.ResponseWriter, r *http.Request) {
+	claims := middleware.GetClaims(r.Context())
+	cursoID := chi.URLParam(r, "cursoId")
+
+	// Teachers can only enroll to their own course
+	if claims.UserRole == "teacher" {
+		curso, err := h.svc.GetCurso(r.Context(), cursoID)
+		if err != nil || curso.TeacherID == nil || *curso.TeacherID != claims.Subject {
+			shared.Error(w, http.StatusForbidden, "No autorizado para este curso")
+			return
+		}
+	} else if claims.UserRole != "admin" && claims.UserRole != "super_admin" {
+		shared.Error(w, http.StatusForbidden, "No autorizado")
+		return
+	}
+
 	var req EstudianteCursoRequest
 	if err := shared.Decode(r, &req); err != nil {
 		shared.Error(w, http.StatusBadRequest, "Datos inválidos")
 		return
 	}
+	req.CursoID = cursoID // always use URL param
+
 	item, err := h.svc.EnrollStudent(r.Context(), req)
 	if err != nil {
 		shared.Error(w, http.StatusBadRequest, err.Error())
@@ -108,7 +142,22 @@ func (h *Handler) EnrollStudent(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) UnenrollStudent(w http.ResponseWriter, r *http.Request) {
-	if err := h.svc.UnenrollStudent(r.Context(), chi.URLParam(r, "id")); err != nil {
+	claims := middleware.GetClaims(r.Context())
+	cursoID := chi.URLParam(r, "cursoId")
+
+	// Teachers can only unenroll from their own course
+	if claims.UserRole == "teacher" {
+		curso, err := h.svc.GetCurso(r.Context(), cursoID)
+		if err != nil || curso.TeacherID == nil || *curso.TeacherID != claims.Subject {
+			shared.Error(w, http.StatusForbidden, "No autorizado para este curso")
+			return
+		}
+	} else if claims.UserRole != "admin" && claims.UserRole != "super_admin" {
+		shared.Error(w, http.StatusForbidden, "No autorizado")
+		return
+	}
+
+	if err := h.svc.UnenrollStudent(r.Context(), chi.URLParam(r, "estudianteId")); err != nil {
 		shared.Error(w, http.StatusInternalServerError, "Error desinscribiendo")
 		return
 	}

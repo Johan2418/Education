@@ -679,6 +679,93 @@
       "lessonsLabel": "lecciones",
       "averageScore": "Promedio",
       "followedContents": "Contenidos que sigue"
+    },
+    "estudiantes": {
+      "title": "Mis Estudiantes",
+      "enrolled": "inscritos",
+      "enroll": "Inscribir",
+      "unenroll": "Desinscribir",
+      "searchPlaceholder": "Buscar por nombre o email...",
+      "empty": "Aún no hay estudiantes inscritos",
+      "noResults": "Sin resultados",
+      "noCurso": "No tienes un curso asignado",
+      "noCursoDesc": "Contacta a un administrador para que te asigne un curso.",
+      "confirmUnenroll": "¿Desinscribir a \"{{nombre}}\"?",
+      "table": {
+        "name": "Nombre",
+        "email": "Email",
+        "enrolledAt": "Inscrito el",
+        "actions": "Acciones"
+      },
+      "enrollModal": {
+        "title": "Inscribir Estudiante",
+        "search": "Buscar estudiante...",
+        "add": "Inscribir",
+        "noStudents": "No hay estudiantes registrados",
+        "allEnrolled": "Todos los estudiantes ya están inscritos"
+      },
+      "success": {
+        "enrolled": "Estudiante inscrito exitosamente",
+        "unenrolled": "Estudiante desinscrito exitosamente"
+      },
+      "errors": {
+        "loadError": "Error al cargar datos",
+        "loadStudents": "Error al cargar estudiantes",
+        "enrollError": "Error al inscribir estudiante",
+        "unenrollError": "Error al desinscribir estudiante"
+      }
+    },
+    "trabajos": {
+      "title": "Trabajos",
+      "new": "Nuevo Trabajo",
+      "search": "Buscar por titulo, leccion o estado",
+      "empty": "No hay trabajos registrados",
+      "loadError": "Error al cargar trabajos",
+      "validation": "Leccion y titulo son obligatorios",
+      "created": "Trabajo creado",
+      "confirmPublish": "Deseas publicar este trabajo?",
+      "confirmClose": "Deseas cerrar este trabajo?",
+      "published": "Trabajo publicado",
+      "closed": "Trabajo cerrado",
+      "grade": "Calificar",
+      "createTitle": "Crear trabajo",
+      "leccion": "Leccion",
+      "titulo": "Titulo",
+      "descripcion": "Descripcion",
+      "instrucciones": "Instrucciones",
+      "fechaVencimiento": "Fecha de vencimiento",
+      "gradingTitle": "Bandeja de calificacion",
+      "gradeForm": "Calificar entrega",
+      "noTrabajo": "Trabajo invalido",
+      "noEntregas": "No hay entregas para este trabajo",
+      "selectEntrega": "Selecciona una entrega",
+      "gradedTag": "Calificada",
+      "pendingTag": "Pendiente",
+      "respuestas": "Respuestas",
+      "comment": "Comentario del estudiante",
+      "score": "Puntaje",
+      "feedback": "Feedback",
+      "saveGrade": "Guardar calificacion",
+      "graded": "Entrega calificada",
+      "scoreRange": "Puntaje debe estar entre 0 y 100"
+    }
+  },
+  "student": {
+    "trabajos": {
+      "title": "Mis Trabajos",
+      "search": "Buscar trabajos",
+      "empty": "No tienes trabajos asignados",
+      "due": "Vence",
+      "saved": "Entrega guardada",
+      "notFound": "Trabajo no encontrado",
+      "delivery": "Tu entrega",
+      "answersJson": "Respuestas (JSON)",
+      "comment": "Comentario",
+      "fileUrl": "URL de archivo (opcional)",
+      "lastSubmit": "Ultima actualizacion",
+      "notSubmitted": "Aun no has enviado esta entrega",
+      "update": "Actualizar entrega",
+      "submit": "Enviar entrega"
     }
   },
   "lesson": {
@@ -1007,6 +1094,79 @@
         "addContentDesc": "Crear nuevo contenido o lección"
       }
     },
+    "cursos": {
+      "title": "Gestión de Cursos",
+      "description": "Administra cursos y asigna profesores",
+      "search": "Buscar por nombre, descripción o profesor...",
+      "create": {
+        "title": "Crear Nuevo Curso",
+        "button": "Nuevo Curso"
+      },
+      "edit": {
+        "title": "Editar Curso"
+      },
+      "form": {
+        "name": "Nombre",
+        "description": "Descripción",
+        "teacher": "Profesor asignado",
+        "noTeacher": "— Sin asignar —",
+        "active": "Activo"
+      },
+      "table": {
+        "name": "Nombre",
+        "description": "Descripción",
+        "teacher": "Profesor",
+        "status": "Estado",
+        "actions": "Acciones",
+        "noCursos": "No hay cursos para mostrar"
+      },
+      "stats": {
+        "total": "Total cursos",
+        "active": "Activos",
+        "assigned": "Con profesor",
+        "unassigned": "Sin profesor"
+      },
+      "noTeacher": "Sin asignar",
+      "active": "Activo",
+      "inactive": "Inactivo",
+      "actions": {
+        "edit": "Editar",
+        "delete": "Eliminar",
+        "students": "Estudiantes"
+      },
+      "confirmDelete": "¿Estás seguro de que deseas eliminar el curso \"{{nombre}}\"?",
+      "cancel": "Cancelar",
+      "save": "Guardar",
+      "saving": "Guardando...",
+      "creating": "Creando...",
+      "success": {
+        "created": "Curso creado exitosamente",
+        "updated": "Curso actualizado exitosamente",
+        "deleted": "Curso eliminado correctamente"
+      },
+      "errors": {
+        "loadError": "Error al cargar cursos",
+        "createError": "Error al crear curso",
+        "updateError": "Error al actualizar curso",
+        "deleteError": "Error al eliminar curso",
+        "nameRequired": "El nombre del curso es requerido"
+      },
+      "enrollment": {
+        "title": "Estudiantes del Curso",
+        "current": "Inscritos",
+        "noStudents": "Sin estudiantes inscritos",
+        "add": "Agregar estudiante",
+        "searchPlaceholder": "Buscar estudiante...",
+        "allEnrolled": "No hay más estudiantes disponibles",
+        "enroll": "Inscribir",
+        "enrolled": "Estudiante inscrito exitosamente",
+        "unenrolled": "Estudiante desinscrito exitosamente",
+        "confirmUnenroll": "¿Desinscribir a \"{{nombre}}\"?",
+        "loadError": "Error al cargar estudiantes",
+        "enrollError": "Error al inscribir estudiante",
+        "unenrollError": "Error al desinscribir estudiante"
+      }
+    },
     "modelos": {
       "title": "Gestión de Modelos RA",
       "subtitle": "Administra los modelos de Realidad Aumentada de la plataforma",
@@ -1151,6 +1311,12 @@
       "verified": "Verificada",
       "notVerified": "No verificada",
       "verificationStatus": "Estado de verificación",
+      "notVerifiedTitle": "Tu cuenta no está verificada",
+      "notVerifiedDesc": "Necesitas verificar tu correo electrónico para acceder a todas las funcionalidades de la plataforma.",
+      "resendVerification": "Reenviar verificación",
+      "sendingVerification": "Enviando...",
+      "verificationSent": "Correo de verificación enviado. Revisa tu bandeja de entrada.",
+      "verificationError": "Error al enviar el correo de verificación.",
       "signOut": "Cerrar sesión",
       "signOutConfirm": "¿Estás seguro de que deseas cerrar sesión?"
     },

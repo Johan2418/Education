@@ -17,6 +17,7 @@ import {
   CheckCircle,
   XCircle,
   Info,
+  Mail,
 } from "lucide-react";
 import { useSettings } from "@/features/settings/hooks/useSettings";
 
@@ -88,6 +89,27 @@ export default function SettingsPage() {
         <h1 className="text-3xl font-bold text-gray-900">⚙️ {hook.t("settingsPage.title")}</h1>
         <p className="text-gray-500 mt-1">{hook.t("settingsPage.subtitle")}</p>
       </div>
+
+      {/* Verification banner */}
+      {hook.isLoggedIn && !hook.profile?.is_verified && (
+        <div className="bg-amber-50 border border-amber-200 rounded-2xl p-5 flex flex-col sm:flex-row items-start sm:items-center gap-4">
+          <div className="p-2.5 bg-amber-100 rounded-xl shrink-0">
+            <Mail size={22} className="text-amber-600" />
+          </div>
+          <div className="flex-1">
+            <h3 className="font-semibold text-amber-800">{hook.t("settingsPage.account.notVerifiedTitle")}</h3>
+            <p className="text-sm text-amber-700 mt-0.5">{hook.t("settingsPage.account.notVerifiedDesc")}</p>
+          </div>
+          <button
+            onClick={hook.handleResendVerification}
+            disabled={hook.resendingVerification}
+            className={btnPrimary + " shrink-0 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700"}
+          >
+            {hook.resendingVerification ? <Loader2 size={16} className="animate-spin" /> : <Mail size={16} />}
+            {hook.resendingVerification ? hook.t("settingsPage.account.sendingVerification") : hook.t("settingsPage.account.resendVerification")}
+          </button>
+        </div>
+      )}
 
       {/* Profile */}
       {hook.isLoggedIn && (

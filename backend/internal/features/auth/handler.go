@@ -116,6 +116,20 @@ func (h *Handler) ListUsers(w http.ResponseWriter, r *http.Request) {
 	shared.Success(w, users)
 }
 
+func (h *Handler) ListStudents(w http.ResponseWriter, r *http.Request) {
+	claims := middleware.GetClaims(r.Context())
+	if claims.UserRole != "teacher" && claims.UserRole != "admin" && claims.UserRole != "super_admin" {
+		shared.Error(w, http.StatusForbidden, "No autorizado")
+		return
+	}
+	students, err := h.svc.ListStudents(r.Context())
+	if err != nil {
+		shared.Error(w, http.StatusInternalServerError, "Error listando estudiantes")
+		return
+	}
+	shared.Success(w, students)
+}
+
 func (h *Handler) GetUser(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	user, err := h.svc.GetUser(r.Context(), id)
@@ -146,9 +160,10 @@ func (h *Handler) RejectRole(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) DeleteUser(w http.ResponseWriter, r *http.Request) {
+	claims := middleware.GetClaims(r.Context())
 	id := chi.URLParam(r, "id")
-	if err := h.svc.DeleteUser(r.Context(), id); err != nil {
-		shared.Error(w, http.StatusInternalServerError, "Error eliminando usuario")
+	if err := h.svc.DeleteUser(r.Context(), id, claims.UserRole); err != nil {
+		shared.Error(w, http.StatusForbidden, err.Error())
 		return
 	}
 	shared.MessageOK(w, "Usuario eliminado")

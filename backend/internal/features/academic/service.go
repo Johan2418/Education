@@ -16,6 +16,10 @@ func (s *Service) ListCursos(ctx context.Context) ([]Curso, error) {
 	return s.repo.ListCursos(ctx)
 }
 
+func (s *Service) ListCursosByTeacher(ctx context.Context, teacherID string) ([]Curso, error) {
+	return s.repo.ListCursosByTeacher(ctx, teacherID)
+}
+
 func (s *Service) GetCurso(ctx context.Context, id string) (*Curso, error) {
 	return s.repo.GetCurso(ctx, id)
 }
@@ -39,6 +43,10 @@ func (s *Service) DeleteCurso(ctx context.Context, id string) error {
 
 func (s *Service) ListEstudianteCursos(ctx context.Context, estudianteID string) ([]EstudianteCurso, error) {
 	return s.repo.ListEstudianteCursos(ctx, estudianteID)
+}
+
+func (s *Service) ListEstudiantesByCurso(ctx context.Context, cursoID string) ([]EstudianteCursoDetail, error) {
+	return s.repo.ListEstudiantesByCurso(ctx, cursoID)
 }
 
 func (s *Service) EnrollStudent(ctx context.Context, req EstudianteCursoRequest) (*EstudianteCurso, error) {

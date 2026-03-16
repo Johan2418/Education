@@ -32,8 +32,8 @@ export default function TeacherPerformance() {
         // For admin/teacher, list users and their basic stats
         // The Go backend has GET /admin/users listing
         try {
-          const users: any[] = await api.get("/admin/users");
-          const studentUsers = (users || []).filter((u: any) => u.role === "student");
+          const res: any = await api.get("/admin/users");
+          const studentUsers = (res.data || []).filter((u: any) => u.role === "student");
           setStudents(
             studentUsers.map((u: any) => ({
               id: u.id,

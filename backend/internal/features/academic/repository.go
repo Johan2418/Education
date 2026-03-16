@@ -27,6 +27,12 @@ func (r *Repository) ListCursos(ctx context.Context) ([]Curso, error) {
 	return items, err
 }
 
+func (r *Repository) ListCursosByTeacher(ctx context.Context, teacherID string) ([]Curso, error) {
+	var items []Curso
+	err := r.db.WithContext(ctx).Where("teacher_id = ?", teacherID).Order("orden, nombre").Find(&items).Error
+	return items, err
+}
+
 func (r *Repository) GetCurso(ctx context.Context, id string) (*Curso, error) {
 	var c Curso
 	if err := r.db.WithContext(ctx).Where("id = ?", id).First(&c).Error; err != nil {
@@ -39,6 +45,7 @@ func (r *Repository) CreateCurso(ctx context.Context, req CursoRequest) (*Curso,
 	c := Curso{
 		Nombre:      req.Nombre,
 		Descripcion: req.Descripcion,
+		TeacherID:   req.TeacherID,
 	}
 	if req.Orden != nil {
 		c.Orden = *req.Orden
@@ -61,6 +68,13 @@ func (r *Repository) UpdateCurso(ctx context.Context, id string, req CursoReques
 	}
 	if req.Descripcion != nil {
 		updates["descripcion"] = *req.Descripcion
+	}
+	if req.TeacherID != nil {
+		if *req.TeacherID == "" {
+			updates["teacher_id"] = nil
+		} else {
+			updates["teacher_id"] = *req.TeacherID
+		}
 	}
 	if req.Orden != nil {
 		updates["orden"] = *req.Orden
@@ -87,6 +101,18 @@ func (r *Repository) DeleteCurso(ctx context.Context, id string) error {
 func (r *Repository) ListEstudianteCursos(ctx context.Context, estudianteID string) ([]EstudianteCurso, error) {
 	var items []EstudianteCurso
 	err := r.db.WithContext(ctx).Where("estudiante_id = ?", estudianteID).Find(&items).Error
+	return items, err
+}
+
+func (r *Repository) ListEstudiantesByCurso(ctx context.Context, cursoID string) ([]EstudianteCursoDetail, error) {
+	var items []EstudianteCursoDetail
+	err := r.db.WithContext(ctx).
+		Table("internal.estudiante_curso ec").
+		Select("ec.id, ec.estudiante_id, ec.curso_id, ec.anio_escolar, p.display_name, p.email, ec.created_at").
+		Joins("JOIN internal.profiles p ON p.id = ec.estudiante_id").
+		Where("ec.curso_id = ?", cursoID).
+		Order("p.display_name, p.email").
+		Scan(&items).Error
 	return items, err
 }
 

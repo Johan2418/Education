@@ -13,6 +13,7 @@ import {
   Type,
   Contrast,
   Plus,
+  FileSpreadsheet,
   X,
   LayoutDashboard,
 } from "lucide-react";
@@ -180,9 +181,21 @@ const Sidebar: FC<SidebarProps> = ({
                 <BookOpenText size={16} />
                 <span>{isAdmin ? hook.t("teacher.pruebas.titleAll") : hook.t("teacher.pruebas.title")}</span>
               </button>
+              <button onClick={() => hook.navigate("/teacher/trabajos")} className="flex items-center space-x-2 p-2 rounded hover:bg-blue-800 transition text-left">
+                <BookOpenText size={16} />
+                <span>{hook.t("teacher.trabajos.title", { defaultValue: "Trabajos" })}</span>
+              </button>
               <button onClick={() => hook.navigate("/teacher/performance")} className="flex items-center space-x-2 p-2 rounded hover:bg-blue-800 transition text-left">
                 <BookOpenText size={16} />
                 <span>{isAdmin ? hook.t("teacher.performance.titleAll") : hook.t("teacher.performance.title")}</span>
+              </button>
+              <button onClick={() => hook.navigate("/teacher/estudiantes")} className="flex items-center space-x-2 p-2 rounded hover:bg-blue-800 transition text-left">
+                <BookOpenText size={16} />
+                <span>{hook.t("teacher.estudiantes.title", { defaultValue: "Mis Estudiantes" })}</span>
+              </button>
+              <button onClick={() => hook.navigate("/teacher/bulk-import")} className="flex items-center space-x-2 p-2 rounded hover:bg-blue-800 transition text-left">
+                <FileSpreadsheet size={16} />
+                <span>Importar Estudiantes</span>
               </button>
             </>
           )}
@@ -196,14 +209,25 @@ const Sidebar: FC<SidebarProps> = ({
               <button onClick={() => hook.navigate("/admin/users")} className="flex items-center space-x-2 p-2 rounded hover:bg-blue-800 transition text-left">
                 <PersonStanding size={16} /> <span>{hook.t("admin.users.title")}</span>
               </button>
+              <button onClick={() => hook.navigate("/admin/cursos")} className="flex items-center space-x-2 p-2 rounded hover:bg-blue-800 transition text-left">
+                <BookOpenText size={16} /> <span>{hook.t("admin.cursos.title", { defaultValue: "Cursos" })}</span>
+              </button>
+              <button onClick={() => hook.navigate("/admin/bulk-import")} className="flex items-center space-x-2 p-2 rounded hover:bg-blue-800 transition text-left">
+                <FileSpreadsheet size={16} /> <span>Importación Masiva</span>
+              </button>
             </>
           )}
 
           {/* Student dashboard */}
           {hook.profile?.role === "student" && (
-            <button onClick={() => hook.navigate("/student/dashboard")} className="flex items-center space-x-2 p-2 rounded hover:bg-blue-800 transition text-left">
-              <LayoutDashboard size={16} /> <span>Dashboard</span>
-            </button>
+            <>
+              <button onClick={() => hook.navigate("/student/dashboard")} className="flex items-center space-x-2 p-2 rounded hover:bg-blue-800 transition text-left">
+                <LayoutDashboard size={16} /> <span>Dashboard</span>
+              </button>
+              <button onClick={() => hook.navigate("/student/trabajos")} className="flex items-center space-x-2 p-2 rounded hover:bg-blue-800 transition text-left">
+                <BookOpenText size={16} /> <span>{hook.t("student.trabajos.title", { defaultValue: "Mis Trabajos" })}</span>
+              </button>
+            </>
           )}
         </nav>
 

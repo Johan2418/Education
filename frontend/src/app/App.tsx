@@ -6,7 +6,7 @@ import MainContent from "@/app/layout/MainContent";
 import "@/shared/config/i18n";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import Login from "@/features/auth/pages/login";
-import Register from "@/features/auth/pages/register";
+// import Register from "@/features/auth/pages/register"; // Registration disabled
 import ResetPassword from "@/features/auth/pages/resetPassword";
 import VerifyEmail from "@/features/auth/pages/verifyEmail";
 import AddContentPage from "@/features/content/pages/addContent";
@@ -25,7 +25,15 @@ import PruebaPage from "@/features/pruebas/pages/prueba";
 import AdminUsers from "@/features/admin/pages/adminUsers";
 import AdminDashboard from "@/features/admin/pages/adminDashboard";
 import AdminModelos from "@/features/admin/pages/adminModelos";
+import AdminCursos from "@/features/admin/pages/adminCursos";
+import AdminBulkImport from "@/features/admin/pages/adminBulkImport";
+import TeacherEstudiantes from "@/features/teacher/pages/teacherEstudiantes";
+import TeacherBulkImport from "@/features/teacher/pages/teacherBulkImport";
+import TeacherTrabajos from "@/features/trabajos/pages/teacherTrabajos";
+import TeacherTrabajoCalificar from "@/features/trabajos/pages/teacherTrabajoCalificar";
 import StudentDashboard from "@/features/student/pages/studentDashboard";
+import StudentTrabajos from "@/features/trabajos/pages/studentTrabajos";
+import StudentTrabajoDetail from "@/features/trabajos/pages/studentTrabajoDetail";
 import Molecules from "@/features/chemistry/pages/molecules";
 import Atoms from "@/features/chemistry/pages/atoms";
 import PeriodicTable from "@/features/chemistry/pages/periodicTable";
@@ -123,7 +131,8 @@ function App() {
             <Routes>
               <Route path="/" element={<MainContent textSizeLarge={textSizeLarge} highContrast={highContrast} />} />
               <Route path="/login" element={<Login textSizeLarge={textSizeLarge} highContrast={highContrast} />} />
-              <Route path="/register" element={<Register textSizeLarge={textSizeLarge} highContrast={highContrast} />} />
+              {/* Registration disabled — only admins create users */}
+              <Route path="/register" element={<Login textSizeLarge={textSizeLarge} highContrast={highContrast} />} />
               <Route path="/verify" element={<VerifyEmail textSizeLarge={textSizeLarge} highContrast={highContrast} />} />
               <Route path="/reset-password" element={<ResetPassword textSizeLarge={textSizeLarge} highContrast={highContrast} />} />
               <Route path="/add-content" element={<AddContentPage />} />
@@ -136,11 +145,19 @@ function App() {
               <Route path="/teacher/lessons" element={<TeacherLessons />} />
               <Route path="/teacher/contents" element={<TeacherContents />} />
               <Route path="/teacher/pruebas" element={<TeacherPruebas />} />
+              <Route path="/teacher/trabajos" element={<TeacherTrabajos />} />
+              <Route path="/teacher/trabajos/:trabajoId/calificar" element={<TeacherTrabajoCalificar />} />
               <Route path="/teacher/performance" element={<TeacherPerformance />} />
+              <Route path="/teacher/estudiantes" element={<TeacherEstudiantes />} />
               <Route path="/admin/users" element={<AdminUsers />} />
               <Route path="/admin/dashboard" element={<AdminDashboard />} />
               <Route path="/admin/modelos" element={<AdminModelos />} />
+              <Route path="/admin/cursos" element={<AdminCursos />} />
+              <Route path="/admin/bulk-import" element={<AdminBulkImport />} />
+              <Route path="/teacher/bulk-import" element={<TeacherBulkImport />} />
               <Route path="/student/dashboard" element={<StudentDashboard />} />
+              <Route path="/student/trabajos" element={<StudentTrabajos />} />
+              <Route path="/student/trabajos/:trabajoId" element={<StudentTrabajoDetail />} />
               <Route path="/molecules" element={<Molecules />} />
               <Route path="/atoms" element={<Atoms />} />
               <Route path="/periodic-table" element={<PeriodicTable />} />

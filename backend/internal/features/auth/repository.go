@@ -126,6 +126,15 @@ func (r *Repository) ListAll(ctx context.Context) ([]Profile, error) {
 	return profiles, err
 }
 
+func (r *Repository) ListStudents(ctx context.Context) ([]Profile, error) {
+	var profiles []Profile
+	err := r.db.WithContext(ctx).
+		Where("role = ?::internal.user_role", "student").
+		Order("display_name, email").
+		Find(&profiles).Error
+	return profiles, err
+}
+
 func (r *Repository) ApproveRoleRequest(ctx context.Context, userID string) (*Profile, error) {
 	result := r.db.WithContext(ctx).
 		Model(&Profile{}).

@@ -1,16 +1,26 @@
 package config
 
 import (
+	"bufio"
 	"fmt"
+	"log"
 	"os"
+	"path/filepath"
 	"strconv"
+	"strings"
 )
 
 type Config struct {
-	Server   ServerConfig
-	Database DatabaseConfig
-	JWT      JWTConfig
-	Email    EmailConfig
+	Server      ServerConfig
+	Database    DatabaseConfig
+	JWT         JWTConfig
+	Email       EmailConfig
+	HuggingFace HuggingFaceConfig
+}
+
+type HuggingFaceConfig struct {
+	APIKey string
+	Model  string
 }
 
 type EmailConfig struct {
@@ -48,6 +58,8 @@ type JWTConfig struct {
 }
 
 func Load() *Config {
+	loadDotEnvIfPresent()
+
 	return &Config{
 		Server: ServerConfig{
 			Port: envOrDefault("SERVER_PORT", "8082"),
@@ -55,13 +67,13 @@ func Load() *Config {
 		Database: DatabaseConfig{
 			Host:     envOrDefault("DB_HOST", "localhost"),
 			Port:     envOrDefaultInt("DB_PORT", 5433),
-			User:     envOrDefault("DB_USER", "cross_education_admin"),
-			Password: envOrDefault("DB_PASSWORD", "123456"),
+			User:     envRequired("DB_USER"),
+			Password: envRequired("DB_PASSWORD"),
 			DBName:   envOrDefault("DB_NAME", "education"),
 			SSLMode:  envOrDefault("DB_SSLMODE", "disable"),
 		},
 		JWT: JWTConfig{
-			Secret:      envOrDefault("JWT_SECRET", "nrIqtHlnp9PaFmpuIEEnDcDig/fDq7Z2dac7OZQ1730="),
+			Secret:      envRequired("JWT_SECRET"),
 			ExpireHours: envOrDefaultInt("JWT_EXPIRE_HOURS", 168), // 7 days
 		},
 		Email: EmailConfig{
@@ -72,7 +84,66 @@ func Load() *Config {
 			FromEmail:   envOrDefault("SMTP_FROM", ""),
 			FrontendURL: envOrDefault("FRONTEND_URL", "http://localhost:5173"),
 		},
+		HuggingFace: HuggingFaceConfig{
+			APIKey: envOrDefault("HUGGINGFACE_API_KEY", ""),
+			Model:  envOrDefault("HUGGINGFACE_MODEL", "mistralai/Mistral-7B-Instruct-v0.3"),
+		},
 	}
+}
+
+func loadDotEnvIfPresent() {
+	paths := []string{".env", "../.env", "../../.env"}
+	for _, p := range paths {
+		if err := loadDotEnvFile(p); err == nil {
+			return
+		}
+	}
+}
+
+func loadDotEnvFile(path string) error {
+	cleanPath := filepath.Clean(path)
+	f, err := os.Open(cleanPath)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+
+		idx := strings.Index(line, "=")
+		if idx <= 0 {
+			continue
+		}
+
+		key := strings.TrimSpace(line[:idx])
+		value := strings.TrimSpace(line[idx+1:])
+		if key == "" {
+			continue
+		}
+
+		// Keep explicit shell env values as source of truth.
+		if _, exists := os.LookupEnv(key); exists {
+			continue
+		}
+
+		value = strings.Trim(value, `"`)
+		_ = os.Setenv(key, value)
+	}
+
+	return scanner.Err()
+}
+
+func envRequired(key string) string {
+	v := os.Getenv(key)
+	if v == "" {
+		log.Fatalf("FATAL: la variable de entorno %s es obligatoria y no está definida", key)
+	}
+	return v
 }
 
 func envOrDefault(key, fallback string) string {

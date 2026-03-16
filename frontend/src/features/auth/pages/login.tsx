@@ -212,12 +212,13 @@ export default function Login({ highContrast = false }: Props) {
             </a>
           </div>
 
-          {/* Register link */}
+          {/* Register link — disabled, only admins create users
           <div className="flex justify-end">
             <a href="/register" className={`text-sm font-medium hover:underline ${highContrast ? "text-yellow-400" : "text-indigo-600"}`}>
               {t("login.noAccount")}
             </a>
           </div>
+          */}
 
           {/* Help text */}
           <div className="mt-4 text-xs text-gray-500">

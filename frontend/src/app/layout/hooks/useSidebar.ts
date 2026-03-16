@@ -26,6 +26,9 @@ export function useSidebar(opts: UseSidebarOptions) {
 
   useEffect(() => {
     getMe().then(setProfile);
+    const onAuthChange = () => getMe().then(setProfile);
+    window.addEventListener("auth-change", onAuthChange);
+    return () => window.removeEventListener("auth-change", onAuthChange);
   }, []);
 
   const toggleMenu = useCallback((key: string) => {

@@ -12,6 +12,7 @@ type Curso struct {
 	ID          string    `json:"id" gorm:"column:id;primaryKey;default:gen_random_uuid()"`
 	Nombre      string    `json:"nombre" gorm:"column:nombre;uniqueIndex"`
 	Descripcion *string   `json:"descripcion" gorm:"column:descripcion"`
+	TeacherID   *string   `json:"teacher_id" gorm:"column:teacher_id"`
 	Orden       int       `json:"orden" gorm:"column:orden;default:0"`
 	Activo      bool      `json:"activo" gorm:"column:activo;default:true"`
 	CreatedAt   time.Time `json:"created_at" gorm:"column:created_at;autoCreateTime"`
@@ -23,6 +24,7 @@ func (Curso) TableName() string { return "internal.curso" }
 type CursoRequest struct {
 	Nombre      string  `json:"nombre"`
 	Descripcion *string `json:"descripcion"`
+	TeacherID   *string `json:"teacher_id"`
 	Orden       *int    `json:"orden"`
 	Activo      *bool   `json:"activo"`
 }
@@ -43,6 +45,18 @@ type EstudianteCursoRequest struct {
 	EstudianteID string  `json:"estudiante_id"`
 	CursoID      string  `json:"curso_id"`
 	AnioEscolar  *string `json:"anio_escolar"`
+}
+
+// EstudianteCursoDetail is a read-only DTO returned by ListEstudiantesByCurso
+// with student profile info joined.
+type EstudianteCursoDetail struct {
+	ID           string    `json:"id"`
+	EstudianteID string    `json:"estudiante_id"`
+	CursoID      string    `json:"curso_id"`
+	AnioEscolar  *string   `json:"anio_escolar"`
+	DisplayName  *string   `json:"display_name"`
+	Email        string    `json:"email"`
+	CreatedAt    time.Time `json:"created_at"`
 }
 
 // ─── Materia ────────────────────────────────────────────────

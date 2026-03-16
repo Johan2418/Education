@@ -30,9 +30,10 @@ export default function AddContentPage() {
           navigate("/login");
           return;
         }
-        const c: Curso[] = await api.get("/cursos");
-        setCursos(c || []);
-        if (c && c.length > 0) setSelectedCursoId(c[0]?.id ?? null);
+        const res = await api.get<{ data: Curso[] }>("/cursos");
+        const c = res.data || [];
+        setCursos(c);
+        if (c.length > 0) setSelectedCursoId(c[0]?.id ?? null);
       } catch {
         toast.error(t("addcontent.loadError", { defaultValue: "Error al cargar datos" }));
       } finally {

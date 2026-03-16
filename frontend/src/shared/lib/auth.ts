@@ -21,6 +21,7 @@ interface TokenResponse {
 export async function login(email: string, password: string): Promise<AuthUser> {
   const res = await api.post<{ data: TokenResponse }>("/auth/login", { email, password });
   setToken(res.data.token);
+  window.dispatchEvent(new Event("auth-change"));
   return res.data.profile;
 }
 
@@ -72,6 +73,7 @@ export async function updateProfile(data: {
 
 export function signOut(): void {
   clearToken();
+  window.dispatchEvent(new Event("auth-change"));
   window.location.href = "/login";
 }
 

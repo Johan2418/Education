@@ -81,9 +81,10 @@ func (s *Service) Login(ctx context.Context, req LoginRequest) (*TokenResponse, 
 		return nil, errors.New("credenciales inválidas")
 	}
 
-	if !user.IsVerified {
-		return nil, errors.New("cuenta no verificada")
-	}
+	// TODO: re-enable when email verification is mandatory
+	// if !user.IsVerified {
+	// 	return nil, errors.New("cuenta no verificada")
+	// }
 
 	_ = s.repo.UpdateLastAccess(ctx, user.ID)
 
@@ -104,8 +105,8 @@ func (s *Service) UpdateProfile(ctx context.Context, userID string, req UpdatePr
 }
 
 func (s *Service) CreateAdmin(ctx context.Context, req CreateAdminRequest, callerRole, callerID string) (*Profile, error) {
-	if callerRole != "super_admin" {
-		return nil, errors.New("solo un super_admin puede crear administradores")
+	if callerRole != "admin" && callerRole != "super_admin" {
+		return nil, errors.New("solo un administrador puede crear usuarios")
 	}
 	if len(req.Password) < 8 {
 		return nil, errors.New("la contraseña debe tener al menos 8 caracteres")
@@ -121,16 +122,25 @@ func (s *Service) CreateAdmin(ctx context.Context, req CreateAdminRequest, calle
 
 func (s *Service) ChangeRole(ctx context.Context, req ChangeRoleRequest, callerRole string) (*Profile, error) {
 	validRoles := map[string]bool{
-		"student": true, "teacher": true, "resource_manager": true, "admin": true, "super_admin": true,
+		"student": true, "teacher": true, "resource_manager": true, "admin": true,
 	}
 	if !validRoles[req.NewRole] {
 		return nil, errors.New("rol inválido")
 	}
-	if (req.NewRole == "admin" || req.NewRole == "super_admin") && callerRole != "super_admin" {
-		return nil, errors.New("solo un super_admin puede asignar roles admin o super_admin")
+	if req.NewRole == "admin" && callerRole != "super_admin" {
+		return nil, errors.New("solo un super_admin puede asignar el rol admin")
 	}
 	if callerRole != "admin" && callerRole != "super_admin" {
 		return nil, errors.New("no tienes permisos para cambiar roles")
+	}
+
+	// Prevent admin from modifying a super_admin
+	target, err := s.repo.GetByID(ctx, req.UserID)
+	if err != nil {
+		return nil, errors.New("usuario no encontrado")
+	}
+	if target.Role == "super_admin" && callerRole != "super_admin" {
+		return nil, errors.New("no puedes modificar a un super administrador")
 	}
 
 	return s.repo.UpdateRole(ctx, req.UserID, req.NewRole)
@@ -138,6 +148,10 @@ func (s *Service) ChangeRole(ctx context.Context, req ChangeRoleRequest, callerR
 
 func (s *Service) ListUsers(ctx context.Context) ([]Profile, error) {
 	return s.repo.ListAll(ctx)
+}
+
+func (s *Service) ListStudents(ctx context.Context) ([]Profile, error) {
+	return s.repo.ListStudents(ctx)
 }
 
 func (s *Service) GetUser(ctx context.Context, userID string) (*Profile, error) {
@@ -152,7 +166,17 @@ func (s *Service) RejectRoleRequest(ctx context.Context, userID string) error {
 	return s.repo.RejectRoleRequest(ctx, userID)
 }
 
-func (s *Service) DeleteUser(ctx context.Context, userID string) error {
+func (s *Service) DeleteUser(ctx context.Context, userID, callerRole string) error {
+	target, err := s.repo.GetByID(ctx, userID)
+	if err != nil {
+		return errors.New("usuario no encontrado")
+	}
+	if target.Role == "super_admin" {
+		return errors.New("no se puede eliminar a un super administrador")
+	}
+	if target.Role == "admin" && callerRole != "super_admin" {
+		return errors.New("solo un super_admin puede eliminar administradores")
+	}
 	return s.repo.Delete(ctx, userID)
 }
 

@@ -22,12 +22,13 @@ export default function TeacherContents() {
           navigate("/login");
           return;
         }
-        const cursos: any[] = await api.get("/cursos");
+        const cursosRes = await api.get<{ data: any[] }>("/cursos");
+        const cursos = cursosRes.data || [];
         const all: Materia[] = [];
-        for (const c of cursos || []) {
+        for (const c of cursos) {
           try {
-            const mats: Materia[] = await api.get(`/cursos/${c.id}/materias`);
-            all.push(...(mats || []));
+            const matsRes = await api.get<{ data: Materia[] }>(`/cursos/${c.id}/materias`);
+            all.push(...(matsRes.data || []));
           } catch { /* skip */ }
         }
         setMaterias(all);

@@ -21,8 +21,10 @@ import (
 
 	"github.com/arcanea/backend/internal/features/academic"
 	"github.com/arcanea/backend/internal/features/auth"
+	"github.com/arcanea/backend/internal/features/bulkimport"
 	"github.com/arcanea/backend/internal/features/evaluations"
 	"github.com/arcanea/backend/internal/features/resources"
+	"github.com/arcanea/backend/internal/features/trabajos"
 )
 
 func main() {
@@ -62,6 +64,14 @@ func main() {
 	evalSvc := evaluations.NewService(evalRepo)
 	evalH := evaluations.NewHandler(evalSvc)
 
+	trabRepo := trabajos.NewRepository(db)
+	trabSvc := trabajos.NewService(trabRepo)
+	trabH := trabajos.NewHandler(trabSvc)
+
+	aiSvc := bulkimport.NewAIService(cfg.HuggingFace)
+	bulkSvc := bulkimport.NewService(authRepo, acadRepo, aiSvc)
+	bulkH := bulkimport.NewHandler(bulkSvc)
+
 	// ── Router ──────────────────────────────────────────────
 	r := chi.NewRouter()
 
@@ -89,7 +99,7 @@ func main() {
 	})
 
 	// ── Public auth routes ──────────────────────────────────
-	r.Post("/auth/register", authH.Register)
+	// r.Post("/auth/register", authH.Register) // Registration disabled — only admins create users
 	r.Post("/auth/login", authH.Login)
 	r.Get("/auth/verify", authH.VerifyEmail)
 	r.Post("/auth/resend-verification", authH.ResendVerification)
@@ -101,6 +111,7 @@ func main() {
 		// Auth / Profile
 		r.Get("/auth/me", authH.Me)
 		r.Put("/auth/profile", authH.UpdateProfile)
+		r.Get("/students", authH.ListStudents)
 
 		// ── Academic: Cursos ────────────────────────────────
 		r.Get("/cursos", acadH.ListCursos)
@@ -200,6 +211,19 @@ func main() {
 		r.Put("/progreso-secciones", evalH.UpsertProgresoSeccion)
 		r.Get("/lecciones/{leccionId}/progreso-secciones", evalH.ListProgresoSecciones)
 
+		// ── Trabajos ───────────────────────────────────────
+		r.Get("/lecciones/{leccionId}/trabajos", trabH.ListTrabajosByLeccion)
+		r.Post("/trabajos", trabH.CreateTrabajo)
+		r.Put("/trabajos/{trabajoId}/publicar", trabH.PublicarTrabajo)
+		r.Put("/trabajos/{trabajoId}/cerrar", trabH.CerrarTrabajo)
+		r.Get("/trabajos/{trabajoId}", trabH.GetTrabajo)
+		r.Get("/mis-trabajos", trabH.ListMisTrabajos)
+		r.Post("/trabajos/{trabajoId}/entregas", trabH.UpsertEntrega)
+		r.Get("/trabajos/{trabajoId}/mi-entrega", trabH.GetMiEntrega)
+		r.Put("/entregas/{entregaId}", trabH.UpdateEntregaByID)
+		r.Get("/trabajos/{trabajoId}/entregas", trabH.ListEntregasByTrabajo)
+		r.Put("/entregas/{entregaId}/calificar", trabH.CalificarEntrega)
+
 		// ── Admin routes ────────────────────────────────────
 		r.Group(func(r chi.Router) {
 			r.Use(middleware.RequireRole("admin", "super_admin"))
@@ -210,13 +234,14 @@ func main() {
 			r.Post("/admin/users/{id}/approve-role", authH.ApproveRole)
 			r.Post("/admin/users/{id}/reject-role", authH.RejectRole)
 			r.Delete("/admin/users/{id}", authH.DeleteUser)
+			r.Post("/admin/create-admin", authH.CreateAdmin)
+			r.Post("/admin/bulk-import/map-columns", bulkH.MapColumns)
+			r.Post("/admin/bulk-import", bulkH.AdminBulkImport)
 		})
 
-		// Super admin only
-		r.Group(func(r chi.Router) {
-			r.Use(middleware.RequireRole("super_admin"))
-			r.Post("/admin/create-admin", authH.CreateAdmin)
-		})
+		// Teacher bulk import (teachers + admins)
+		r.Post("/teacher/bulk-import/map-columns", bulkH.MapColumns)
+		r.Post("/teacher/bulk-import/{cursoId}", bulkH.TeacherBulkImport)
 	})
 
 	// ── Server ──────────────────────────────────────────────

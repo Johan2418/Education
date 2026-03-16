@@ -684,6 +684,93 @@
       "lessonsLabel": "lessons",
       "averageScore": "Average",
       "followedContents": "Followed Contents"
+    },
+    "estudiantes": {
+      "title": "My Students",
+      "enrolled": "enrolled",
+      "enroll": "Enroll",
+      "unenroll": "Unenroll",
+      "searchPlaceholder": "Search by name or email...",
+      "empty": "No students enrolled yet",
+      "noResults": "No results",
+      "noCurso": "You don't have a course assigned",
+      "noCursoDesc": "Contact an administrator to assign you a course.",
+      "confirmUnenroll": "Unenroll \"{{nombre}}\"?",
+      "table": {
+        "name": "Name",
+        "email": "Email",
+        "enrolledAt": "Enrolled on",
+        "actions": "Actions"
+      },
+      "enrollModal": {
+        "title": "Enroll Student",
+        "search": "Search student...",
+        "add": "Enroll",
+        "noStudents": "No students registered",
+        "allEnrolled": "All students are already enrolled"
+      },
+      "success": {
+        "enrolled": "Student enrolled successfully",
+        "unenrolled": "Student unenrolled successfully"
+      },
+      "errors": {
+        "loadError": "Error loading data",
+        "loadStudents": "Error loading students",
+        "enrollError": "Error enrolling student",
+        "unenrollError": "Error unenrolling student"
+      }
+    },
+    "trabajos": {
+      "title": "Assignments",
+      "new": "New Assignment",
+      "search": "Search by title, lesson or status",
+      "empty": "No assignments found",
+      "loadError": "Error loading assignments",
+      "validation": "Lesson and title are required",
+      "created": "Assignment created",
+      "confirmPublish": "Do you want to publish this assignment?",
+      "confirmClose": "Do you want to close this assignment?",
+      "published": "Assignment published",
+      "closed": "Assignment closed",
+      "grade": "Grade",
+      "createTitle": "Create assignment",
+      "leccion": "Lesson",
+      "titulo": "Title",
+      "descripcion": "Description",
+      "instrucciones": "Instructions",
+      "fechaVencimiento": "Due date",
+      "gradingTitle": "Grading inbox",
+      "gradeForm": "Grade submission",
+      "noTrabajo": "Invalid assignment",
+      "noEntregas": "No submissions for this assignment",
+      "selectEntrega": "Select a submission",
+      "gradedTag": "Graded",
+      "pendingTag": "Pending",
+      "respuestas": "Answers",
+      "comment": "Student comment",
+      "score": "Score",
+      "feedback": "Feedback",
+      "saveGrade": "Save grade",
+      "graded": "Submission graded",
+      "scoreRange": "Score must be between 0 and 100"
+    }
+  },
+  "student": {
+    "trabajos": {
+      "title": "My Assignments",
+      "search": "Search assignments",
+      "empty": "You have no assigned work",
+      "due": "Due",
+      "saved": "Submission saved",
+      "notFound": "Assignment not found",
+      "delivery": "Your submission",
+      "answersJson": "Answers (JSON)",
+      "comment": "Comment",
+      "fileUrl": "File URL (optional)",
+      "lastSubmit": "Last update",
+      "notSubmitted": "You have not submitted yet",
+      "update": "Update submission",
+      "submit": "Submit"
     }
   },
   "lesson": {
@@ -1008,6 +1095,79 @@
         "addContentDesc": "Create new content or lesson"
       }
     },
+    "cursos": {
+      "title": "Course Management",
+      "description": "Manage courses and assign teachers",
+      "search": "Search by name, description or teacher...",
+      "create": {
+        "title": "Create New Course",
+        "button": "New Course"
+      },
+      "edit": {
+        "title": "Edit Course"
+      },
+      "form": {
+        "name": "Name",
+        "description": "Description",
+        "teacher": "Assigned teacher",
+        "noTeacher": "— Not assigned —",
+        "active": "Active"
+      },
+      "table": {
+        "name": "Name",
+        "description": "Description",
+        "teacher": "Teacher",
+        "status": "Status",
+        "actions": "Actions",
+        "noCursos": "No courses to display"
+      },
+      "stats": {
+        "total": "Total courses",
+        "active": "Active",
+        "assigned": "With teacher",
+        "unassigned": "Without teacher"
+      },
+      "noTeacher": "Not assigned",
+      "active": "Active",
+      "inactive": "Inactive",
+      "actions": {
+        "edit": "Edit",
+        "delete": "Delete",
+        "students": "Students"
+      },
+      "confirmDelete": "Are you sure you want to delete course \"{{nombre}}\"?",
+      "cancel": "Cancel",
+      "save": "Save",
+      "saving": "Saving...",
+      "creating": "Creating...",
+      "success": {
+        "created": "Course created successfully",
+        "updated": "Course updated successfully",
+        "deleted": "Course deleted successfully"
+      },
+      "errors": {
+        "loadError": "Error loading courses",
+        "createError": "Error creating course",
+        "updateError": "Error updating course",
+        "deleteError": "Error deleting course",
+        "nameRequired": "Course name is required"
+      },
+      "enrollment": {
+        "title": "Course Students",
+        "current": "Enrolled",
+        "noStudents": "No students enrolled",
+        "add": "Add student",
+        "searchPlaceholder": "Search student...",
+        "allEnrolled": "No more students available",
+        "enroll": "Enroll",
+        "enrolled": "Student enrolled successfully",
+        "unenrolled": "Student unenrolled successfully",
+        "confirmUnenroll": "Unenroll \"{{nombre}}\"?",
+        "loadError": "Error loading students",
+        "enrollError": "Error enrolling student",
+        "unenrollError": "Error unenrolling student"
+      }
+    },
     "modelos": {
       "title": "AR Models Management",
       "subtitle": "Manage Augmented Reality models on the platform",
@@ -1152,6 +1312,12 @@
       "verified": "Verified",
       "notVerified": "Not verified",
       "verificationStatus": "Verification status",
+      "notVerifiedTitle": "Your account is not verified",
+      "notVerifiedDesc": "You need to verify your email to access all platform features.",
+      "resendVerification": "Resend verification",
+      "sendingVerification": "Sending...",
+      "verificationSent": "Verification email sent. Check your inbox.",
+      "verificationError": "Error sending verification email.",
       "signOut": "Sign out",
       "signOutConfirm": "Are you sure you want to sign out?"
     },
