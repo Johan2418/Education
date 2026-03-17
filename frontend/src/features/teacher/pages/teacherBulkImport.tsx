@@ -69,6 +69,10 @@ export default function TeacherBulkImport() {
                     navigate("/login");
                     return;
                 }
+                if (["admin", "super_admin"].includes(me.role || "")) {
+                    navigate("/admin/bulk-import");
+                    return;
+                }
                 const cursosRes = await api.get<{ data: Curso[] }>("/cursos");
                 const cursos = cursosRes.data || [];
                 const firstCurso = cursos.length > 0 ? cursos[0] : null;

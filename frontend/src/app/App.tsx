@@ -27,10 +27,14 @@ import AdminDashboard from "@/features/admin/pages/adminDashboard";
 import AdminModelos from "@/features/admin/pages/adminModelos";
 import AdminCursos from "@/features/admin/pages/adminCursos";
 import AdminBulkImport from "@/features/admin/pages/adminBulkImport";
+import AdminBulkEnroll from "@/features/admin/pages/adminBulkEnroll";
 import TeacherEstudiantes from "@/features/teacher/pages/teacherEstudiantes";
 import TeacherBulkImport from "@/features/teacher/pages/teacherBulkImport";
 import TeacherTrabajos from "@/features/trabajos/pages/teacherTrabajos";
 import TeacherTrabajoCalificar from "@/features/trabajos/pages/teacherTrabajoCalificar";
+import TeacherTrabajoLibroWizard from "@/features/trabajos/pages/teacherTrabajoLibroWizard";
+import TeacherTrabajoReportes from "@/features/trabajos/pages/teacherTrabajoReportes";
+import TeacherTrabajosAnalytics from "@/features/trabajos/pages/teacherTrabajosAnalytics";
 import StudentDashboard from "@/features/student/pages/studentDashboard";
 import StudentTrabajos from "@/features/trabajos/pages/studentTrabajos";
 import StudentTrabajoDetail from "@/features/trabajos/pages/studentTrabajoDetail";
@@ -147,6 +151,9 @@ function App() {
               <Route path="/teacher/pruebas" element={<TeacherPruebas />} />
               <Route path="/teacher/trabajos" element={<TeacherTrabajos />} />
               <Route path="/teacher/trabajos/:trabajoId/calificar" element={<TeacherTrabajoCalificar />} />
+              <Route path="/teacher/trabajos/:trabajoId/libro" element={<TeacherTrabajoLibroWizard />} />
+              <Route path="/teacher/trabajos/:trabajoId/reportes" element={<TeacherTrabajoReportes />} />
+              <Route path="/teacher/trabajos/analytics" element={<TeacherTrabajosAnalytics />} />
               <Route path="/teacher/performance" element={<TeacherPerformance />} />
               <Route path="/teacher/estudiantes" element={<TeacherEstudiantes />} />
               <Route path="/admin/users" element={<AdminUsers />} />
@@ -154,6 +161,7 @@ function App() {
               <Route path="/admin/modelos" element={<AdminModelos />} />
               <Route path="/admin/cursos" element={<AdminCursos />} />
               <Route path="/admin/bulk-import" element={<AdminBulkImport />} />
+              <Route path="/admin/bulk-enroll" element={<AdminBulkEnroll />} />
               <Route path="/teacher/bulk-import" element={<TeacherBulkImport />} />
               <Route path="/student/dashboard" element={<StudentDashboard />} />
               <Route path="/student/trabajos" element={<StudentTrabajos />} />

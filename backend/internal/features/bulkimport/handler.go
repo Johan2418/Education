@@ -2,6 +2,7 @@ package bulkimport
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 
@@ -60,6 +61,11 @@ func (h *Handler) AdminBulkImport(w http.ResponseWriter, r *http.Request) {
 
 	resp, err := h.svc.AdminBulkImport(r.Context(), req, claims.Subject)
 	if err != nil {
+		errMsg := strings.ToLower(err.Error())
+		if strings.Contains(errMsg, "curso no encontrado") || strings.Contains(errMsg, "mapeo") || strings.Contains(errMsg, "filas") {
+			shared.Error(w, http.StatusBadRequest, "Error en importación: "+err.Error())
+			return
+		}
 		shared.Error(w, http.StatusInternalServerError, "Error en importación: "+err.Error())
 		return
 	}

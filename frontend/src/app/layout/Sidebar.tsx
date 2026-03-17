@@ -185,6 +185,10 @@ const Sidebar: FC<SidebarProps> = ({
                 <BookOpenText size={16} />
                 <span>{hook.t("teacher.trabajos.title", { defaultValue: "Trabajos" })}</span>
               </button>
+              <button onClick={() => hook.navigate("/teacher/trabajos/analytics")} className="flex items-center space-x-2 p-2 rounded hover:bg-blue-800 transition text-left">
+                <LayoutDashboard size={16} />
+                <span>{hook.t("teacher.trabajos.analytics.nav", { defaultValue: "Analytics v2" })}</span>
+              </button>
               <button onClick={() => hook.navigate("/teacher/performance")} className="flex items-center space-x-2 p-2 rounded hover:bg-blue-800 transition text-left">
                 <BookOpenText size={16} />
                 <span>{isAdmin ? hook.t("teacher.performance.titleAll") : hook.t("teacher.performance.title")}</span>
@@ -193,10 +197,12 @@ const Sidebar: FC<SidebarProps> = ({
                 <BookOpenText size={16} />
                 <span>{hook.t("teacher.estudiantes.title", { defaultValue: "Mis Estudiantes" })}</span>
               </button>
-              <button onClick={() => hook.navigate("/teacher/bulk-import")} className="flex items-center space-x-2 p-2 rounded hover:bg-blue-800 transition text-left">
-                <FileSpreadsheet size={16} />
-                <span>Importar Estudiantes</span>
-              </button>
+              {!isAdmin && (
+                <button onClick={() => hook.navigate("/teacher/bulk-import")} className="flex items-center space-x-2 p-2 rounded hover:bg-blue-800 transition text-left">
+                  <FileSpreadsheet size={16} />
+                  <span>Importar Estudiantes</span>
+                </button>
+              )}
             </>
           )}
 
@@ -213,7 +219,10 @@ const Sidebar: FC<SidebarProps> = ({
                 <BookOpenText size={16} /> <span>{hook.t("admin.cursos.title", { defaultValue: "Cursos" })}</span>
               </button>
               <button onClick={() => hook.navigate("/admin/bulk-import")} className="flex items-center space-x-2 p-2 rounded hover:bg-blue-800 transition text-left">
-                <FileSpreadsheet size={16} /> <span>Importación Masiva</span>
+                <FileSpreadsheet size={16} /> <span>Crear Cuentas (Masivo)</span>
+              </button>
+              <button onClick={() => hook.navigate("/admin/bulk-enroll")} className="flex items-center space-x-2 p-2 rounded hover:bg-blue-800 transition text-left">
+                <FileSpreadsheet size={16} /> <span>Inscribir Estudiantes (Masivo)</span>
               </button>
             </>
           )}

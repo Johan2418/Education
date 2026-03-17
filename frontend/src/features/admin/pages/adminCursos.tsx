@@ -10,6 +10,16 @@ import {
 import type { Curso, EstudianteCursoDetail } from "@/shared/types";
 import type { Profile } from "@/shared/types";
 
+function getErrorMessage(err: unknown, fallback: string): string {
+  if (typeof err === "object" && err !== null && "message" in err) {
+    const message = (err as { message?: unknown }).message;
+    if (typeof message === "string" && message.trim() !== "") {
+      return message;
+    }
+  }
+  return fallback;
+}
+
 /* ── Modal wrapper ──────────────────────────────────────── */
 function Modal({ open, onClose, children }: { open: boolean; onClose: () => void; children: React.ReactNode }) {
   if (!open) return null;
@@ -123,8 +133,8 @@ export default function AdminCursos() {
       toast.success(t("admin.cursos.success.created", { defaultValue: "Curso creado" }));
       setCreateOpen(false);
       setCreateForm({ nombre: "", descripcion: "", teacher_id: "", activo: true });
-    } catch {
-      toast.error(t("admin.cursos.errors.createError", { defaultValue: "Error al crear curso" }));
+    } catch (err) {
+      toast.error(getErrorMessage(err, t("admin.cursos.errors.createError", { defaultValue: "Error al crear curso" })));
     } finally {
       setCreating(false);
     }
@@ -159,8 +169,8 @@ export default function AdminCursos() {
       toast.success(t("admin.cursos.success.updated", { defaultValue: "Curso actualizado" }));
       setEditOpen(false);
       setEditCurso(null);
-    } catch {
-      toast.error(t("admin.cursos.errors.updateError", { defaultValue: "Error al actualizar" }));
+    } catch (err) {
+      toast.error(getErrorMessage(err, t("admin.cursos.errors.updateError", { defaultValue: "Error al actualizar" })));
     } finally {
       setSaving(false);
     }
@@ -174,8 +184,8 @@ export default function AdminCursos() {
       await api.delete(`/cursos/${id}`);
       setCursos((prev) => prev.filter((c) => c.id !== id));
       toast.success(t("admin.cursos.success.deleted", { defaultValue: "Curso eliminado" }));
-    } catch {
-      toast.error(t("admin.cursos.errors.deleteError", { defaultValue: "Error al eliminar" }));
+    } catch (err) {
+      toast.error(getErrorMessage(err, t("admin.cursos.errors.deleteError", { defaultValue: "Error al eliminar" })));
     }
   };
 
@@ -191,8 +201,8 @@ export default function AdminCursos() {
       ]);
       setEnrolledStudents(enrolledRes.data || []);
       setAllStudents(studentsRes.data || []);
-    } catch {
-      toast.error(t("admin.cursos.enrollment.loadError", { defaultValue: "Error al cargar estudiantes" }));
+    } catch (err) {
+      toast.error(getErrorMessage(err, t("admin.cursos.enrollment.loadError", { defaultValue: "Error al cargar estudiantes" })));
     }
   };
 
@@ -213,8 +223,8 @@ export default function AdminCursos() {
       const res = await api.get<{ data: EstudianteCursoDetail[] }>(`/cursos/${enrollCurso.id}/estudiantes`);
       setEnrolledStudents(res.data || []);
       toast.success(t("admin.cursos.enrollment.enrolled", { defaultValue: "Estudiante inscrito" }));
-    } catch {
-      toast.error(t("admin.cursos.enrollment.enrollError", { defaultValue: "Error al inscribir" }));
+    } catch (err) {
+      toast.error(getErrorMessage(err, t("admin.cursos.enrollment.enrollError", { defaultValue: "Error al inscribir" })));
     } finally {
       setEnrollingId(null);
     }
@@ -227,8 +237,8 @@ export default function AdminCursos() {
       await api.delete(`/cursos/${enrollCurso.id}/estudiantes/${enrollmentId}`);
       setEnrolledStudents((prev) => prev.filter((e) => e.id !== enrollmentId));
       toast.success(t("admin.cursos.enrollment.unenrolled", { defaultValue: "Estudiante desinscrito" }));
-    } catch {
-      toast.error(t("admin.cursos.enrollment.unenrollError", { defaultValue: "Error al desinscribir" }));
+    } catch (err) {
+      toast.error(getErrorMessage(err, t("admin.cursos.enrollment.unenrollError", { defaultValue: "Error al desinscribir" })));
     }
   };
 

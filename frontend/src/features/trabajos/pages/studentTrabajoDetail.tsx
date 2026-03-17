@@ -1,12 +1,12 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { Loader2, Save } from "lucide-react";
 import toast from "react-hot-toast";
 
 import { getMe } from "@/shared/lib/auth";
-import { getMiEntrega, getTrabajo, upsertEntrega, updateEntrega } from "@/features/trabajos/services/trabajos";
-import type { CreateEntregaRequest, Trabajo, TrabajoEntrega } from "@/shared/types/trabajos";
+import { getTrabajoFormulario, upsertEntrega, updateEntrega } from "@/features/trabajos/services/trabajos";
+import type { CreateEntregaRequest, Trabajo, TrabajoEntrega, TrabajoPregunta } from "@/shared/types/trabajos";
 
 function normalizeError(err: unknown): string {
   if (typeof err === "object" && err !== null && "message" in err) {
@@ -18,15 +18,8 @@ function normalizeError(err: unknown): string {
   return "Error inesperado";
 }
 
-function parseRespuestas(value: string): Record<string, unknown> {
-  if (!value.trim()) {
-    return {};
-  }
-  const parsed: unknown = JSON.parse(value);
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-    throw new Error("El JSON de respuestas debe ser un objeto");
-  }
-  return parsed as Record<string, unknown>;
+function buildDraftKey(trabajoId: string): string {
+  return `student_trabajo_draft:${trabajoId}`;
 }
 
 export default function StudentTrabajoDetail() {
@@ -38,10 +31,16 @@ export default function StudentTrabajoDetail() {
   const [saving, setSaving] = useState(false);
   const [trabajo, setTrabajo] = useState<Trabajo | null>(null);
   const [entrega, setEntrega] = useState<TrabajoEntrega | null>(null);
+  const [preguntas, setPreguntas] = useState<TrabajoPregunta[]>([]);
 
-  const [respuestasText, setRespuestasText] = useState('{\n  "pregunta_1": ""\n}');
+  const [respuestas, setRespuestas] = useState<Record<string, string>>({});
   const [comentario, setComentario] = useState("");
   const [archivoUrl, setArchivoUrl] = useState("");
+  const [lastSavedSignature, setLastSavedSignature] = useState("");
+
+  const draftKey = useMemo(() => buildDraftKey(trabajoId), [trabajoId]);
+  const currentSignature = useMemo(() => JSON.stringify({ respuestas, comentario, archivoUrl }), [archivoUrl, comentario, respuestas]);
+  const hasUnsavedChanges = currentSignature !== lastSavedSignature;
 
   useEffect(() => {
     (async () => {
@@ -57,17 +56,52 @@ export default function StudentTrabajoDetail() {
           return;
         }
 
-        const [trabajoData, entregaData] = await Promise.all([
-          getTrabajo(trabajoId),
-          getMiEntrega(trabajoId),
-        ]);
-        setTrabajo(trabajoData);
+        const formulario = await getTrabajoFormulario(trabajoId);
+        setTrabajo(formulario.trabajo);
+        setPreguntas(formulario.preguntas || []);
 
-        if (entregaData) {
-          setEntrega(entregaData);
-          setComentario(entregaData.comentario || "");
-          setArchivoUrl(entregaData.archivo_url || "");
-          setRespuestasText(JSON.stringify(entregaData.respuestas || {}, null, 2));
+        const respuestasIniciales: Record<string, string> = {};
+        for (const item of formulario.respuestas_preguntas || []) {
+          const value = item.respuesta_opcion ?? item.respuesta_texto ?? "";
+          respuestasIniciales[item.pregunta_id] = value;
+        }
+
+        if (formulario.mi_entrega) {
+          setEntrega(formulario.mi_entrega);
+          setComentario(formulario.mi_entrega.comentario || "");
+          setArchivoUrl(formulario.mi_entrega.archivo_url || "");
+          setRespuestas(respuestasIniciales);
+          setLastSavedSignature(JSON.stringify({
+            respuestas: respuestasIniciales,
+            comentario: formulario.mi_entrega.comentario || "",
+            archivoUrl: formulario.mi_entrega.archivo_url || "",
+          }));
+          localStorage.removeItem(draftKey);
+        } else {
+          let initialRespuestas: Record<string, string> = respuestasIniciales;
+          let initialComentario = "";
+          let initialArchivoUrl = "";
+
+          const draftRaw = localStorage.getItem(draftKey);
+          if (draftRaw) {
+            try {
+              const draft = JSON.parse(draftRaw) as { respuestas?: Record<string, string>; comentario?: string; archivoUrl?: string };
+              if (draft.respuestas && typeof draft.respuestas === "object") initialRespuestas = draft.respuestas;
+              if (typeof draft.comentario === "string") initialComentario = draft.comentario;
+              if (typeof draft.archivoUrl === "string") initialArchivoUrl = draft.archivoUrl;
+            } catch {
+              localStorage.removeItem(draftKey);
+            }
+          }
+
+          setRespuestas(initialRespuestas);
+          setComentario(initialComentario);
+          setArchivoUrl(initialArchivoUrl);
+          setLastSavedSignature(JSON.stringify({
+            respuestas: initialRespuestas,
+            comentario: initialComentario,
+            archivoUrl: initialArchivoUrl,
+          }));
         }
       } catch (err) {
         toast.error(normalizeError(err));
@@ -76,22 +110,58 @@ export default function StudentTrabajoDetail() {
         setLoading(false);
       }
     })();
-  }, [navigate, trabajoId]);
+  }, [draftKey, navigate, trabajoId]);
+
+  useEffect(() => {
+    if (!trabajoId || loading || !hasUnsavedChanges) return;
+    const timeout = window.setTimeout(() => {
+      localStorage.setItem(draftKey, JSON.stringify({ respuestas, comentario, archivoUrl }));
+    }, 600);
+    return () => window.clearTimeout(timeout);
+  }, [archivoUrl, comentario, draftKey, hasUnsavedChanges, loading, respuestas, trabajoId]);
+
+  useEffect(() => {
+    const onBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (!hasUnsavedChanges) return;
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [hasUnsavedChanges]);
 
   const handleGuardar = async () => {
     if (!trabajoId) return;
 
-    let payload: CreateEntregaRequest;
-    try {
-      payload = {
-        respuestas: parseRespuestas(respuestasText),
-        comentario: comentario.trim() || undefined,
-        archivo_url: archivoUrl.trim() || undefined,
+    const respuestasPreguntas = preguntas.map((pregunta) => {
+      const value = (respuestas[pregunta.id] || "").trim();
+      if (pregunta.tipo === "opcion_multiple" || pregunta.tipo === "verdadero_falso") {
+        return {
+          pregunta_id: pregunta.id,
+          respuesta_opcion: value,
+        };
+      }
+      return {
+        pregunta_id: pregunta.id,
+        respuesta_texto: value,
       };
-    } catch (err) {
-      toast.error(normalizeError(err));
-      return;
+    });
+
+    const respuestasLegacy: Record<string, unknown> = {};
+    for (const item of respuestasPreguntas) {
+      if (item.respuesta_opcion != null) {
+        respuestasLegacy[item.pregunta_id] = item.respuesta_opcion;
+      } else {
+        respuestasLegacy[item.pregunta_id] = item.respuesta_texto || "";
+      }
     }
+
+    const payload: CreateEntregaRequest = {
+      respuestas: respuestasLegacy,
+      respuestas_preguntas: respuestasPreguntas,
+      comentario: comentario.trim() || undefined,
+      archivo_url: archivoUrl.trim() || undefined,
+    };
 
     setSaving(true);
     try {
@@ -103,6 +173,8 @@ export default function StudentTrabajoDetail() {
       }
 
       setEntrega(saved);
+      setLastSavedSignature(JSON.stringify({ respuestas, comentario, archivoUrl }));
+      localStorage.removeItem(draftKey);
       toast.success(t("student.trabajos.saved", { defaultValue: "Entrega guardada" }));
     } catch (err) {
       toast.error(normalizeError(err));
@@ -158,15 +230,47 @@ export default function StudentTrabajoDetail() {
       <div className="bg-white rounded-lg shadow p-4 space-y-3">
         <h2 className="text-lg font-semibold">{t("student.trabajos.delivery", { defaultValue: "Tu entrega" })}</h2>
 
-        <div>
-          <label className="block text-sm font-medium mb-1">{t("student.trabajos.answersJson", { defaultValue: "Respuestas (JSON)" })}</label>
-          <textarea
-            rows={10}
-            className="w-full border border-gray-300 rounded px-3 py-2 font-mono text-sm"
-            value={respuestasText}
-            onChange={(e) => setRespuestasText(e.target.value)}
-          />
-        </div>
+        {preguntas.length === 0 ? (
+          <div className="text-sm text-gray-500 border border-dashed border-gray-300 rounded p-4">
+            {t("student.trabajos.formEmpty", { defaultValue: "Este trabajo no tiene preguntas configuradas." })}
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {preguntas.map((pregunta, index) => {
+              const answer = respuestas[pregunta.id] || "";
+              const options = pregunta.tipo === "verdadero_falso" ? ["Verdadero", "Falso"] : (pregunta.opciones || []);
+
+              return (
+                <div key={pregunta.id} className="border border-gray-200 rounded-lg p-3">
+                  <p className="text-sm font-medium text-gray-900">{index + 1}. {pregunta.texto}</p>
+
+                  {(pregunta.tipo === "opcion_multiple" || pregunta.tipo === "verdadero_falso") ? (
+                    <div className="mt-2 space-y-1">
+                      {options.map((option) => (
+                        <label key={option} className="flex items-center gap-2 text-sm">
+                          <input
+                            type="radio"
+                            name={`q-${pregunta.id}`}
+                            checked={answer === option}
+                            onChange={() => setRespuestas((prev) => ({ ...prev, [pregunta.id]: option }))}
+                          />
+                          <span>{option}</span>
+                        </label>
+                      ))}
+                    </div>
+                  ) : (
+                    <textarea
+                      rows={3}
+                      className="mt-2 w-full border border-gray-300 rounded px-3 py-2"
+                      value={answer}
+                      onChange={(e) => setRespuestas((prev) => ({ ...prev, [pregunta.id]: e.target.value }))}
+                    />
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
 
         <div>
           <label className="block text-sm font-medium mb-1">{t("student.trabajos.comment", { defaultValue: "Comentario" })}</label>
@@ -194,6 +298,10 @@ export default function StudentTrabajoDetail() {
               ? t("student.trabajos.lastSubmit", { defaultValue: "Ultima actualizacion" }) + ": " + new Date(entrega.submitted_at).toLocaleString()
               : t("student.trabajos.notSubmitted", { defaultValue: "Aun no has enviado esta entrega" })}
           </p>
+
+          {hasUnsavedChanges && (
+            <p className="text-xs text-amber-700 mr-2">{t("student.trabajos.unsaved", { defaultValue: "Tienes cambios sin guardar" })}</p>
+          )}
 
           <button
             disabled={saving || trabajo.estado === "cerrado"}

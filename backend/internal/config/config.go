@@ -16,6 +16,7 @@ type Config struct {
 	JWT         JWTConfig
 	Email       EmailConfig
 	HuggingFace HuggingFaceConfig
+	LibroIA     HuggingFaceConfig
 }
 
 type HuggingFaceConfig struct {
@@ -87,6 +88,10 @@ func Load() *Config {
 		HuggingFace: HuggingFaceConfig{
 			APIKey: envOrDefault("HUGGINGFACE_API_KEY", ""),
 			Model:  envOrDefault("HUGGINGFACE_MODEL", "mistralai/Mistral-7B-Instruct-v0.3"),
+		},
+		LibroIA: HuggingFaceConfig{
+			APIKey: envOrDefault("LIBRO_IA_API_KEY", envOrDefault("HUGGINGFACE_API_KEY", "")),
+			Model:  envOrDefault("LIBRO_IA_MODEL", envOrDefault("HUGGINGFACE_MODEL", "mistralai/Mistral-7B-Instruct-v0.3")),
 		},
 	}
 }

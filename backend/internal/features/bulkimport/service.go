@@ -52,9 +52,6 @@ func (s *Service) AdminBulkImport(ctx context.Context, req AdminBulkImportReques
 		if err != nil || curso == nil {
 			return nil, fmt.Errorf("curso no encontrado")
 		}
-		if curso.TeacherID == nil || strings.TrimSpace(*curso.TeacherID) == "" {
-			return nil, fmt.Errorf("el curso seleccionado no tiene profesor asignado")
-		}
 	}
 
 	var created, skipped []CreatedStudent

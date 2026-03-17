@@ -5,8 +5,8 @@ import { Loader2, Save } from "lucide-react";
 import toast from "react-hot-toast";
 
 import { getMe } from "@/shared/lib/auth";
-import { calificarEntrega, getTrabajo, listEntregasByTrabajo } from "@/features/trabajos/services/trabajos";
-import type { CalificarEntregaRequest, EntregaConCalificacion, Trabajo } from "@/shared/types/trabajos";
+import { calificarEntregaPorPregunta, getEntregaDetalle, getTrabajo, listEntregasByTrabajo } from "@/features/trabajos/services/trabajos";
+import type { CalificarEntregaPreguntaItem, EntregaConCalificacion, EntregaDetalleResponse, Trabajo } from "@/shared/types/trabajos";
 
 function normalizeError(err: unknown): string {
   if (typeof err === "object" && err !== null && "message" in err) {
@@ -28,16 +28,15 @@ export default function TeacherTrabajoCalificar() {
   const [trabajo, setTrabajo] = useState<Trabajo | null>(null);
   const [entregas, setEntregas] = useState<EntregaConCalificacion[]>([]);
   const [selectedEntrega, setSelectedEntrega] = useState<string>("");
+  const [detalle, setDetalle] = useState<EntregaDetalleResponse | null>(null);
+  const [loadingDetalle, setLoadingDetalle] = useState(false);
 
-  const [form, setForm] = useState<CalificarEntregaRequest>({
-    puntaje: 0,
-    feedback: "",
-    sugerencia_ia: {},
-  });
+  const [items, setItems] = useState<CalificarEntregaPreguntaItem[]>([]);
+  const [feedbackGeneral, setFeedbackGeneral] = useState("");
 
-  const selected = useMemo(() => {
-    return entregas.find((item) => item.entrega.id === selectedEntrega);
-  }, [entregas, selectedEntrega]);
+  const selected = useMemo(() => entregas.find((item) => item.entrega.id === selectedEntrega), [entregas, selectedEntrega]);
+
+  const totalPuntaje = useMemo(() => items.reduce((acc, item) => acc + (Number.isFinite(item.puntaje) ? item.puntaje : 0), 0), [items]);
 
   const loadData = async () => {
     if (!trabajoId) return;
@@ -75,31 +74,89 @@ export default function TeacherTrabajoCalificar() {
   }, [navigate, t, trabajoId]);
 
   useEffect(() => {
-    if (!selected) return;
-    setForm({
-      puntaje: selected.calificacion?.puntaje ?? 0,
-      feedback: selected.calificacion?.feedback ?? "",
-      sugerencia_ia: selected.calificacion?.sugerencia_ia ?? {},
-    });
-  }, [selected]);
+    if (!selectedEntrega) {
+      setDetalle(null);
+      setItems([]);
+      setFeedbackGeneral("");
+      return;
+    }
+
+    let cancelled = false;
+    (async () => {
+      setLoadingDetalle(true);
+      try {
+        const payload = await getEntregaDetalle(selectedEntrega);
+        if (cancelled) return;
+        setDetalle(payload);
+
+        const calByPregunta = new Map(payload.calificaciones_pregunta.map((item) => [item.pregunta_id, item]));
+        const initialItems: CalificarEntregaPreguntaItem[] = payload.preguntas.map((pregunta) => {
+          const existing = calByPregunta.get(pregunta.id);
+          return {
+            pregunta_id: pregunta.id,
+            puntaje: existing?.puntaje ?? 0,
+            feedback: existing?.feedback || "",
+          };
+        });
+
+        setItems(initialItems);
+        setFeedbackGeneral(payload.calificacion?.feedback || "");
+      } catch (err) {
+        if (!cancelled) {
+          toast.error(normalizeError(err));
+        }
+      } finally {
+        if (!cancelled) {
+          setLoadingDetalle(false);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedEntrega]);
 
   const handleGuardar = async () => {
-    if (!selected) {
+    if (!selected || !detalle) {
       toast.error(t("teacher.trabajos.selectEntrega", { defaultValue: "Selecciona una entrega" }));
       return;
     }
-    if (form.puntaje < 0 || form.puntaje > 100) {
-      toast.error(t("teacher.trabajos.scoreRange", { defaultValue: "Puntaje debe estar entre 0 y 100" }));
+
+    if (items.length === 0) {
+      toast.error(t("teacher.trabajos.gradeByQuestion.minItems", { defaultValue: "Debes calificar al menos una pregunta" }));
+      return;
+    }
+
+    if (items.some((item) => item.puntaje < 0)) {
+      toast.error(t("teacher.trabajos.gradeByQuestion.nonNegative", { defaultValue: "Cada puntaje por pregunta debe ser >= 0" }));
       return;
     }
 
     setSaving(true);
     try {
-      await calificarEntrega(selected.entrega.id, {
-        puntaje: Number(form.puntaje),
-        feedback: form.feedback,
-        sugerencia_ia: form.sugerencia_ia,
+      const updated = await calificarEntregaPorPregunta(selected.entrega.id, {
+        items: items.map((item) => ({
+          pregunta_id: item.pregunta_id,
+          puntaje: Number(item.puntaje || 0),
+          feedback: (item.feedback || "").trim() || undefined,
+        })),
+        feedback: feedbackGeneral.trim() || undefined,
+        sugerencia_ia: {},
       });
+
+      setDetalle(updated);
+
+      const calByPregunta = new Map(updated.calificaciones_pregunta.map((item) => [item.pregunta_id, item]));
+      setItems(updated.preguntas.map((pregunta) => {
+        const existing = calByPregunta.get(pregunta.id);
+        return {
+          pregunta_id: pregunta.id,
+          puntaje: existing?.puntaje ?? 0,
+          feedback: existing?.feedback || "",
+        };
+      }));
+
       toast.success(t("teacher.trabajos.graded", { defaultValue: "Entrega calificada" }));
       await loadData();
     } catch (err) {
@@ -142,7 +199,8 @@ export default function TeacherTrabajoCalificar() {
                 >
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className="font-medium">{item.entrega.estudiante_id}</p>
+                      <p className="font-medium">{item.estudiante_nombre || item.entrega.estudiante_id}</p>
+                      <p className="text-xs text-gray-500">{item.estudiante_email || item.entrega.estudiante_id}</p>
                       <p className="text-xs text-gray-500">{new Date(item.entrega.submitted_at).toLocaleString()}</p>
                     </div>
                     <div className="text-right">
@@ -162,39 +220,80 @@ export default function TeacherTrabajoCalificar() {
       <div className="lg:col-span-2 bg-white rounded-lg shadow p-4">
         <h2 className="text-lg font-semibold mb-3">{t("teacher.trabajos.gradeForm", { defaultValue: "Calificar entrega" })}</h2>
 
-        {!selected ? (
+        {!selected || loadingDetalle ? (
+          loadingDetalle ? (
+            <div className="py-10 flex items-center justify-center"><Loader2 className="animate-spin text-blue-600" size={24} /></div>
+          ) : (
           <div className="text-gray-500 text-sm">{t("teacher.trabajos.selectEntrega", { defaultValue: "Selecciona una entrega" })}</div>
+          )
+        ) : !detalle ? (
+          <div className="text-gray-500 text-sm">{t("teacher.trabajos.noTrabajo", { defaultValue: "Trabajo invalido" })}</div>
         ) : (
           <div className="space-y-3">
-            <div>
-              <label className="block text-sm font-medium mb-1">{t("teacher.trabajos.respuestas", { defaultValue: "Respuestas" })}</label>
-              <pre className="text-xs bg-gray-50 rounded border p-2 max-h-48 overflow-auto">{JSON.stringify(selected.entrega.respuestas, null, 2)}</pre>
-            </div>
+            {detalle.preguntas.map((pregunta, index) => {
+              const answer = detalle.respuestas_preguntas.find((item) => item.pregunta_id === pregunta.id);
+              const itemIndex = items.findIndex((item) => item.pregunta_id === pregunta.id);
+              const item = itemIndex >= 0 ? items[itemIndex]! : { pregunta_id: pregunta.id, puntaje: 0, feedback: "" };
+              const answerText = answer?.respuesta_opcion ?? answer?.respuesta_texto ?? "-";
+
+              return (
+                <div key={pregunta.id} className="border border-gray-200 rounded-lg p-3">
+                  <p className="text-sm font-medium text-gray-900">{index + 1}. {pregunta.texto}</p>
+                  <p className="text-xs text-gray-500 mt-1">{t("teacher.trabajos.respuestas", { defaultValue: "Respuestas" })}: {answerText}</p>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mt-2">
+                    <label className="text-sm">
+                      {t("teacher.trabajos.gradeByQuestion.scoreQuestion", { defaultValue: "Puntaje de la pregunta" })}
+                      <input
+                        type="number"
+                        min={0}
+                        className="mt-1 w-full border border-gray-300 rounded px-3 py-2"
+                        value={item.puntaje}
+                        onChange={(e) => {
+                          const value = Number(e.target.value || 0);
+                          setItems((prev) => prev.map((it) => it.pregunta_id === pregunta.id ? { ...it, puntaje: value } : it));
+                        }}
+                      />
+                    </label>
+
+                    <label className="text-sm">
+                      {t("teacher.trabajos.gradeByQuestion.feedbackQuestion", { defaultValue: "Feedback de la pregunta" })}
+                      <input
+                        className="mt-1 w-full border border-gray-300 rounded px-3 py-2"
+                        value={item.feedback || ""}
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          setItems((prev) => prev.map((it) => it.pregunta_id === pregunta.id ? { ...it, feedback: value } : it));
+                        }}
+                      />
+                    </label>
+                  </div>
+                </div>
+              );
+            })}
 
             <div>
               <label className="block text-sm font-medium mb-1">{t("teacher.trabajos.comment", { defaultValue: "Comentario del estudiante" })}</label>
-              <p className="text-sm text-gray-700 border rounded p-2 min-h-[42px]">{selected.entrega.comentario || "-"}</p>
+              <p className="text-sm text-gray-700 border rounded p-2 min-h-[42px]">{detalle.entrega.comentario || "-"}</p>
             </div>
 
             <div>
-              <label className="block text-sm font-medium mb-1">{t("teacher.trabajos.score", { defaultValue: "Puntaje" })}</label>
+              <label className="block text-sm font-medium mb-1">{t("teacher.trabajos.gradeByQuestion.total", { defaultValue: "Puntaje total (suma)" })}</label>
               <input
                 type="number"
-                min={0}
-                max={100}
                 className="w-full border border-gray-300 rounded px-3 py-2"
-                value={form.puntaje}
-                onChange={(e) => setForm((prev) => ({ ...prev, puntaje: Number(e.target.value) }))}
+                value={Number(totalPuntaje.toFixed(2))}
+                readOnly
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium mb-1">{t("teacher.trabajos.feedback", { defaultValue: "Feedback" })}</label>
+              <label className="block text-sm font-medium mb-1">{t("teacher.trabajos.feedback", { defaultValue: "Feedback" })} ({t("teacher.trabajos.gradeByQuestion.general", { defaultValue: "general" })})</label>
               <textarea
                 rows={4}
                 className="w-full border border-gray-300 rounded px-3 py-2"
-                value={form.feedback || ""}
-                onChange={(e) => setForm((prev) => ({ ...prev, feedback: e.target.value }))}
+                value={feedbackGeneral}
+                onChange={(e) => setFeedbackGeneral(e.target.value)}
               />
             </div>
 

@@ -2,6 +2,7 @@ package academic
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 
@@ -41,7 +42,13 @@ func (h *Handler) ListCursos(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) GetCurso(w http.ResponseWriter, r *http.Request) {
-	item, err := h.svc.GetCurso(r.Context(), chi.URLParam(r, "id"))
+	cursoID := getCursoIDFromURL(r)
+	if cursoID == "" {
+		shared.Error(w, http.StatusBadRequest, "ID de curso inválido")
+		return
+	}
+
+	item, err := h.svc.GetCurso(r.Context(), cursoID)
 	if err != nil {
 		shared.Error(w, http.StatusNotFound, "Curso no encontrado")
 		return
@@ -57,6 +64,10 @@ func (h *Handler) CreateCurso(w http.ResponseWriter, r *http.Request) {
 	}
 	item, err := h.svc.CreateCurso(r.Context(), req)
 	if err != nil {
+		if msg, ok := mapCursoError(err); ok {
+			shared.Error(w, http.StatusBadRequest, msg)
+			return
+		}
 		shared.Error(w, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -69,20 +80,65 @@ func (h *Handler) UpdateCurso(w http.ResponseWriter, r *http.Request) {
 		shared.Error(w, http.StatusBadRequest, "Datos inválidos")
 		return
 	}
-	item, err := h.svc.UpdateCurso(r.Context(), chi.URLParam(r, "id"), req)
+	cursoID := getCursoIDFromURL(r)
+	if cursoID == "" {
+		shared.Error(w, http.StatusBadRequest, "ID de curso inválido")
+		return
+	}
+
+	item, err := h.svc.UpdateCurso(r.Context(), cursoID, req)
 	if err != nil {
+		if msg, ok := mapCursoError(err); ok {
+			shared.Error(w, http.StatusBadRequest, msg)
+			return
+		}
 		shared.Error(w, http.StatusInternalServerError, "Error actualizando curso")
 		return
 	}
 	shared.Success(w, item)
 }
 
+func mapCursoError(err error) (string, bool) {
+	if err == nil {
+		return "", false
+	}
+
+	errMsg := strings.ToLower(err.Error())
+
+	if strings.Contains(errMsg, "uq_curso_teacher") || (strings.Contains(errMsg, "teacher_id") && strings.Contains(errMsg, "unique")) {
+		return "El profesor seleccionado ya está asignado a otro curso", true
+	}
+
+	if strings.Contains(errMsg, "curso_teacher_id_fkey") || (strings.Contains(errMsg, "teacher_id") && strings.Contains(errMsg, "foreign key")) {
+		return "El profesor seleccionado no existe", true
+	}
+
+	if strings.Contains(errMsg, "internal.curso_nombre_key") || strings.Contains(errMsg, "column nombre") || strings.Contains(errMsg, "nombre") && strings.Contains(errMsg, "unique") {
+		return "Ya existe un curso con ese nombre", true
+	}
+
+	return "", false
+}
+
 func (h *Handler) DeleteCurso(w http.ResponseWriter, r *http.Request) {
-	if err := h.svc.DeleteCurso(r.Context(), chi.URLParam(r, "id")); err != nil {
+	cursoID := getCursoIDFromURL(r)
+	if cursoID == "" {
+		shared.Error(w, http.StatusBadRequest, "ID de curso inválido")
+		return
+	}
+
+	if err := h.svc.DeleteCurso(r.Context(), cursoID); err != nil {
 		shared.Error(w, http.StatusInternalServerError, "Error eliminando curso")
 		return
 	}
 	shared.MessageOK(w, "Curso eliminado")
+}
+
+func getCursoIDFromURL(r *http.Request) string {
+	if id := strings.TrimSpace(chi.URLParam(r, "cursoId")); id != "" {
+		return id
+	}
+	return strings.TrimSpace(chi.URLParam(r, "id"))
 }
 
 // ═══════════════════════════════════════════════════════════════

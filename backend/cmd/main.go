@@ -23,8 +23,10 @@ import (
 	"github.com/arcanea/backend/internal/features/auth"
 	"github.com/arcanea/backend/internal/features/bulkimport"
 	"github.com/arcanea/backend/internal/features/evaluations"
+	"github.com/arcanea/backend/internal/features/libro"
 	"github.com/arcanea/backend/internal/features/resources"
 	"github.com/arcanea/backend/internal/features/trabajos"
+	"github.com/arcanea/backend/internal/notifications"
 )
 
 func main() {
@@ -47,6 +49,7 @@ func main() {
 
 	// ── Dependency injection ────────────────────────────────
 	emailSvc := email.NewService(cfg.Email)
+	notifSvc := notifications.NewService(emailSvc)
 
 	authRepo := auth.NewRepository(db)
 	authSvc := auth.NewService(authRepo, jwtSvc, emailSvc)
@@ -65,8 +68,13 @@ func main() {
 	evalH := evaluations.NewHandler(evalSvc)
 
 	trabRepo := trabajos.NewRepository(db)
-	trabSvc := trabajos.NewService(trabRepo)
+	trabSvc := trabajos.NewService(trabRepo, notifSvc)
 	trabH := trabajos.NewHandler(trabSvc)
+
+	libroRepo := libro.NewRepository(db)
+	libroAISvc := libro.NewAIService(cfg.LibroIA)
+	libroSvc := libro.NewService(libroRepo, libroAISvc)
+	libroH := libro.NewHandler(libroSvc)
 
 	aiSvc := bulkimport.NewAIService(cfg.HuggingFace)
 	bulkSvc := bulkimport.NewService(authRepo, acadRepo, aiSvc)
@@ -214,15 +222,32 @@ func main() {
 		// ── Trabajos ───────────────────────────────────────
 		r.Get("/lecciones/{leccionId}/trabajos", trabH.ListTrabajosByLeccion)
 		r.Post("/trabajos", trabH.CreateTrabajo)
+		r.Put("/trabajos/{trabajoId}", trabH.UpdateTrabajo)
 		r.Put("/trabajos/{trabajoId}/publicar", trabH.PublicarTrabajo)
 		r.Put("/trabajos/{trabajoId}/cerrar", trabH.CerrarTrabajo)
+		r.Delete("/trabajos/{trabajoId}", trabH.DeleteTrabajo)
 		r.Get("/trabajos/{trabajoId}", trabH.GetTrabajo)
 		r.Get("/mis-trabajos", trabH.ListMisTrabajos)
 		r.Post("/trabajos/{trabajoId}/entregas", trabH.UpsertEntrega)
 		r.Get("/trabajos/{trabajoId}/mi-entrega", trabH.GetMiEntrega)
+		r.Get("/trabajos/{trabajoId}/formulario", trabH.GetTrabajoFormulario)
 		r.Put("/entregas/{entregaId}", trabH.UpdateEntregaByID)
 		r.Get("/trabajos/{trabajoId}/entregas", trabH.ListEntregasByTrabajo)
+		r.Get("/trabajos/analytics/v2", trabH.GetTrabajoAnalyticsV2)
+		r.Get("/trabajos/{trabajoId}/reportes", trabH.GetTrabajoReporte)
+		r.Get("/trabajos/{trabajoId}/notificaciones", trabH.GetTrabajoNotificaciones)
+		r.Get("/trabajos/{trabajoId}/entregas/export", trabH.ExportEntregasCSV)
+		r.Get("/trabajos/{trabajoId}/entregas/export.xlsx", trabH.ExportEntregasXLSX)
+		r.Get("/entregas/{entregaId}/detalle", trabH.GetEntregaDetalle)
 		r.Put("/entregas/{entregaId}/calificar", trabH.CalificarEntrega)
+		r.Put("/entregas/{entregaId}/calificar-por-pregunta", trabH.CalificarEntregaPorPregunta)
+		r.Get("/trabajos/{trabajoId}/libro", libroH.GetEstado)
+		r.Get("/trabajos/{trabajoId}/libro/observabilidad", libroH.GetObservability)
+		r.Post("/trabajos/{trabajoId}/libro/extract", libroH.ExtractLibro)
+		r.Post("/trabajos/{trabajoId}/libro/extract-async", libroH.StartExtractLibroAsync)
+		r.Get("/trabajos/{trabajoId}/libro/jobs/{jobId}", libroH.GetExtractLibroJobStatus)
+		r.Put("/trabajos/{trabajoId}/libro/revision", libroH.RevisarLibro)
+		r.Put("/trabajos/{trabajoId}/libro/confirmar", libroH.ConfirmarLibro)
 
 		// ── Admin routes ────────────────────────────────────
 		r.Group(func(r chi.Router) {

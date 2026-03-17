@@ -79,7 +79,7 @@ export default function AdminBulkImport() {
 
       try {
         const cursosRes = await api.get<{ data: Curso[] }>("/cursos");
-        const cursos = (cursosRes.data || []).filter((c) => !!c.teacher_id);
+        const cursos = cursosRes.data || [];
         setAvailableCursos(cursos);
       } catch {
         setAvailableCursos([]);
@@ -165,6 +165,15 @@ export default function AdminBulkImport() {
     setImporting(true);
     setStep("importing");
     try {
+      if (selectedCursoId) {
+        const selectedCourse = availableCursos.find((c) => c.id === selectedCursoId);
+        if (!selectedCourse) {
+          toast.error("El curso seleccionado no existe");
+          setStep("preview");
+          return;
+        }
+      }
+
       const res = await api.post<{ data: AdminBulkImportResponse }>("/admin/bulk-import", {
         mappings,
         rows,
@@ -172,8 +181,9 @@ export default function AdminBulkImport() {
       });
       setResults(res.data);
       setStep("results");
-    } catch {
-      toast.error("Error al importar estudiantes");
+    } catch (err: any) {
+      const msg = err?.message || "Error al importar estudiantes";
+      toast.error(msg);
       setStep("preview");
     } finally {
       setImporting(false);
@@ -351,7 +361,9 @@ export default function AdminBulkImport() {
                   >
                     <option value="">No asignar curso ahora</option>
                     {availableCursos.map((c) => (
-                      <option key={c.id} value={c.id}>{c.nombre}</option>
+                      <option key={c.id} value={c.id} disabled={!c.teacher_id}>
+                        {c.nombre}{!c.teacher_id ? " (sin profesor asignado)" : ""}
+                      </option>
                     ))}
                   </select>
                   <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
