@@ -238,7 +238,20 @@ export default function TeacherTrabajoCalificar() {
 
               return (
                 <div key={pregunta.id} className="border border-gray-200 rounded-lg p-3">
+                  {pregunta.imagen_base64 && (
+                    <img
+                      src={pregunta.imagen_base64}
+                      alt={t("teacher.trabajos.illustration", { defaultValue: "Ilustracion de la pregunta" })}
+                      className="w-full max-h-64 object-contain rounded border border-gray-200 mb-2 bg-gray-50"
+                      loading="lazy"
+                    />
+                  )}
                   <p className="text-sm font-medium text-gray-900">{index + 1}. {pregunta.texto}</p>
+                  <p className="text-xs text-gray-500 mt-1">
+                    {t("teacher.trabajos.libro.type", { defaultValue: "Tipo" })}: {pregunta.tipo}
+                    {" | "}
+                    {t("teacher.trabajos.expectedAnswer", { defaultValue: "Respuesta esperada" })}: {pregunta.respuesta_esperada_tipo || "abierta"}
+                  </p>
                   <p className="text-xs text-gray-500 mt-1">{t("teacher.trabajos.respuestas", { defaultValue: "Respuestas" })}: {answerText}</p>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mt-2">

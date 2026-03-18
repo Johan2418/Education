@@ -36,6 +36,7 @@ interface TrabajoRow extends Trabajo {
 interface PageChunk {
   page: number;
   text: string;
+  page_image_base64?: string;
 }
 
 interface LibroBatchProgress {
@@ -117,6 +118,13 @@ function isLikelyExerciseQuestionText(texto: string): boolean {
   return hasQuestionMark || startsWithInstruction || startsWithNumber || hasOptions;
 }
 
+function looksLikeCompositeQuestion(texto: string): boolean {
+  const t = (texto || "").trim();
+  if (!t) return false;
+  const markerMatches = t.match(/(?:^|\n|\s)(?:\d{1,2}[\.)]|[A-Da-d][\.)]|pregunta\s+\d+[:\.-])/gi) || [];
+  return markerMatches.length >= 2;
+}
+
 function sanitizeExtractedQuestions(preguntas: LibroPreguntaInput[]): LibroPreguntaInput[] {
   return preguntas.filter((pregunta) => {
     const texto = (pregunta.texto || "").trim();
@@ -128,12 +136,6 @@ function sanitizeExtractedQuestions(preguntas: LibroPreguntaInput[]): LibroPregu
 
     return !genericFallback && !lowConfidenceHeuristic && !notExerciseQuestion;
   });
-}
-
-function buildBookDescriptionFromQuestions(page: number, preguntas: LibroPreguntaInput[]): string {
-  const header = `Preguntas extraidas de la pagina ${page}:`;
-  const lines = preguntas.map((pregunta, idx) => `${idx + 1}. ${pregunta.texto.trim()}`);
-  return [header, ...lines].join("\n");
 }
 
 async function parsePdfPages(file: File, pageStart?: number, pageEnd?: number): Promise<PageChunk[]> {
@@ -153,7 +155,25 @@ async function parsePdfPages(file: File, pageStart?: number, pageEnd?: number): 
       .trim();
 
     if (!text || text.length < 30) continue;
-    chunks.push({ page: pageNum, text });
+
+    const viewport = page.getViewport({ scale: 1 });
+    const hasRenderableArea = viewport.width > 0 && viewport.height > 0;
+    let pageImageBase64: string | undefined;
+    if (hasRenderableArea) {
+      const canvas = document.createElement("canvas");
+      const targetWidth = 960;
+      const scale = Math.min(2, Math.max(0.8, targetWidth / Math.max(1, viewport.width)));
+      const renderViewport = page.getViewport({ scale });
+      canvas.width = Math.max(1, Math.floor(renderViewport.width));
+      canvas.height = Math.max(1, Math.floor(renderViewport.height));
+      const ctx = canvas.getContext("2d", { alpha: false });
+      if (ctx) {
+        await page.render({ canvas, canvasContext: ctx, viewport: renderViewport }).promise;
+        pageImageBase64 = canvas.toDataURL("image/jpeg", 0.65);
+      }
+    }
+
+    chunks.push({ page: pageNum, text, page_image_base64: pageImageBase64 });
   }
 
   return chunks;
@@ -216,7 +236,7 @@ export default function TeacherTrabajos() {
   const [libroFileName, setLibroFileName] = useState("");
   const [libroPageStart, setLibroPageStart] = useState(1);
   const [libroPageEnd, setLibroPageEnd] = useState<number | "">("");
-  const [libroMaxPreguntas, setLibroMaxPreguntas] = useState(8);
+  const [libroMaxPreguntas, setLibroMaxPreguntas] = useState(5);
   const [libroIdioma, setLibroIdioma] = useState("es");
   const [libroPublicarAlCrear, setLibroPublicarAlCrear] = useState(false);
   const [libroMinPreguntasPublicar, setLibroMinPreguntasPublicar] = useState(3);
@@ -338,7 +358,7 @@ export default function TeacherTrabajos() {
     setLibroFileName("");
     setLibroPageStart(1);
     setLibroPageEnd("");
-    setLibroMaxPreguntas(8);
+    setLibroMaxPreguntas(5);
     setLibroIdioma("es");
     setLibroPublicarAlCrear(false);
     setLibroMinPreguntasPublicar(3);
@@ -396,6 +416,10 @@ export default function TeacherTrabajos() {
         opciones: p.opciones || [],
         pagina_libro: p.pagina_libro ?? undefined,
         confianza_ia: p.confianza_ia ?? undefined,
+        imagen_base64: p.imagen_base64 ?? undefined,
+        imagen_fuente: p.imagen_fuente ?? undefined,
+        respuesta_esperada_tipo: p.respuesta_esperada_tipo ?? undefined,
+        placeholder: p.placeholder ?? undefined,
         orden: p.orden || idx + 1,
       }));
 
@@ -423,6 +447,13 @@ export default function TeacherTrabajos() {
 
   const updateReviewPregunta = (index: number, patch: Partial<LibroPreguntaInput>) => {
     setReviewPreguntas((prev) => prev.map((item, i) => (i === index ? { ...item, ...patch } : item)));
+  };
+
+  const clearReviewPreguntaImage = (index: number) => {
+    updateReviewPregunta(index, {
+      imagen_base64: undefined,
+      imagen_fuente: undefined,
+    });
   };
 
   const addReviewPregunta = () => {
@@ -627,6 +658,7 @@ export default function TeacherTrabajos() {
               pagina_fin: chunk.page,
               idioma: libroIdioma,
               max_preguntas: libroMaxPreguntas,
+              imagenes_por_pagina: chunk.page_image_base64 ? { [String(chunk.page)]: chunk.page_image_base64 } : undefined,
             });
 
             const preguntasExtraidas: LibroPreguntaInput[] = (extracted.preguntas || []).map((p, idx) => ({
@@ -636,6 +668,10 @@ export default function TeacherTrabajos() {
               opciones: p.opciones || [],
               pagina_libro: p.pagina_libro ?? chunk.page,
               confianza_ia: p.confianza_ia ?? undefined,
+              imagen_base64: p.imagen_base64 ?? undefined,
+              imagen_fuente: p.imagen_fuente ?? undefined,
+              respuesta_esperada_tipo: p.respuesta_esperada_tipo ?? undefined,
+              placeholder: p.placeholder ?? undefined,
               orden: p.orden || idx + 1,
             }));
 
@@ -648,25 +684,23 @@ export default function TeacherTrabajos() {
                 trabajoCreadoId = "";
               }
             } else {
-              const descripcionGenerada = buildBookDescriptionFromQuestions(chunk.page, preguntas);
-              await updateTrabajo(trabajo.id, {
-                titulo: trabajo.titulo,
-                descripcion: descripcionGenerada,
-              });
-
               setLibroProgress((prev) => ({
                 ...prev,
                 currentPage: chunk.page,
                 currentPhase: "revisando",
               }));
 
-              await revisarLibro(trabajo.id, {
+              const revision = await revisarLibro(trabajo.id, {
                 preguntas,
                 aprobar: !libroRevisionManual,
                 notas_revision: libroRevisionManual
                   ? "Revision manual requerida desde nuevo trabajo por libro"
                   : "Aprobacion automatica desde nuevo trabajo por libro",
               });
+
+              if (!revision.preguntas || revision.preguntas.length === 0) {
+                throw new Error("No se pudieron registrar preguntas individuales para el trabajo");
+              }
 
               if (!libroRevisionManual) {
                 setLibroProgress((prev) => ({
@@ -1284,6 +1318,33 @@ export default function TeacherTrabajos() {
                           value={pregunta.texto}
                           onChange={(e) => updateReviewPregunta(index, { texto: e.target.value })}
                         />
+                        {pregunta.imagen_base64 && (
+                          <div className="mb-2 border border-gray-200 rounded-lg p-2 bg-gray-50">
+                            <img
+                              src={pregunta.imagen_base64}
+                              alt={t("teacher.trabajos.libro.questionImage", { defaultValue: "Imagen asociada a la pregunta" })}
+                              className="w-full max-h-56 object-contain rounded border border-gray-200 bg-white"
+                              loading="lazy"
+                            />
+                            <div className="mt-2 flex items-center gap-2 flex-wrap">
+                              <button
+                                type="button"
+                                onClick={() => clearReviewPreguntaImage(index)}
+                                className="px-2 py-1 text-xs rounded border border-rose-300 text-rose-700 hover:bg-rose-50"
+                              >
+                                {t("teacher.trabajos.libro.removeImage", { defaultValue: "Quitar imagen" })}
+                              </button>
+                              <span className="text-xs text-gray-500">
+                                {t("teacher.trabajos.libro.imageSource", { defaultValue: "Fuente" })}: {pregunta.imagen_fuente || "-"}
+                              </span>
+                            </div>
+                          </div>
+                        )}
+                        {looksLikeCompositeQuestion(pregunta.texto) && (
+                          <p className="text-xs text-amber-700 mb-2">
+                            {t("teacher.trabajos.libro.compositeWarning", { defaultValue: "Parece contener varias preguntas. Sepáralas para guardarlas como items individuales." })}
+                          </p>
+                        )}
 
                         <div className="grid md:grid-cols-4 gap-2 text-sm">
                           <label>

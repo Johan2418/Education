@@ -20,8 +20,12 @@ type Config struct {
 }
 
 type HuggingFaceConfig struct {
-	APIKey string
-	Model  string
+	APIKey         string
+	Model          string
+	FallbackModel  string
+	EnableFallback bool
+	BaseURL        string
+	TimeoutSeconds int
 }
 
 type EmailConfig struct {
@@ -67,7 +71,7 @@ func Load() *Config {
 		},
 		Database: DatabaseConfig{
 			Host:     envOrDefault("DB_HOST", "localhost"),
-			Port:     envOrDefaultInt("DB_PORT", 5433),
+			Port:     envOrDefaultInt("DB_PORT", 5432),
 			User:     envRequired("DB_USER"),
 			Password: envRequired("DB_PASSWORD"),
 			DBName:   envOrDefault("DB_NAME", "education"),
@@ -86,12 +90,20 @@ func Load() *Config {
 			FrontendURL: envOrDefault("FRONTEND_URL", "http://localhost:5173"),
 		},
 		HuggingFace: HuggingFaceConfig{
-			APIKey: envOrDefault("HUGGINGFACE_API_KEY", ""),
-			Model:  envOrDefault("HUGGINGFACE_MODEL", "mistralai/Mistral-7B-Instruct-v0.3"),
+			APIKey:         envOrDefault("HUGGINGFACE_API_KEY", ""),
+			Model:          envOrDefault("HUGGINGFACE_MODEL", "mistralai/Mistral-7B-Instruct-v0.3"),
+			FallbackModel:  envOrDefault("HUGGINGFACE_FALLBACK_MODEL", ""),
+			EnableFallback: envOrDefaultBool("HUGGINGFACE_ENABLE_FALLBACK", false),
+			BaseURL:        envOrDefault("HUGGINGFACE_BASE_URL", "https://router.huggingface.co"),
+			TimeoutSeconds: envOrDefaultInt("HUGGINGFACE_TIMEOUT_SECONDS", 30),
 		},
 		LibroIA: HuggingFaceConfig{
-			APIKey: envOrDefault("LIBRO_IA_API_KEY", envOrDefault("HUGGINGFACE_API_KEY", "")),
-			Model:  envOrDefault("LIBRO_IA_MODEL", envOrDefault("HUGGINGFACE_MODEL", "mistralai/Mistral-7B-Instruct-v0.3")),
+			APIKey:         envOrDefault("LIBRO_IA_API_KEY", envOrDefault("HUGGINGFACE_API_KEY", "")),
+			Model:          envOrDefault("LIBRO_IA_MODEL", envOrDefault("HUGGINGFACE_MODEL", "mistralai/Mistral-7B-Instruct-v0.3")),
+			FallbackModel:  envOrDefault("LIBRO_IA_FALLBACK_MODEL", envOrDefault("HUGGINGFACE_FALLBACK_MODEL", "")),
+			EnableFallback: envOrDefaultBool("LIBRO_IA_ENABLE_FALLBACK", envOrDefaultBool("HUGGINGFACE_ENABLE_FALLBACK", false)),
+			BaseURL:        envOrDefault("LIBRO_IA_BASE_URL", envOrDefault("HUGGINGFACE_BASE_URL", "https://router.huggingface.co")),
+			TimeoutSeconds: envOrDefaultInt("LIBRO_IA_TIMEOUT_SECONDS", envOrDefaultInt("HUGGINGFACE_TIMEOUT_SECONDS", 30)),
 		},
 	}
 }
@@ -163,6 +175,20 @@ func envOrDefaultInt(key string, fallback int) int {
 		if n, err := strconv.Atoi(v); err == nil {
 			return n
 		}
+	}
+	return fallback
+}
+
+func envOrDefaultBool(key string, fallback bool) bool {
+	v := strings.TrimSpace(strings.ToLower(os.Getenv(key)))
+	if v == "" {
+		return fallback
+	}
+	if v == "1" || v == "true" || v == "yes" || v == "on" {
+		return true
+	}
+	if v == "0" || v == "false" || v == "no" || v == "off" {
+		return false
 	}
 	return fallback
 }

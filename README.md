@@ -1,10 +1,12 @@
-# Backend Local — PostgreSQL + PostgREST
+# Backend Local — PostgreSQL + PostgREST + Ollama
 
-Backend sin dependencias de terceros. Usa PostgreSQL como base de datos y PostgREST como API REST automática, todo ejecutándose localmente vía Docker.
+Backend sin dependencias de terceros. Usa PostgreSQL como base de datos, PostgREST como API REST automática y Ollama para IA local, todo ejecutándose localmente vía Docker.
 
 ## Requisitos
 
 - [Docker Desktop](https://www.docker.com/products/docker-desktop/) (incluye Docker Compose)
+- Drivers NVIDIA instalados (si usarás aceleración GPU en Ollama)
+- [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html) para exponer GPU a contenedores
 
 ## Inicio rápido
 
@@ -19,7 +21,10 @@ cp .env.example .env
 # 3. Levantar los servicios
 docker compose up -d
 
-# 4. Verificar que todo está corriendo
+# 4. Descargar modelo local (primera vez)
+docker compose exec ollama ollama pull qwen2.5:latest
+
+# 5. Verificar que todo está corriendo
 docker compose ps
 ```
 
@@ -30,6 +35,27 @@ docker compose ps
 | PostgreSQL  | 5432   | `localhost:5432`            | Base de datos                        |
 | PostgREST   | 3000   | `http://localhost:3000`     | API REST automática                  |
 | Swagger UI  | 8080   | `http://localhost:8080`     | Documentación interactiva de la API  |
+| Ollama      | 11434  | `http://localhost:11434`    | LLM local para IA del backend        |
+
+## Configuración de IA local (backend Go)
+
+El backend Go corre fuera de Docker y se conecta a Ollama por `localhost:11434`.
+
+Variables mínimas recomendadas en `.env`:
+
+```env
+HUGGINGFACE_MODEL=qwen2.5:latest
+HUGGINGFACE_BASE_URL=http://localhost:11434
+HUGGINGFACE_TIMEOUT_SECONDS=90
+
+LIBRO_IA_MODEL=qwen2.5:latest
+LIBRO_IA_BASE_URL=http://localhost:11434
+LIBRO_IA_TIMEOUT_SECONDS=120
+```
+
+Notas:
+- `HUGGINGFACE_API_KEY` y `LIBRO_IA_API_KEY` pueden quedar vacíos en modo local con Ollama.
+- Si luego quieres volver a Hugging Face remoto, ajusta `*_BASE_URL` a `https://router.huggingface.co` y configura API key.
 
 ## Jerarquía Académica
 
@@ -142,6 +168,7 @@ nueva - implementación/
 # Ver logs
 docker compose logs -f db
 docker compose logs -f postgrest
+docker compose logs -f ollama
 
 # Conectarse a PostgreSQL directamente
 docker compose exec db psql -U arcanea_admin -d arcanea
@@ -152,6 +179,9 @@ docker compose up -d
 
 # Solo reconstruir sin borrar datos
 docker compose restart
+
+# Ver modelos descargados en Ollama
+docker compose exec ollama ollama list
 ```
 
 ## Super admin por defecto

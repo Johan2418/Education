@@ -52,6 +52,10 @@ export interface TrabajoPregunta {
   opciones: string[];
   pagina_libro: number | null;
   confianza_ia: number | null;
+  imagen_base64?: string | null;
+  imagen_fuente?: string | null;
+  respuesta_esperada_tipo?: "abierta" | "opciones" | null;
+  placeholder?: string | null;
   orden: number;
   created_at: string;
 }
@@ -68,6 +72,7 @@ export interface ExtractLibroRequest {
   pagina_fin?: number;
   idioma?: string;
   max_preguntas?: number;
+  imagenes_por_pagina?: Record<string, string>;
 }
 
 export interface LibroPreguntaInput {
@@ -77,6 +82,10 @@ export interface LibroPreguntaInput {
   opciones?: string[];
   pagina_libro?: number;
   confianza_ia?: number;
+  imagen_base64?: string;
+  imagen_fuente?: string;
+  respuesta_esperada_tipo?: "abierta" | "opciones";
+  placeholder?: string;
   orden: number;
 }
 
@@ -118,9 +127,13 @@ export interface LibroExtractJobStatusResponse {
   progress: number;
   message: string;
   error?: string;
+  error_type?: string;
+  error_message?: string;
   started_at: string;
   updated_at: string;
   completed_at?: string;
+  failed_at?: string;
+  duration_ms: number;
   result?: ExtractLibroResponse;
 }
 
@@ -212,7 +225,10 @@ export interface LibroObservabilityResponse {
   error_total: number;
   average_latency_ms: number;
   last_latency_ms: number;
+  last_duration_ms: number;
   last_error: string | null;
+  last_error_type?: string | null;
+  error_by_type?: Record<string, number>;
   last_event_at: string | null;
 }
 

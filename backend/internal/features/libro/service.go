@@ -21,19 +21,22 @@ type Service struct {
 }
 
 type extractLibroJob struct {
-	JobID       string
-	TrabajoID   string
-	UserID      string
-	Role        string
-	Req         ExtractLibroRequest
-	Estado      EstadoExtraccionJob
-	Progress    int
-	Message     string
-	Error       *string
-	StartedAt   time.Time
-	UpdatedAt   time.Time
-	CompletedAt *time.Time
-	Result      *ExtractLibroResponse
+	JobID        string
+	TrabajoID    string
+	UserID       string
+	Role         string
+	Req          ExtractLibroRequest
+	Estado       EstadoExtraccionJob
+	Progress     int
+	Message      string
+	Error        *string
+	ErrorType    *string
+	ErrorMessage *string
+	StartedAt    time.Time
+	UpdatedAt    time.Time
+	CompletedAt  *time.Time
+	FailedAt     *time.Time
+	Result       *ExtractLibroResponse
 }
 
 func NewService(repo *Repository, ai *AIService) *Service {
@@ -97,16 +100,20 @@ func (s *Service) GetExtractLibroJob(ctx context.Context, trabajoID, jobID, user
 	}
 
 	return &LibroExtractJobStatusResponse{
-		JobID:       job.JobID,
-		TrabajoID:   job.TrabajoID,
-		Estado:      job.Estado,
-		Progress:    job.Progress,
-		Message:     job.Message,
-		Error:       job.Error,
-		StartedAt:   job.StartedAt,
-		UpdatedAt:   job.UpdatedAt,
-		CompletedAt: job.CompletedAt,
-		Result:      job.Result,
+		JobID:        job.JobID,
+		TrabajoID:    job.TrabajoID,
+		Estado:       job.Estado,
+		Progress:     job.Progress,
+		Message:      job.Message,
+		Error:        job.Error,
+		ErrorType:    job.ErrorType,
+		ErrorMessage: job.ErrorMessage,
+		StartedAt:    job.StartedAt,
+		UpdatedAt:    job.UpdatedAt,
+		CompletedAt:  job.CompletedAt,
+		FailedAt:     job.FailedAt,
+		DurationMs:   calcJobDurationMs(job, time.Now()),
+		Result:       job.Result,
 	}, nil
 }
 
@@ -132,14 +139,18 @@ func (s *Service) runExtractJob(jobID string) {
 	result, err := s.ExtractLibro(context.Background(), job.TrabajoID, job.Req, job.UserID, job.Role)
 	if err != nil {
 		now := time.Now()
-		message := err.Error()
+		errorType := classifyExtractError(err)
+		message := userErrorMessage(errorType, err)
 		s.updateJob(jobID, func(current *extractLibroJob) {
 			current.Estado = EstadoJobError
 			current.Progress = 100
 			current.Message = "extraccion fallo"
 			current.Error = &message
+			current.ErrorType = &errorType
+			current.ErrorMessage = &message
 			current.UpdatedAt = now
 			current.CompletedAt = &now
+			current.FailedAt = &now
 		})
 		return
 	}
@@ -304,28 +315,53 @@ func (s *Service) RevisarLibro(ctx context.Context, trabajoID string, req Revisi
 	}
 
 	preguntas := make([]TrabajoPregunta, 0, len(req.Preguntas))
-	for i, p := range req.Preguntas {
+	nextOrden := 1
+	for _, p := range req.Preguntas {
 		texto := strings.TrimSpace(p.Texto)
 		if texto == "" {
 			continue
 		}
-		tipo := normalizeTipoPregunta(p.Tipo)
-		opciones := p.Opciones
-		if len(opciones) == 0 {
-			opciones = []byte("[]")
+
+		baseTipo := normalizeTipoPregunta(p.Tipo)
+		parts := splitCompositeQuestionText(texto)
+		if len(parts) == 0 {
+			continue
 		}
-		orden := p.Orden
-		if orden <= 0 {
-			orden = i + 1
+
+		for _, part := range parts {
+			itemText := strings.TrimSpace(part)
+			if itemText == "" {
+				continue
+			}
+
+			tipo := inferQuestionTypeFromText(baseTipo, itemText)
+			opciones := normalizeOptionsForQuestion(p.Opciones, tipo, itemText, len(parts) == 1)
+			if tipo == "opcion_multiple" && isEmptyJSONArray(opciones) {
+				tipo = "respuesta_corta"
+				opciones = []byte("[]")
+			}
+
+			var imageBase64 *string
+			var imageFuente *string
+			if isVisualCueQuestion(itemText) {
+				imageBase64 = p.ImagenBase64
+				imageFuente = p.ImagenFuente
+			}
+
+			preguntas = append(preguntas, TrabajoPregunta{
+				Texto:                 itemText,
+				Tipo:                  tipo,
+				Opciones:              opciones,
+				PaginaLibro:           p.PaginaLibro,
+				ConfianzaIA:           p.ConfianzaIA,
+				ImagenBase64:          imageBase64,
+				ImagenFuente:          imageFuente,
+				RespuestaEsperadaTipo: normalizeRespuestaEsperadaTipo(p.RespuestaEsperadaTipo, tipo),
+				Placeholder:           trimOrNil(p.Placeholder),
+				Orden:                 nextOrden,
+			})
+			nextOrden++
 		}
-		preguntas = append(preguntas, TrabajoPregunta{
-			Texto:       texto,
-			Tipo:        tipo,
-			Opciones:    opciones,
-			PaginaLibro: p.PaginaLibro,
-			ConfianzaIA: p.ConfianzaIA,
-			Orden:       orden,
-		})
 	}
 	if len(preguntas) == 0 {
 		return nil, errors.New("debe mantener al menos una pregunta valida")
@@ -469,6 +505,7 @@ func (s *Service) recordExtractMetrics(trabajoID string, latency time.Duration, 
 
 	metric.ExtractTotal++
 	metric.LastLatencyMs = ms
+	metric.LastDurationMs = ms
 	metric.LastEventAt = &now
 	metric.AverageLatencyMs = ((metric.AverageLatencyMs * float64(metric.ExtractTotal-1)) + ms) / float64(metric.ExtractTotal)
 
@@ -477,7 +514,73 @@ func (s *Service) recordExtractMetrics(trabajoID string, latency time.Duration, 
 	}
 	if err != nil {
 		metric.ErrorTotal++
-		message := err.Error()
+		errorType := classifyExtractError(err)
+		message := userErrorMessage(errorType, err)
 		metric.LastError = &message
+		metric.LastErrorType = &errorType
+		if metric.ErrorByType == nil {
+			metric.ErrorByType = make(map[string]int64)
+		}
+		metric.ErrorByType[errorType]++
+	}
+}
+
+func calcJobDurationMs(job *extractLibroJob, now time.Time) int64 {
+	if job == nil || job.StartedAt.IsZero() {
+		return 0
+	}
+	end := now
+	if job.CompletedAt != nil {
+		end = *job.CompletedAt
+	}
+	if end.Before(job.StartedAt) {
+		return 0
+	}
+	return end.Sub(job.StartedAt).Milliseconds()
+}
+
+func classifyExtractError(err error) string {
+	if err == nil {
+		return "unknown_error"
+	}
+	msg := strings.ToLower(strings.TrimSpace(err.Error()))
+
+	switch {
+	case strings.Contains(msg, "timeout") || strings.Contains(msg, "deadline exceeded"):
+		return "timeout"
+	case strings.Contains(msg, "no se encontro json") || strings.Contains(msg, "invalid character") || strings.Contains(msg, "cannot unmarshal"):
+		return "parse_error"
+	case strings.Contains(msg, "ai chat status"):
+		return "provider_http_error"
+	case strings.Contains(msg, "respuesta vacia"):
+		return "provider_empty_response"
+	case strings.Contains(msg, "sql") || strings.Contains(msg, "gorm") || strings.Contains(msg, "db") || strings.Contains(msg, "duplicate key"):
+		return "db_error"
+	case strings.Contains(msg, "requerido") || strings.Contains(msg, "invalido") || strings.Contains(msg, "debe") || strings.Contains(msg, "no autorizado"):
+		return "validation_error"
+	default:
+		return "unknown_error"
+	}
+}
+
+func userErrorMessage(errorType string, err error) string {
+	switch errorType {
+	case "timeout":
+		return "La IA tardo demasiado en responder. Intenta nuevamente."
+	case "parse_error":
+		return "La IA devolvio un formato invalido. Intenta nuevamente."
+	case "provider_http_error":
+		return "El proveedor de IA respondio con error temporal. Intenta nuevamente."
+	case "provider_empty_response":
+		return "La IA no devolvio contenido util. Intenta nuevamente."
+	case "db_error":
+		return "No se pudo guardar la extraccion en base de datos. Intenta nuevamente."
+	case "validation_error":
+		if err != nil && strings.TrimSpace(err.Error()) != "" {
+			return err.Error()
+		}
+		return "Los datos de extraccion no son validos."
+	default:
+		return "La extraccion fallo por un error inesperado. Intenta nuevamente."
 	}
 }

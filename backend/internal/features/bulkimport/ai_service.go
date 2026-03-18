@@ -20,15 +20,25 @@ var KnownFields = []string{"display_name", "email", "cedula", "phone", "ignore"}
 type AIService struct {
 	apiKey     string
 	model      string
+	baseURL    string
 	httpClient *http.Client
 }
 
 func NewAIService(cfg config.HuggingFaceConfig) *AIService {
+	timeoutSeconds := cfg.TimeoutSeconds
+	if timeoutSeconds <= 0 {
+		timeoutSeconds = 30
+	}
+
 	return &AIService{
 		apiKey: cfg.APIKey,
 		model:  cfg.Model,
+		baseURL: strings.TrimRight(
+			cfg.BaseURL,
+			"/",
+		),
 		httpClient: &http.Client{
-			Timeout: 30 * time.Second,
+			Timeout: time.Duration(timeoutSeconds) * time.Second,
 		},
 	}
 }
@@ -36,8 +46,13 @@ func NewAIService(cfg config.HuggingFaceConfig) *AIService {
 // MapColumns uses Hugging Face Inference API to map Excel column headers
 // to known fields. Falls back to heuristic matching if AI is unavailable.
 func (s *AIService) MapColumns(ctx context.Context, headers []string) (*ColumnMappingResponse, error) {
-	if s.apiKey == "" {
-		log.Println("bulkimport: no HuggingFace API key configured, using heuristic mapping")
+	if strings.TrimSpace(s.model) == "" || strings.TrimSpace(s.baseURL) == "" {
+		log.Println("bulkimport: AI provider config is incomplete, using heuristic mapping")
+		return s.heuristicMapping(headers), nil
+	}
+
+	if s.apiKey == "" && strings.Contains(strings.ToLower(s.baseURL), "huggingface.co") {
+		log.Println("bulkimport: no HuggingFace API key configured for Hugging Face endpoint, using heuristic mapping")
 		return s.heuristicMapping(headers), nil
 	}
 
@@ -53,8 +68,10 @@ func (s *AIService) MapColumns(ctx context.Context, headers []string) (*ColumnMa
 func (s *AIService) aiMapping(ctx context.Context, headers []string) (*ColumnMappingResponse, error) {
 	prompt := buildMappingPrompt(headers)
 
-	if out, err := s.aiMappingHFInference(ctx, prompt, headers); err == nil {
-		return out, nil
+	if s.shouldUseHFInference() {
+		if out, err := s.aiMappingHFInference(ctx, prompt, headers); err == nil {
+			return out, nil
+		}
 	}
 
 	// Some models are only exposed through the Router chat-completions interface.
@@ -68,12 +85,14 @@ func (s *AIService) aiMappingHFInference(ctx context.Context, prompt string, hea
 	}
 	body, _ := json.Marshal(payload)
 
-	url := fmt.Sprintf("https://router.huggingface.co/hf-inference/models/%s", s.model)
+	url := fmt.Sprintf("%s/hf-inference/models/%s", s.baseURL, s.model)
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(body))
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("Authorization", "Bearer "+s.apiKey)
+	if s.apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+s.apiKey)
+	}
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := s.httpClient.Do(req)
@@ -91,22 +110,32 @@ func (s *AIService) aiMappingHFInference(ctx context.Context, prompt string, hea
 }
 
 func (s *AIService) aiMappingChat(ctx context.Context, prompt string, headers []string) (*ColumnMappingResponse, error) {
-	payload := map[string]interface{}{
-		"model": s.model,
-		"messages": []map[string]string{
-			{"role": "user", "content": prompt},
-		},
-		"temperature": 0.1,
-		"max_tokens":  400,
+	maxTokens := 400
+	payload := map[string]interface{}{}
+	if s.isLocalProvider() {
+		maxTokens = 180
+		payload["options"] = map[string]interface{}{
+			"num_ctx":     1024,
+			"num_predict": maxTokens,
+		}
 	}
+
+	payload["model"] = s.model
+	payload["messages"] = []map[string]string{
+		{"role": "user", "content": prompt},
+	}
+	payload["temperature"] = 0.1
+	payload["max_tokens"] = maxTokens
 	body, _ := json.Marshal(payload)
 
-	url := "https://router.huggingface.co/v1/chat/completions"
+	url := s.baseURL + "/v1/chat/completions"
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(body))
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("Authorization", "Bearer "+s.apiKey)
+	if s.apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+s.apiKey)
+	}
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := s.httpClient.Do(req)
@@ -179,6 +208,15 @@ func parseAIResponse(body []byte, headers []string) (*ColumnMappingResponse, err
 	}
 
 	return &ColumnMappingResponse{Mappings: mappings}, nil
+}
+
+func (s *AIService) shouldUseHFInference() bool {
+	return s.apiKey != "" && strings.Contains(strings.ToLower(s.baseURL), "huggingface.co")
+}
+
+func (s *AIService) isLocalProvider() bool {
+	base := strings.ToLower(strings.TrimSpace(s.baseURL))
+	return strings.Contains(base, "localhost") || strings.Contains(base, "127.0.0.1") || strings.Contains(base, "ollama")
 }
 
 func parseAIChatResponse(body []byte, headers []string) (*ColumnMappingResponse, error) {

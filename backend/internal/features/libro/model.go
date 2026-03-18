@@ -39,15 +39,19 @@ type LibroExtraccion struct {
 func (LibroExtraccion) TableName() string { return "internal.libro_extraccion" }
 
 type TrabajoPregunta struct {
-	ID          string          `json:"id" gorm:"column:id;primaryKey;default:gen_random_uuid()"`
-	TrabajoID   string          `json:"trabajo_id" gorm:"column:trabajo_id"`
-	Texto       string          `json:"texto" gorm:"column:texto"`
-	Tipo        string          `json:"tipo" gorm:"column:tipo;type:internal.tipo_pregunta"`
-	Opciones    json.RawMessage `json:"opciones" gorm:"column:opciones;type:jsonb"`
-	PaginaLibro *int            `json:"pagina_libro" gorm:"column:pagina_libro"`
-	ConfianzaIA *float64        `json:"confianza_ia" gorm:"column:confianza_ia"`
-	Orden       int             `json:"orden" gorm:"column:orden"`
-	CreatedAt   time.Time       `json:"created_at" gorm:"column:created_at;autoCreateTime"`
+	ID                    string          `json:"id" gorm:"column:id;primaryKey;default:gen_random_uuid()"`
+	TrabajoID             string          `json:"trabajo_id" gorm:"column:trabajo_id"`
+	Texto                 string          `json:"texto" gorm:"column:texto"`
+	Tipo                  string          `json:"tipo" gorm:"column:tipo;type:internal.tipo_pregunta"`
+	Opciones              json.RawMessage `json:"opciones" gorm:"column:opciones;type:jsonb"`
+	PaginaLibro           *int            `json:"pagina_libro" gorm:"column:pagina_libro"`
+	ConfianzaIA           *float64        `json:"confianza_ia" gorm:"column:confianza_ia"`
+	ImagenBase64          *string         `json:"imagen_base64" gorm:"column:imagen_base64"`
+	ImagenFuente          *string         `json:"imagen_fuente" gorm:"column:imagen_fuente"`
+	RespuestaEsperadaTipo *string         `json:"respuesta_esperada_tipo" gorm:"column:respuesta_esperada_tipo"`
+	Placeholder           *string         `json:"placeholder" gorm:"column:placeholder"`
+	Orden                 int             `json:"orden" gorm:"column:orden"`
+	CreatedAt             time.Time       `json:"created_at" gorm:"column:created_at;autoCreateTime"`
 }
 
 func (TrabajoPregunta) TableName() string { return "internal.trabajo_pregunta" }
@@ -62,22 +66,27 @@ type Trabajo struct {
 func (Trabajo) TableName() string { return "internal.trabajo" }
 
 type ExtractLibroRequest struct {
-	ArchivoURL   *string `json:"archivo_url"`
-	Contenido    string  `json:"contenido"`
-	PaginaInicio *int    `json:"pagina_inicio"`
-	PaginaFin    *int    `json:"pagina_fin"`
-	Idioma       string  `json:"idioma"`
-	MaxPreguntas *int    `json:"max_preguntas"`
+	ArchivoURL        *string           `json:"archivo_url"`
+	Contenido         string            `json:"contenido"`
+	PaginaInicio      *int              `json:"pagina_inicio"`
+	PaginaFin         *int              `json:"pagina_fin"`
+	Idioma            string            `json:"idioma"`
+	MaxPreguntas      *int              `json:"max_preguntas"`
+	ImagenesPorPagina map[string]string `json:"imagenes_por_pagina"`
 }
 
 type LibroPreguntaInput struct {
-	ID          string          `json:"id,omitempty"`
-	Texto       string          `json:"texto"`
-	Tipo        string          `json:"tipo"`
-	Opciones    json.RawMessage `json:"opciones,omitempty"`
-	PaginaLibro *int            `json:"pagina_libro,omitempty"`
-	ConfianzaIA *float64        `json:"confianza_ia,omitempty"`
-	Orden       int             `json:"orden"`
+	ID                    string          `json:"id,omitempty"`
+	Texto                 string          `json:"texto"`
+	Tipo                  string          `json:"tipo"`
+	Opciones              json.RawMessage `json:"opciones,omitempty"`
+	PaginaLibro           *int            `json:"pagina_libro,omitempty"`
+	ConfianzaIA           *float64        `json:"confianza_ia,omitempty"`
+	ImagenBase64          *string         `json:"imagen_base64,omitempty"`
+	ImagenFuente          *string         `json:"imagen_fuente,omitempty"`
+	RespuestaEsperadaTipo *string         `json:"respuesta_esperada_tipo,omitempty"`
+	Placeholder           *string         `json:"placeholder,omitempty"`
+	Orden                 int             `json:"orden"`
 }
 
 type RevisionLibroRequest struct {
@@ -107,14 +116,17 @@ type ConfirmarLibroResponse struct {
 }
 
 type LibroObservabilityResponse struct {
-	TrabajoID        string     `json:"trabajo_id"`
-	ExtractTotal     int64      `json:"extract_total"`
-	FallbackTotal    int64      `json:"fallback_total"`
-	ErrorTotal       int64      `json:"error_total"`
-	AverageLatencyMs float64    `json:"average_latency_ms"`
-	LastLatencyMs    float64    `json:"last_latency_ms"`
-	LastError        *string    `json:"last_error,omitempty"`
-	LastEventAt      *time.Time `json:"last_event_at,omitempty"`
+	TrabajoID        string           `json:"trabajo_id"`
+	ExtractTotal     int64            `json:"extract_total"`
+	FallbackTotal    int64            `json:"fallback_total"`
+	ErrorTotal       int64            `json:"error_total"`
+	AverageLatencyMs float64          `json:"average_latency_ms"`
+	LastLatencyMs    float64          `json:"last_latency_ms"`
+	LastDurationMs   float64          `json:"last_duration_ms"`
+	LastError        *string          `json:"last_error,omitempty"`
+	LastErrorType    *string          `json:"last_error_type,omitempty"`
+	ErrorByType      map[string]int64 `json:"error_by_type,omitempty"`
+	LastEventAt      *time.Time       `json:"last_event_at,omitempty"`
 }
 
 type EstadoExtraccionJob string
@@ -135,14 +147,18 @@ type ExtractLibroAsyncResponse struct {
 }
 
 type LibroExtractJobStatusResponse struct {
-	JobID       string                `json:"job_id"`
-	TrabajoID   string                `json:"trabajo_id"`
-	Estado      EstadoExtraccionJob   `json:"estado"`
-	Progress    int                   `json:"progress"`
-	Message     string                `json:"message"`
-	Error       *string               `json:"error,omitempty"`
-	StartedAt   time.Time             `json:"started_at"`
-	UpdatedAt   time.Time             `json:"updated_at"`
-	CompletedAt *time.Time            `json:"completed_at,omitempty"`
-	Result      *ExtractLibroResponse `json:"result,omitempty"`
+	JobID        string                `json:"job_id"`
+	TrabajoID    string                `json:"trabajo_id"`
+	Estado       EstadoExtraccionJob   `json:"estado"`
+	Progress     int                   `json:"progress"`
+	Message      string                `json:"message"`
+	Error        *string               `json:"error,omitempty"`
+	ErrorType    *string               `json:"error_type,omitempty"`
+	ErrorMessage *string               `json:"error_message,omitempty"`
+	StartedAt    time.Time             `json:"started_at"`
+	UpdatedAt    time.Time             `json:"updated_at"`
+	CompletedAt  *time.Time            `json:"completed_at,omitempty"`
+	FailedAt     *time.Time            `json:"failed_at,omitempty"`
+	DurationMs   int64                 `json:"duration_ms"`
+	Result       *ExtractLibroResponse `json:"result,omitempty"`
 }

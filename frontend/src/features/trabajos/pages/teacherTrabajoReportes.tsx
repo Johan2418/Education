@@ -211,10 +211,32 @@ export default function TeacherTrabajoReportes() {
               <span className="text-gray-600">{t("teacher.trabajos.reportes.avgLatency", { defaultValue: "Latencia promedio" })}: </span>
               <strong>{(observabilidad?.average_latency_ms ?? 0).toFixed(1)} ms</strong>
             </p>
+            <p>
+              <span className="text-gray-600">{t("teacher.trabajos.reportes.lastDuration", { defaultValue: "Ultima duracion total" })}: </span>
+              <strong>{Math.max(0, Math.round((observabilidad?.last_duration_ms ?? 0) / 1000))} s</strong>
+            </p>
             <p className="text-rose-700">
               <span className="text-gray-600">{t("teacher.trabajos.reportes.errors", { defaultValue: "Errores" })}: </span>
               <strong>{observabilidad?.error_total ?? 0}</strong>
             </p>
+            {!!observabilidad?.last_error_type && (
+              <p className="text-rose-700">
+                <span className="text-gray-600">{t("teacher.trabajos.reportes.lastErrorType", { defaultValue: "Ultimo tipo de error" })}: </span>
+                <strong>{observabilidad.last_error_type}</strong>
+              </p>
+            )}
+            {observabilidad?.error_by_type && Object.keys(observabilidad.error_by_type).length > 0 && (
+              <div className="pt-1">
+                <p className="text-gray-600 mb-1">{t("teacher.trabajos.reportes.errorsByType", { defaultValue: "Errores por tipo" })}:</p>
+                <div className="flex flex-wrap gap-2">
+                  {Object.entries(observabilidad.error_by_type).map(([type, count]) => (
+                    <span key={type} className="inline-flex items-center px-2 py-1 rounded border border-rose-200 bg-rose-50 text-rose-700 text-xs">
+                      {type}: {count}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>

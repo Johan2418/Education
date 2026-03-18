@@ -23,15 +23,19 @@ type Trabajo struct {
 func (Trabajo) TableName() string { return "internal.trabajo" }
 
 type TrabajoPregunta struct {
-	ID          string          `json:"id" gorm:"column:id;primaryKey;default:gen_random_uuid()"`
-	TrabajoID   string          `json:"trabajo_id" gorm:"column:trabajo_id"`
-	Texto       string          `json:"texto" gorm:"column:texto"`
-	Tipo        string          `json:"tipo" gorm:"column:tipo;type:internal.tipo_pregunta"`
-	Opciones    json.RawMessage `json:"opciones" gorm:"column:opciones;type:jsonb"`
-	PaginaLibro *int            `json:"pagina_libro" gorm:"column:pagina_libro"`
-	ConfianzaIA *float64        `json:"confianza_ia" gorm:"column:confianza_ia"`
-	Orden       int             `json:"orden" gorm:"column:orden"`
-	CreatedAt   time.Time       `json:"created_at" gorm:"column:created_at;autoCreateTime"`
+	ID                    string          `json:"id" gorm:"column:id;primaryKey;default:gen_random_uuid()"`
+	TrabajoID             string          `json:"trabajo_id" gorm:"column:trabajo_id"`
+	Texto                 string          `json:"texto" gorm:"column:texto"`
+	Tipo                  string          `json:"tipo" gorm:"column:tipo;type:internal.tipo_pregunta"`
+	Opciones              json.RawMessage `json:"opciones" gorm:"column:opciones;type:jsonb"`
+	PaginaLibro           *int            `json:"pagina_libro" gorm:"column:pagina_libro"`
+	ConfianzaIA           *float64        `json:"confianza_ia" gorm:"column:confianza_ia"`
+	ImagenBase64          *string         `json:"imagen_base64" gorm:"column:imagen_base64"`
+	ImagenFuente          *string         `json:"imagen_fuente" gorm:"column:imagen_fuente"`
+	RespuestaEsperadaTipo *string         `json:"respuesta_esperada_tipo" gorm:"column:respuesta_esperada_tipo"`
+	Placeholder           *string         `json:"placeholder" gorm:"column:placeholder"`
+	Orden                 int             `json:"orden" gorm:"column:orden"`
+	CreatedAt             time.Time       `json:"created_at" gorm:"column:created_at;autoCreateTime"`
 }
 
 func (TrabajoPregunta) TableName() string { return "internal.trabajo_pregunta" }

@@ -13,6 +13,7 @@ import type {
   EstadoExtraccionLibro,
   EstadoExtraccionJob,
   ExtractLibroRequest,
+  LibroExtractJobStatusResponse,
   LibroPreguntaInput,
   Trabajo,
   TrabajoPregunta,
@@ -53,13 +54,25 @@ function optionsToText(opciones: string[] | undefined): string {
   return opciones.join(", ");
 }
 
-async function parsePdfToMarkedText(file: File, pageStart?: number, pageEnd?: number): Promise<string> {
+function looksLikeCompositeQuestion(texto: string): boolean {
+  const t = (texto || "").trim();
+  if (!t) return false;
+  const markerMatches = t.match(/(?:^|\n|\s)(?:\d{1,2}[\.)]|[A-Da-d][\.)]|pregunta\s+\d+[:\.-])/gi) || [];
+  return markerMatches.length >= 2;
+}
+
+async function parsePdfToMarkedPayload(
+  file: File,
+  pageStart?: number,
+  pageEnd?: number
+): Promise<{ markedText: string; imagenesPorPagina: Record<string, string> }> {
   const start = pageStart && pageStart > 0 ? pageStart : 1;
   const data = new Uint8Array(await file.arrayBuffer());
   const doc = await pdfjsLib.getDocument({ data }).promise;
   const end = pageEnd && pageEnd >= start ? Math.min(pageEnd, doc.numPages) : doc.numPages;
 
   const parts: string[] = [];
+  const imagenesPorPagina: Record<string, string> = {};
   for (let pageNum = start; pageNum <= end; pageNum += 1) {
     const page = await doc.getPage(pageNum);
     const content = await page.getTextContent();
@@ -70,9 +83,24 @@ async function parsePdfToMarkedText(file: File, pageStart?: number, pageEnd?: nu
       .trim();
     if (!text) continue;
     parts.push(`[PAGINA ${pageNum}]\n${text}`);
+
+    const viewport = page.getViewport({ scale: 1 });
+    if (viewport.width > 0 && viewport.height > 0) {
+      const canvas = document.createElement("canvas");
+      const targetWidth = 960;
+      const scale = Math.min(2, Math.max(0.8, targetWidth / Math.max(1, viewport.width)));
+      const renderViewport = page.getViewport({ scale });
+      canvas.width = Math.max(1, Math.floor(renderViewport.width));
+      canvas.height = Math.max(1, Math.floor(renderViewport.height));
+      const ctx = canvas.getContext("2d", { alpha: false });
+      if (ctx) {
+        await page.render({ canvas, canvasContext: ctx, viewport: renderViewport }).promise;
+        imagenesPorPagina[String(pageNum)] = canvas.toDataURL("image/jpeg", 0.65);
+      }
+    }
   }
 
-  return parts.join("\n\n");
+  return { markedText: parts.join("\n\n"), imagenesPorPagina };
 }
 
 async function parseDocxToMarkedText(file: File, pageStart?: number): Promise<string> {
@@ -159,7 +187,15 @@ export default function TeacherTrabajoLibroWizard() {
     notas_finales: "",
   });
   const [selectedFileName, setSelectedFileName] = useState("");
-  const [jobStatus, setJobStatus] = useState<{ estado: EstadoExtraccionJob; progress: number; message: string } | null>(null);
+  const [imagenesPorPagina, setImagenesPorPagina] = useState<Record<string, string>>({});
+  const [jobStatus, setJobStatus] = useState<{
+    estado: EstadoExtraccionJob;
+    progress: number;
+    message: string;
+    duration_ms?: number;
+    error_type?: string;
+    error_message?: string;
+  } | null>(null);
 
   const questionTypes = useMemo(() => ([
     { value: "opcion_multiple", label: t("teacher.trabajos.libro.questionTypes.opcion_multiple", { defaultValue: "Opcion multiple" }) },
@@ -209,11 +245,15 @@ export default function TeacherTrabajoLibroWizard() {
     try {
       let markedText = "";
       if (extension === "pdf") {
-        markedText = await parsePdfToMarkedText(file, extractReq.pagina_inicio, extractReq.pagina_fin);
+        const parsed = await parsePdfToMarkedPayload(file, extractReq.pagina_inicio, extractReq.pagina_fin);
+        markedText = parsed.markedText;
+        setImagenesPorPagina(parsed.imagenesPorPagina);
       } else if (extension === "docx") {
         markedText = await parseDocxToMarkedText(file, extractReq.pagina_inicio);
+        setImagenesPorPagina({});
       } else {
         markedText = await parseTxtToMarkedText(file, extractReq.pagina_inicio);
+        setImagenesPorPagina({});
       }
 
       if (!markedText || markedText.trim().length < 30) {
@@ -249,6 +289,10 @@ export default function TeacherTrabajoLibroWizard() {
         opciones: p.opciones || [],
         pagina_libro: p.pagina_libro ?? undefined,
         confianza_ia: p.confianza_ia ?? undefined,
+          imagen_base64: p.imagen_base64 ?? undefined,
+          imagen_fuente: p.imagen_fuente ?? undefined,
+          respuesta_esperada_tipo: p.respuesta_esperada_tipo ?? undefined,
+          placeholder: p.placeholder ?? undefined,
         orden: p.orden || index + 1,
       }))
     );
@@ -327,6 +371,7 @@ export default function TeacherTrabajoLibroWizard() {
       const start = await extractLibroAsync(trabajoId, {
         ...extractReq,
         contenido: extractReq.contenido.trim(),
+        imagenes_por_pagina: Object.keys(imagenesPorPagina).length > 0 ? imagenesPorPagina : undefined,
       });
 
       setJobStatus({ estado: start.estado, progress: start.progress, message: start.message });
@@ -335,14 +380,12 @@ export default function TeacherTrabajoLibroWizard() {
       for (let attempt = 0; attempt < MAX_POLL_ATTEMPTS; attempt += 1) {
         await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
         const status = await getLibroExtractJobStatus(trabajoId, start.job_id);
-        setJobStatus({
-          estado: status.estado,
-          progress: status.progress,
-          message: status.message,
-        });
+        setJobStatus(buildJobStatusCard(status));
 
         if (status.estado === "error") {
-          throw new Error(status.error || status.message || "Error en job de extraccion");
+          const fallbackMsg = status.error_message || status.error || status.message || "Error en job de extraccion";
+          const fullMsg = status.error_type ? `${fallbackMsg} (${status.error_type})` : fallbackMsg;
+          throw new Error(fullMsg);
         }
 
         if (status.estado === "completado") {
@@ -360,6 +403,10 @@ export default function TeacherTrabajoLibroWizard() {
               opciones: p.opciones || [],
               pagina_libro: p.pagina_libro ?? undefined,
               confianza_ia: p.confianza_ia ?? undefined,
+              imagen_base64: p.imagen_base64 ?? undefined,
+              imagen_fuente: p.imagen_fuente ?? undefined,
+              respuesta_esperada_tipo: p.respuesta_esperada_tipo ?? undefined,
+              placeholder: p.placeholder ?? undefined,
               orden: p.orden || index + 1,
             }))
           );
@@ -409,6 +456,10 @@ export default function TeacherTrabajoLibroWizard() {
           opciones: p.opciones || [],
           pagina_libro: p.pagina_libro ?? undefined,
           confianza_ia: p.confianza_ia ?? undefined,
+          imagen_base64: p.imagen_base64 ?? undefined,
+          imagen_fuente: p.imagen_fuente ?? undefined,
+          respuesta_esperada_tipo: p.respuesta_esperada_tipo ?? undefined,
+          placeholder: p.placeholder ?? undefined,
           orden: p.orden || index + 1,
         }))
       );
@@ -448,6 +499,26 @@ export default function TeacherTrabajoLibroWizard() {
 
   const updatePregunta = (index: number, patch: Partial<LibroPreguntaInput>) => {
     setPreguntas((prev) => prev.map((item, i) => (i === index ? { ...item, ...patch } : item)));
+  };
+
+  const clearPreguntaImage = (index: number) => {
+    updatePregunta(index, {
+      imagen_base64: undefined,
+      imagen_fuente: undefined,
+    });
+  };
+
+  const attachPreguntaImageFromPage = (index: number) => {
+    const pregunta = preguntas[index];
+    if (!pregunta) return;
+    const page = pregunta.pagina_libro;
+    if (!page) return;
+    const image = imagenesPorPagina[String(page)];
+    if (!image) return;
+    updatePregunta(index, {
+      imagen_base64: image,
+      imagen_fuente: "pdf_pagina",
+    });
   };
 
   const addPregunta = () => {
@@ -617,6 +688,21 @@ export default function TeacherTrabajoLibroWizard() {
                 style={{ width: `${Math.max(0, Math.min(100, jobStatus.progress))}%` }}
               />
             </div>
+            <div className="mt-2 text-xs text-blue-900 flex items-center justify-between gap-3 flex-wrap">
+              <span>
+                {t("teacher.trabajos.libro.totalDuration", { defaultValue: "Duracion total" })}: {Math.max(0, Math.round((jobStatus.duration_ms ?? 0) / 1000))}s
+              </span>
+              {jobStatus.error_type && (
+                <span className="text-rose-700">
+                  {t("teacher.trabajos.libro.errorType", { defaultValue: "Tipo" })}: {jobStatus.error_type}
+                </span>
+              )}
+            </div>
+            {jobStatus.error_message && (
+              <p className="mt-1 text-xs text-rose-700">
+                {jobStatus.error_message}
+              </p>
+            )}
           </div>
         )}
       </section>
@@ -665,6 +751,44 @@ export default function TeacherTrabajoLibroWizard() {
                   value={pregunta.texto}
                   onChange={(e) => updatePregunta(index, { texto: e.target.value })}
                 />
+                {pregunta.imagen_base64 && (
+                  <div className="mb-2 border border-gray-200 rounded-lg p-2 bg-gray-50">
+                    <img
+                      src={pregunta.imagen_base64}
+                      alt={t("teacher.trabajos.libro.questionImage", { defaultValue: "Imagen asociada a la pregunta" })}
+                      className="w-full max-h-56 object-contain rounded border border-gray-200 bg-white"
+                      loading="lazy"
+                    />
+                    <div className="mt-2 flex items-center gap-2 flex-wrap">
+                      <button
+                        type="button"
+                        onClick={() => clearPreguntaImage(index)}
+                        className="px-2 py-1 text-xs rounded border border-rose-300 text-rose-700 hover:bg-rose-50"
+                      >
+                        {t("teacher.trabajos.libro.removeImage", { defaultValue: "Quitar imagen" })}
+                      </button>
+                      <span className="text-xs text-gray-500">
+                        {t("teacher.trabajos.libro.imageSource", { defaultValue: "Fuente" })}: {pregunta.imagen_fuente || "-"}
+                      </span>
+                    </div>
+                  </div>
+                )}
+                {!pregunta.imagen_base64 && pregunta.pagina_libro && imagenesPorPagina[String(pregunta.pagina_libro)] && (
+                  <div className="mb-2">
+                    <button
+                      type="button"
+                      onClick={() => attachPreguntaImageFromPage(index)}
+                      className="px-2 py-1 text-xs rounded border border-blue-300 text-blue-700 hover:bg-blue-50"
+                    >
+                      {t("teacher.trabajos.libro.attachPageImage", { defaultValue: "Adjuntar imagen de la pagina" })}
+                    </button>
+                  </div>
+                )}
+                {looksLikeCompositeQuestion(pregunta.texto) && (
+                  <p className="text-xs text-amber-700 mb-2">
+                    {t("teacher.trabajos.libro.compositeWarning", { defaultValue: "Parece contener varias preguntas. Sepáralas para guardarlas como items individuales." })}
+                  </p>
+                )}
 
                 <div className="grid md:grid-cols-4 gap-2 text-sm">
                   <label>
@@ -795,4 +919,15 @@ export default function TeacherTrabajoLibroWizard() {
       </section>
     </div>
   );
+}
+
+function buildJobStatusCard(status: LibroExtractJobStatusResponse) {
+  return {
+    estado: status.estado,
+    progress: status.progress,
+    message: status.message,
+    duration_ms: status.duration_ms,
+    error_type: status.error_type,
+    error_message: status.error_message ?? status.error,
+  };
 }

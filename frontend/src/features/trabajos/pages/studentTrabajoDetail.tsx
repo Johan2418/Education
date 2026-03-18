@@ -22,6 +22,10 @@ function buildDraftKey(trabajoId: string): string {
   return `student_trabajo_draft:${trabajoId}`;
 }
 
+function expectsOptionsResponse(pregunta: TrabajoPregunta): boolean {
+  return pregunta.respuesta_esperada_tipo === "opciones" || pregunta.tipo === "opcion_multiple" || pregunta.tipo === "verdadero_falso";
+}
+
 export default function StudentTrabajoDetail() {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -135,7 +139,7 @@ export default function StudentTrabajoDetail() {
 
     const respuestasPreguntas = preguntas.map((pregunta) => {
       const value = (respuestas[pregunta.id] || "").trim();
-      if (pregunta.tipo === "opcion_multiple" || pregunta.tipo === "verdadero_falso") {
+      if (expectsOptionsResponse(pregunta)) {
         return {
           pregunta_id: pregunta.id,
           respuesta_opcion: value,
@@ -239,12 +243,22 @@ export default function StudentTrabajoDetail() {
             {preguntas.map((pregunta, index) => {
               const answer = respuestas[pregunta.id] || "";
               const options = pregunta.tipo === "verdadero_falso" ? ["Verdadero", "Falso"] : (pregunta.opciones || []);
+              const expectsOptions = expectsOptionsResponse(pregunta);
+              const useShortInput = (pregunta.tipo === "respuesta_corta" || pregunta.tipo === "completar") && !pregunta.imagen_base64;
 
               return (
                 <div key={pregunta.id} className="border border-gray-200 rounded-lg p-3">
+                  {pregunta.imagen_base64 && (
+                    <img
+                      src={pregunta.imagen_base64}
+                      alt={t("student.trabajos.illustration", { defaultValue: "Ilustracion de apoyo" })}
+                      className="w-full max-h-72 object-contain rounded border border-gray-200 mb-2 bg-gray-50"
+                      loading="lazy"
+                    />
+                  )}
                   <p className="text-sm font-medium text-gray-900">{index + 1}. {pregunta.texto}</p>
 
-                  {(pregunta.tipo === "opcion_multiple" || pregunta.tipo === "verdadero_falso") ? (
+                  {expectsOptions ? (
                     <div className="mt-2 space-y-1">
                       {options.map((option) => (
                         <label key={option} className="flex items-center gap-2 text-sm">
@@ -258,10 +272,18 @@ export default function StudentTrabajoDetail() {
                         </label>
                       ))}
                     </div>
+                  ) : useShortInput ? (
+                    <input
+                      className="mt-2 w-full border border-gray-300 rounded px-3 py-2"
+                      value={answer}
+                      placeholder={pregunta.placeholder || t("student.trabajos.answerPlaceholder", { defaultValue: "Escribe tu respuesta" })}
+                      onChange={(e) => setRespuestas((prev) => ({ ...prev, [pregunta.id]: e.target.value }))}
+                    />
                   ) : (
                     <textarea
                       rows={3}
                       className="mt-2 w-full border border-gray-300 rounded px-3 py-2"
+                      placeholder={pregunta.placeholder || t("student.trabajos.answerPlaceholder", { defaultValue: "Escribe tu respuesta" })}
                       value={answer}
                       onChange={(e) => setRespuestas((prev) => ({ ...prev, [pregunta.id]: e.target.value }))}
                     />
