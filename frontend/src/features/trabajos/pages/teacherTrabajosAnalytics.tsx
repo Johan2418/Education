@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { ArrowLeft, BarChart3, CalendarRange, Loader2, RefreshCw } from "lucide-react";
@@ -51,7 +51,7 @@ export default function TeacherTrabajosAnalytics() {
     return all.filter((item) => item.curso_id === cursoId);
   }, [analytics, cursoId]);
 
-  const runLoad = async (showLoader: boolean) => {
+  const runLoad = useCallback(async (showLoader: boolean) => {
     if (showLoader) setLoading(true);
     else setRefreshing(true);
 
@@ -84,7 +84,7 @@ export default function TeacherTrabajosAnalytics() {
       setLoading(false);
       setRefreshing(false);
     }
-  };
+  }, [cursoId, from, leccionId, to]);
 
   useEffect(() => {
     (async () => {
@@ -100,7 +100,7 @@ export default function TeacherTrabajosAnalytics() {
         navigate("/teacher/trabajos");
       }
     })();
-  }, [navigate]);
+  }, [navigate, runLoad]);
 
   const compareText = (current: number, previous: number | null | undefined) => {
     if (previous == null) return "-";

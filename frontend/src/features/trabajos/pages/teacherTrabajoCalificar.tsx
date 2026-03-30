@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { Loader2, Save } from "lucide-react";
@@ -38,7 +38,7 @@ export default function TeacherTrabajoCalificar() {
 
   const totalPuntaje = useMemo(() => items.reduce((acc, item) => acc + (Number.isFinite(item.puntaje) ? item.puntaje : 0), 0), [items]);
 
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     if (!trabajoId) return;
     const [trabajoData, entregasData] = await Promise.all([
       getTrabajo(trabajoId),
@@ -47,7 +47,7 @@ export default function TeacherTrabajoCalificar() {
 
     setTrabajo(trabajoData);
     setEntregas(entregasData);
-  };
+  }, [trabajoId]);
 
   useEffect(() => {
     (async () => {
@@ -71,7 +71,7 @@ export default function TeacherTrabajoCalificar() {
         setLoading(false);
       }
     })();
-  }, [navigate, t, trabajoId]);
+  }, [loadData, navigate, t, trabajoId]);
 
   useEffect(() => {
     if (!selectedEntrega) {

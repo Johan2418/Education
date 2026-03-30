@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { Eye, EyeOff, Lock, User } from "lucide-react";
+import { Eye, EyeOff, Lock, User, Atom } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { login as apiLogin, isAuthenticated, resendVerification } from "@/shared/lib/auth";
 import { toast } from "react-hot-toast";
@@ -129,40 +129,63 @@ export default function Login({ highContrast = false }: Props) {
 
   return (
     <div
-      className={`flex items-center justify-center min-h-screen bg-cover bg-center p-4 transition-colors duration-300 ${
+      className={`flex items-center justify-center min-h-screen p-4 transition-colors duration-300 ${
         highContrast ? "bg-black text-white" : ""
       }`}
       style={{
-        backgroundImage: highContrast
-          ? "none"
-          : "url('https://previews.123rf.com/images/ihor_seamless/ihor_seamless0908/ihor_seamless090800023/5407313-seamlessly-wallpaper-chemistry-formulas-on-white.jpg')",
+        background: highContrast
+          ? "black"
+          : "linear-gradient(135deg, #312e81 0%, #5b21b6 30%, #4f46e5 60%, #0891b2 100%)",
       }}
     >
+      {/* Decorative orbs */}
+      {!highContrast && (
+        <>
+          <div className="fixed top-[-10%] left-[-5%] w-[500px] h-[500px] bg-violet-500/20 rounded-full blur-3xl animate-float pointer-events-none" />
+          <div className="fixed bottom-[-10%] right-[-5%] w-[600px] h-[600px] bg-indigo-500/20 rounded-full blur-3xl animate-float pointer-events-none" style={{ animationDelay: "2s" }} />
+          <div className="fixed top-[40%] right-[20%] w-[300px] h-[300px] bg-cyan-400/15 rounded-full blur-3xl animate-float pointer-events-none" style={{ animationDelay: "4s" }} />
+        </>
+      )}
+
       <div
-        className={`${
+        className={`relative animate-scale-in ${
           highContrast
             ? "bg-gray-900 text-white border-2 border-white"
-            : "bg-white text-gray-800 shadow-2xl"
-        } rounded-2xl w-full max-w-md p-6 sm:p-8`}
+            : "bg-white/10 backdrop-blur-2xl border border-white/20 shadow-2xl"
+        } rounded-3xl w-full max-w-md p-8 sm:p-10`}
       >
-        <h2 className={`text-3xl font-bold text-center mb-6 ${highContrast ? "text-yellow-400" : "text-indigo-700"}`}>
+        {/* Logo */}
+        <div className="flex justify-center mb-6">
+          <div className={`p-3.5 rounded-2xl ${highContrast ? "bg-yellow-400" : "bg-white/15 backdrop-blur-sm shadow-lg"}`}>
+            <Atom size={32} className={highContrast ? "text-black" : "text-white"} />
+          </div>
+        </div>
+
+        <h2 className={`text-3xl font-bold text-center mb-2 ${highContrast ? "text-yellow-400" : "text-white"}`}>
           {t("login.title")}
         </h2>
+        <p className={`text-center mb-8 text-sm ${highContrast ? "text-yellow-300" : "text-white/60"}`}>
+          Plataforma Educativa
+        </p>
 
         <form onSubmit={handleLogin} className="space-y-5">
           {/* Email */}
           <div>
-            <label htmlFor="login-email" className={`block font-semibold mb-1 ${highContrast ? "text-yellow-300" : "text-gray-700"}`}>
+            <label htmlFor="login-email" className={`block font-medium text-sm mb-2 ${highContrast ? "text-yellow-300" : "text-white/80"}`}>
               {t("login.email")}
             </label>
-            <div className={`flex items-center border rounded-lg px-3 py-2 focus-within:ring-2 ${highContrast ? "border-yellow-400 focus-within:ring-yellow-400" : "border-gray-300 focus-within:ring-indigo-500"}`}>
-              <User className={highContrast ? "text-yellow-400 mr-2" : "text-gray-500 mr-2"} size={20} />
+            <div className={`flex items-center border rounded-xl px-4 py-3 transition-all duration-200 ${
+              highContrast
+                ? "border-yellow-400 focus-within:ring-2 focus-within:ring-yellow-400"
+                : "border-white/20 bg-white/10 backdrop-blur-sm focus-within:bg-white/15 focus-within:border-white/40 focus-within:ring-2 focus-within:ring-white/20"
+            }`}>
+              <User className={`shrink-0 ${highContrast ? "text-yellow-400 mr-3" : "text-white/50 mr-3"}`} size={18} />
               <input
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder={t("login.emailPlaceholder")}
-                className={`w-full bg-transparent outline-none ${highContrast ? "placeholder-yellow-300" : ""}`}
+                className={`w-full bg-transparent outline-none text-sm ${highContrast ? "placeholder-yellow-300/60 text-white" : "placeholder-white/40 text-white"}`}
                 id="login-email"
                 aria-label={t("login.email")}
                 aria-invalid={!!error}
@@ -174,61 +197,57 @@ export default function Login({ highContrast = false }: Props) {
 
           {/* Password */}
           <div>
-            <label htmlFor="login-password" className={`block font-semibold mb-1 ${highContrast ? "text-yellow-300" : "text-gray-700"}`}>
+            <label htmlFor="login-password" className={`block font-medium text-sm mb-2 ${highContrast ? "text-yellow-300" : "text-white/80"}`}>
               {t("login.password")}
             </label>
-            <div className={`flex items-center border rounded-lg px-3 py-2 focus-within:ring-2 ${highContrast ? "border-yellow-400 focus-within:ring-yellow-400" : "border-gray-300 focus-within:ring-indigo-500"}`}>
-              <Lock className={highContrast ? "text-yellow-400 mr-2" : "text-gray-500 mr-2"} size={20} />
+            <div className={`flex items-center border rounded-xl px-4 py-3 transition-all duration-200 ${
+              highContrast
+                ? "border-yellow-400 focus-within:ring-2 focus-within:ring-yellow-400"
+                : "border-white/20 bg-white/10 backdrop-blur-sm focus-within:bg-white/15 focus-within:border-white/40 focus-within:ring-2 focus-within:ring-white/20"
+            }`}>
+              <Lock className={`shrink-0 ${highContrast ? "text-yellow-400 mr-3" : "text-white/50 mr-3"}`} size={18} />
               <input
                 type={showPassword ? "text" : "password"}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder={t("login.passwordPlaceholder")}
-                className={`w-full bg-transparent outline-none ${highContrast ? "placeholder-yellow-300" : ""}`}
+                className={`w-full bg-transparent outline-none text-sm ${highContrast ? "placeholder-yellow-300/60 text-white" : "placeholder-white/40 text-white"}`}
                 id="login-password"
                 aria-label={t("login.password")}
                 aria-invalid={!!error}
                 aria-describedby={error ? "login-error" : undefined}
               />
-              <button type="button" onClick={() => setShowPassword(!showPassword)} className={highContrast ? "text-yellow-400" : "text-gray-500"}>
-                {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+              <button type="button" onClick={() => setShowPassword(!showPassword)} className={`shrink-0 ${highContrast ? "text-yellow-400" : "text-white/50 hover:text-white/80"} transition-colors`}>
+                {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
               </button>
             </div>
           </div>
 
           {/* Remember me & Forgot */}
           <div className="flex items-center justify-between">
-            <label className="flex items-center space-x-2 cursor-pointer">
+            <label className="flex items-center space-x-2.5 cursor-pointer">
               <input
                 type="checkbox"
                 checked={rememberMe}
                 onChange={(e) => setRememberMe(e.target.checked)}
-                className={`h-4 w-4 rounded border-gray-300 ${highContrast ? "accent-yellow-400" : "accent-indigo-600"}`}
+                className={`h-4 w-4 rounded border-gray-300 ${highContrast ? "accent-yellow-400" : "accent-indigo-400"}`}
               />
-              <span className={`text-sm ${highContrast ? "text-yellow-300" : "text-gray-700"}`}>{t("login.rememberMe")}</span>
+              <span className={`text-sm ${highContrast ? "text-yellow-300" : "text-white/70"}`}>{t("login.rememberMe")}</span>
             </label>
-            <a href="/reset-password" className={`text-sm font-medium hover:underline ${highContrast ? "text-yellow-400" : "text-indigo-600"}`}>
+            <a href="/reset-password" className={`text-sm font-medium hover:underline transition-colors ${highContrast ? "text-yellow-400" : "text-white/70 hover:text-white"}`}>
               {t("login.forgotPassword")}
             </a>
           </div>
 
-          {/* Register link — disabled, only admins create users
-          <div className="flex justify-end">
-            <a href="/register" className={`text-sm font-medium hover:underline ${highContrast ? "text-yellow-400" : "text-indigo-600"}`}>
-              {t("login.noAccount")}
-            </a>
-          </div>
-          */}
-
           {/* Help text */}
-          <div className="mt-4 text-xs text-gray-500">
+          <div className={`text-xs ${highContrast ? "text-yellow-300/60" : "text-white/40"}`}>
             <p>{t("login.help.passwordTips")}</p>
             <p className="mt-1">{t("login.help.shortcuts")}</p>
           </div>
 
           {/* Error */}
           {error && (
-            <div id="login-error" role="alert" className={`text-sm p-2 rounded-md text-center ${highContrast ? "bg-yellow-900 text-yellow-200" : "bg-red-100 text-red-600"}`}>
+            <div id="login-error" role="alert" className={`text-sm p-3 rounded-xl text-center ${highContrast ? "bg-yellow-900 text-yellow-200" : "bg-red-500/20 backdrop-blur-sm border border-red-400/30 text-red-200"}`}>
               {error}
               {unverified && (
                 <button
@@ -239,7 +258,7 @@ export default function Login({ highContrast = false }: Props) {
                       toast.success(t("login.verificationResent"));
                     } catch { toast.error(t("login.errors.connection")); }
                   }}
-                  className={`block mx-auto mt-2 text-sm font-medium underline ${highContrast ? "text-yellow-400" : "text-indigo-600"}`}
+                  className={`block mx-auto mt-2 text-sm font-medium underline ${highContrast ? "text-yellow-400" : "text-white/80 hover:text-white"}`}
                 >
                   {t("login.resendVerification")}
                 </button>
@@ -247,7 +266,7 @@ export default function Login({ highContrast = false }: Props) {
             </div>
           )}
           {blockedTimer > 0 && (
-            <div className="text-sm text-gray-600 mt-2" role="status" aria-live="polite">
+            <div className={`text-sm mt-2 p-3 rounded-xl text-center ${highContrast ? "text-yellow-300" : "bg-amber-500/20 backdrop-blur-sm border border-amber-400/30 text-amber-200"}`} role="status" aria-live="polite">
               {t("login.errors.blockedTimer", { count: blockedTimer })}
             </div>
           )}
@@ -256,7 +275,13 @@ export default function Login({ highContrast = false }: Props) {
           <button
             type="submit"
             disabled={loading || isBlocked}
-            className={`w-full font-semibold py-3 sm:py-2 rounded-lg transition duration-200 ${loading ? "opacity-60 cursor-not-allowed" : ""} ${highContrast ? "bg-yellow-400 text-black hover:bg-yellow-300" : "bg-indigo-600 hover:bg-indigo-700 text-white"}`}
+            className={`w-full font-semibold py-3.5 rounded-xl transition-all duration-300 text-sm ${
+              loading ? "opacity-60 cursor-not-allowed" : ""
+            } ${
+              highContrast
+                ? "bg-yellow-400 text-black hover:bg-yellow-300"
+                : "bg-white text-indigo-700 hover:bg-gray-50 shadow-xl hover:shadow-2xl hover:scale-[1.01] active:scale-[0.99]"
+            }`}
           >
             {loading ? t("login.loading") : t("login.submit")}
           </button>

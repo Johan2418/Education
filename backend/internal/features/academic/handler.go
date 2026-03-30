@@ -2,6 +2,7 @@ package academic
 
 import (
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
@@ -141,6 +142,15 @@ func getCursoIDFromURL(r *http.Request) string {
 	return strings.TrimSpace(chi.URLParam(r, "id"))
 }
 
+func getPathID(r *http.Request, keys ...string) string {
+	for _, key := range keys {
+		if id := strings.TrimSpace(chi.URLParam(r, key)); id != "" {
+			return id
+		}
+	}
+	return ""
+}
+
 // ═══════════════════════════════════════════════════════════════
 // ESTUDIANTE-CURSO
 // ═══════════════════════════════════════════════════════════════
@@ -235,7 +245,13 @@ func (h *Handler) ListMaterias(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) GetMateria(w http.ResponseWriter, r *http.Request) {
-	item, err := h.svc.GetMateria(r.Context(), chi.URLParam(r, "id"))
+	materiaID := getPathID(r, "materiaId", "id")
+	if materiaID == "" {
+		shared.Error(w, http.StatusBadRequest, "ID de materia inválido")
+		return
+	}
+
+	item, err := h.svc.GetMateria(r.Context(), materiaID)
 	if err != nil {
 		shared.Error(w, http.StatusNotFound, "Materia no encontrada")
 		return
@@ -264,7 +280,13 @@ func (h *Handler) UpdateMateria(w http.ResponseWriter, r *http.Request) {
 		shared.Error(w, http.StatusBadRequest, "Datos inválidos")
 		return
 	}
-	item, err := h.svc.UpdateMateria(r.Context(), chi.URLParam(r, "id"), req)
+	materiaID := getPathID(r, "materiaId", "id")
+	if materiaID == "" {
+		shared.Error(w, http.StatusBadRequest, "ID de materia inválido")
+		return
+	}
+
+	item, err := h.svc.UpdateMateria(r.Context(), materiaID, req)
 	if err != nil {
 		shared.Error(w, http.StatusInternalServerError, "Error actualizando materia")
 		return
@@ -273,7 +295,13 @@ func (h *Handler) UpdateMateria(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) DeleteMateria(w http.ResponseWriter, r *http.Request) {
-	if err := h.svc.DeleteMateria(r.Context(), chi.URLParam(r, "id")); err != nil {
+	materiaID := getPathID(r, "materiaId", "id")
+	if materiaID == "" {
+		shared.Error(w, http.StatusBadRequest, "ID de materia inválido")
+		return
+	}
+
+	if err := h.svc.DeleteMateria(r.Context(), materiaID); err != nil {
 		shared.Error(w, http.StatusInternalServerError, "Error eliminando materia")
 		return
 	}
@@ -295,7 +323,13 @@ func (h *Handler) ListUnidades(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) GetUnidad(w http.ResponseWriter, r *http.Request) {
-	item, err := h.svc.GetUnidad(r.Context(), chi.URLParam(r, "id"))
+	unidadID := getPathID(r, "unidadId", "id")
+	if unidadID == "" {
+		shared.Error(w, http.StatusBadRequest, "ID de unidad inválido")
+		return
+	}
+
+	item, err := h.svc.GetUnidad(r.Context(), unidadID)
 	if err != nil {
 		shared.Error(w, http.StatusNotFound, "Unidad no encontrada")
 		return
@@ -324,7 +358,13 @@ func (h *Handler) UpdateUnidad(w http.ResponseWriter, r *http.Request) {
 		shared.Error(w, http.StatusBadRequest, "Datos inválidos")
 		return
 	}
-	item, err := h.svc.UpdateUnidad(r.Context(), chi.URLParam(r, "id"), req)
+	unidadID := getPathID(r, "unidadId", "id")
+	if unidadID == "" {
+		shared.Error(w, http.StatusBadRequest, "ID de unidad inválido")
+		return
+	}
+
+	item, err := h.svc.UpdateUnidad(r.Context(), unidadID, req)
 	if err != nil {
 		shared.Error(w, http.StatusInternalServerError, "Error actualizando unidad")
 		return
@@ -333,7 +373,13 @@ func (h *Handler) UpdateUnidad(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) DeleteUnidad(w http.ResponseWriter, r *http.Request) {
-	if err := h.svc.DeleteUnidad(r.Context(), chi.URLParam(r, "id")); err != nil {
+	unidadID := getPathID(r, "unidadId", "id")
+	if unidadID == "" {
+		shared.Error(w, http.StatusBadRequest, "ID de unidad inválido")
+		return
+	}
+
+	if err := h.svc.DeleteUnidad(r.Context(), unidadID); err != nil {
 		shared.Error(w, http.StatusInternalServerError, "Error eliminando unidad")
 		return
 	}
@@ -355,7 +401,13 @@ func (h *Handler) ListTemas(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) GetTema(w http.ResponseWriter, r *http.Request) {
-	item, err := h.svc.GetTema(r.Context(), chi.URLParam(r, "id"))
+	temaID := getPathID(r, "temaId", "id")
+	if temaID == "" {
+		shared.Error(w, http.StatusBadRequest, "ID de tema inválido")
+		return
+	}
+
+	item, err := h.svc.GetTema(r.Context(), temaID)
 	if err != nil {
 		shared.Error(w, http.StatusNotFound, "Tema no encontrado")
 		return
@@ -384,7 +436,13 @@ func (h *Handler) UpdateTema(w http.ResponseWriter, r *http.Request) {
 		shared.Error(w, http.StatusBadRequest, "Datos inválidos")
 		return
 	}
-	item, err := h.svc.UpdateTema(r.Context(), chi.URLParam(r, "id"), req)
+	temaID := getPathID(r, "temaId", "id")
+	if temaID == "" {
+		shared.Error(w, http.StatusBadRequest, "ID de tema inválido")
+		return
+	}
+
+	item, err := h.svc.UpdateTema(r.Context(), temaID, req)
 	if err != nil {
 		shared.Error(w, http.StatusInternalServerError, "Error actualizando tema")
 		return
@@ -393,7 +451,13 @@ func (h *Handler) UpdateTema(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) DeleteTema(w http.ResponseWriter, r *http.Request) {
-	if err := h.svc.DeleteTema(r.Context(), chi.URLParam(r, "id")); err != nil {
+	temaID := getPathID(r, "temaId", "id")
+	if temaID == "" {
+		shared.Error(w, http.StatusBadRequest, "ID de tema inválido")
+		return
+	}
+
+	if err := h.svc.DeleteTema(r.Context(), temaID); err != nil {
 		shared.Error(w, http.StatusInternalServerError, "Error eliminando tema")
 		return
 	}
@@ -414,8 +478,44 @@ func (h *Handler) ListLecciones(w http.ResponseWriter, r *http.Request) {
 	shared.Success(w, items)
 }
 
+func (h *Handler) ListRecentLecciones(w http.ResponseWriter, r *http.Request) {
+	limit := 6
+	rawLimit := strings.TrimSpace(r.URL.Query().Get("limit"))
+	if rawLimit != "" {
+		parsed, err := strconv.Atoi(rawLimit)
+		if err != nil || parsed <= 0 {
+			shared.Error(w, http.StatusBadRequest, "limit inválido")
+			return
+		}
+		if parsed > 20 {
+			parsed = 20
+		}
+		limit = parsed
+	}
+
+	claims := middleware.GetClaims(r.Context())
+	userID := ""
+	if claims != nil {
+		userID = strings.TrimSpace(claims.Subject)
+	}
+
+	items, err := h.svc.ListRecentLecciones(r.Context(), userID, limit)
+	if err != nil {
+		shared.Error(w, http.StatusInternalServerError, "Error listando lecciones recientes")
+		return
+	}
+
+	shared.Success(w, items)
+}
+
 func (h *Handler) GetLeccion(w http.ResponseWriter, r *http.Request) {
-	item, err := h.svc.GetLeccion(r.Context(), chi.URLParam(r, "id"))
+	leccionID := getPathID(r, "leccionId", "id")
+	if leccionID == "" {
+		shared.Error(w, http.StatusBadRequest, "ID de lección inválido")
+		return
+	}
+
+	item, err := h.svc.GetLeccion(r.Context(), leccionID)
 	if err != nil {
 		shared.Error(w, http.StatusNotFound, "Lección no encontrada")
 		return
@@ -444,7 +544,13 @@ func (h *Handler) UpdateLeccion(w http.ResponseWriter, r *http.Request) {
 		shared.Error(w, http.StatusBadRequest, "Datos inválidos")
 		return
 	}
-	item, err := h.svc.UpdateLeccion(r.Context(), chi.URLParam(r, "id"), req)
+	leccionID := getPathID(r, "leccionId", "id")
+	if leccionID == "" {
+		shared.Error(w, http.StatusBadRequest, "ID de lección inválido")
+		return
+	}
+
+	item, err := h.svc.UpdateLeccion(r.Context(), leccionID, req)
 	if err != nil {
 		shared.Error(w, http.StatusInternalServerError, "Error actualizando lección")
 		return
@@ -453,7 +559,13 @@ func (h *Handler) UpdateLeccion(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) DeleteLeccion(w http.ResponseWriter, r *http.Request) {
-	if err := h.svc.DeleteLeccion(r.Context(), chi.URLParam(r, "id")); err != nil {
+	leccionID := getPathID(r, "leccionId", "id")
+	if leccionID == "" {
+		shared.Error(w, http.StatusBadRequest, "ID de lección inválido")
+		return
+	}
+
+	if err := h.svc.DeleteLeccion(r.Context(), leccionID); err != nil {
 		shared.Error(w, http.StatusInternalServerError, "Error eliminando lección")
 		return
 	}
@@ -494,7 +606,13 @@ func (h *Handler) UpdateSeccion(w http.ResponseWriter, r *http.Request) {
 		shared.Error(w, http.StatusBadRequest, "Datos inválidos")
 		return
 	}
-	item, err := h.svc.UpdateSeccion(r.Context(), chi.URLParam(r, "id"), req)
+	seccionID := getPathID(r, "seccionId", "id")
+	if seccionID == "" {
+		shared.Error(w, http.StatusBadRequest, "ID de sección inválido")
+		return
+	}
+
+	item, err := h.svc.UpdateSeccion(r.Context(), seccionID, req)
 	if err != nil {
 		shared.Error(w, http.StatusInternalServerError, "Error actualizando sección")
 		return
@@ -503,7 +621,13 @@ func (h *Handler) UpdateSeccion(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) DeleteSeccion(w http.ResponseWriter, r *http.Request) {
-	if err := h.svc.DeleteSeccion(r.Context(), chi.URLParam(r, "id")); err != nil {
+	seccionID := getPathID(r, "seccionId", "id")
+	if seccionID == "" {
+		shared.Error(w, http.StatusBadRequest, "ID de sección inválido")
+		return
+	}
+
+	if err := h.svc.DeleteSeccion(r.Context(), seccionID); err != nil {
 		shared.Error(w, http.StatusInternalServerError, "Error eliminando sección")
 		return
 	}

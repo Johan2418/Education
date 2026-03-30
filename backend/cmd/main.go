@@ -160,6 +160,7 @@ func main() {
 		r.Delete("/temas/{temaId}", acadH.DeleteTema)
 
 		// ── Academic: Lecciones ─────────────────────────────
+		r.Get("/lecciones/recent", acadH.ListRecentLecciones)
 		r.Get("/temas/{temaId}/lecciones", acadH.ListLecciones)
 		r.Get("/lecciones/{leccionId}", acadH.GetLeccion)
 		r.Post("/lecciones", acadH.CreateLeccion)
@@ -248,6 +249,14 @@ func main() {
 		r.Get("/trabajos/{trabajoId}/libro/jobs/{jobId}", libroH.GetExtractLibroJobStatus)
 		r.Put("/trabajos/{trabajoId}/libro/revision", libroH.RevisarLibro)
 		r.Put("/trabajos/{trabajoId}/libro/confirmar", libroH.ConfirmarLibro)
+		r.Get("/libro-recursos", libroH.ListLibroRecursos)
+		r.Get("/libro-recursos/{recursoId}", libroH.GetLibroRecursoDetalle)
+		r.Get("/libro-recursos/{recursoId}/paginas/{pagina}", libroH.GetLibroRecursoPagina)
+		r.Get("/libro-recursos/{recursoId}/chat/sesiones", libroH.ListLibroChatSessions)
+		r.Post("/libro-recursos/{recursoId}/chat/sesiones", libroH.CreateLibroChatSession)
+		r.Get("/libro-recursos/{recursoId}/chat/sesiones/{sesionId}/mensajes", libroH.GetLibroChatMessages)
+		r.Post("/libro-recursos/{recursoId}/chat/sesiones/{sesionId}/mensajes", libroH.SendLibroChatMessage)
+		r.Get("/libro-recursos/{recursoId}/chat/reportes", libroH.GetLibroChatReporte)
 
 		// ── Admin routes ────────────────────────────────────
 		r.Group(func(r chi.Router) {

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import toast from "react-hot-toast";
@@ -14,6 +14,7 @@ import type {
   EstadoExtraccionJob,
   ExtractLibroRequest,
   LibroExtractJobStatusResponse,
+  PdfPaginaMetadata,
   LibroPreguntaInput,
   Trabajo,
   TrabajoPregunta,
@@ -57,7 +58,7 @@ function optionsToText(opciones: string[] | undefined): string {
 function looksLikeCompositeQuestion(texto: string): boolean {
   const t = (texto || "").trim();
   if (!t) return false;
-  const markerMatches = t.match(/(?:^|\n|\s)(?:\d{1,2}[\.)]|[A-Da-d][\.)]|pregunta\s+\d+[:\.-])/gi) || [];
+  const markerMatches = t.match(/(?:^|\n|\s)(?:\d{1,2}[.)]|[A-Da-d][.)]|pregunta\s+\d+[:.-])/gi) || [];
   return markerMatches.length >= 2;
 }
 
@@ -65,7 +66,11 @@ async function parsePdfToMarkedPayload(
   file: File,
   pageStart?: number,
   pageEnd?: number
-): Promise<{ markedText: string; imagenesPorPagina: Record<string, string> }> {
+): Promise<{
+  markedText: string;
+  imagenesPorPagina: Record<string, string>;
+  imagenesMetadataPorPagina: Record<string, PdfPaginaMetadata>;
+}> {
   const start = pageStart && pageStart > 0 ? pageStart : 1;
   const data = new Uint8Array(await file.arrayBuffer());
   const doc = await pdfjsLib.getDocument({ data }).promise;
@@ -73,6 +78,7 @@ async function parsePdfToMarkedPayload(
 
   const parts: string[] = [];
   const imagenesPorPagina: Record<string, string> = {};
+  const imagenesMetadataPorPagina: Record<string, PdfPaginaMetadata> = {};
   for (let pageNum = start; pageNum <= end; pageNum += 1) {
     const page = await doc.getPage(pageNum);
     const content = await page.getTextContent();
@@ -96,11 +102,59 @@ async function parsePdfToMarkedPayload(
       if (ctx) {
         await page.render({ canvas, canvasContext: ctx, viewport: renderViewport }).promise;
         imagenesPorPagina[String(pageNum)] = canvas.toDataURL("image/jpeg", 0.65);
+
+        const textRegions = content.items
+          .map((item) => {
+            if (!("str" in item)) return null;
+            const texto = String(item.str || "").trim();
+            if (!texto) return null;
+
+            const unknownItem = item as unknown as {
+              transform?: number[];
+              width?: number;
+              height?: number;
+            };
+            const transform = unknownItem.transform;
+            if (!Array.isArray(transform) || transform.length < 6) return null;
+
+            const t = pdfjsLib.Util.transform(renderViewport.transform, transform);
+            const x = Number.isFinite(t[4]) ? t[4] : 0;
+            const estimatedWidth = Math.max(
+              1,
+              Math.abs((unknownItem.width || 0) * scale),
+            );
+            const estimatedHeight = Math.max(
+              8,
+              Math.abs(t[3]) || Math.abs((unknownItem.height || 0) * scale),
+            );
+            const y = Number.isFinite(t[5]) ? t[5] - estimatedHeight : 0;
+
+            return {
+              texto,
+              x: Math.max(0, Math.min(canvas.width - 1, x)),
+              y: Math.max(0, Math.min(canvas.height - 1, y)),
+              width: Math.max(1, Math.min(canvas.width, estimatedWidth)),
+              height: Math.max(1, Math.min(canvas.height, estimatedHeight)),
+            };
+          })
+          .filter((region): region is NonNullable<typeof region> => !!region);
+
+        if (textRegions.length > 0) {
+          imagenesMetadataPorPagina[String(pageNum)] = {
+            image_width: canvas.width,
+            image_height: canvas.height,
+            text_regions: textRegions,
+          };
+        }
       }
     }
   }
 
-  return { markedText: parts.join("\n\n"), imagenesPorPagina };
+  return {
+    markedText: parts.join("\n\n"),
+    imagenesPorPagina,
+    imagenesMetadataPorPagina,
+  };
 }
 
 async function parseDocxToMarkedText(file: File, pageStart?: number): Promise<string> {
@@ -188,6 +242,7 @@ export default function TeacherTrabajoLibroWizard() {
   });
   const [selectedFileName, setSelectedFileName] = useState("");
   const [imagenesPorPagina, setImagenesPorPagina] = useState<Record<string, string>>({});
+  const [imagenesMetadataPorPagina, setImagenesMetadataPorPagina] = useState<Record<string, PdfPaginaMetadata>>({});
   const [jobStatus, setJobStatus] = useState<{
     estado: EstadoExtraccionJob;
     progress: number;
@@ -248,12 +303,15 @@ export default function TeacherTrabajoLibroWizard() {
         const parsed = await parsePdfToMarkedPayload(file, extractReq.pagina_inicio, extractReq.pagina_fin);
         markedText = parsed.markedText;
         setImagenesPorPagina(parsed.imagenesPorPagina);
+        setImagenesMetadataPorPagina(parsed.imagenesMetadataPorPagina);
       } else if (extension === "docx") {
         markedText = await parseDocxToMarkedText(file, extractReq.pagina_inicio);
         setImagenesPorPagina({});
+        setImagenesMetadataPorPagina({});
       } else {
         markedText = await parseTxtToMarkedText(file, extractReq.pagina_inicio);
         setImagenesPorPagina({});
+        setImagenesMetadataPorPagina({});
       }
 
       if (!markedText || markedText.trim().length < 30) {
@@ -275,7 +333,7 @@ export default function TeacherTrabajoLibroWizard() {
     }
   };
 
-  const hydrate = async () => {
+  const hydrate = useCallback(async () => {
     const [trabajoData, estado] = await Promise.all([getTrabajo(trabajoId), getLibroEstado(trabajoId)]);
     setTrabajo(trabajoData);
     setExtraccionEstado(estado.extraccion?.estado);
@@ -317,7 +375,7 @@ export default function TeacherTrabajoLibroWizard() {
         localStorage.removeItem(storageKey);
       }
     }
-  };
+  }, [storageKey, trabajoId]);
 
   useEffect(() => {
     (async () => {
@@ -341,7 +399,7 @@ export default function TeacherTrabajoLibroWizard() {
         setLoading(false);
       }
     })();
-  }, [navigate, t, trabajoId]);
+  }, [hydrate, navigate, t, trabajoId]);
 
   useEffect(() => {
     if (!trabajoId || loading) return;
@@ -372,6 +430,7 @@ export default function TeacherTrabajoLibroWizard() {
         ...extractReq,
         contenido: extractReq.contenido.trim(),
         imagenes_por_pagina: Object.keys(imagenesPorPagina).length > 0 ? imagenesPorPagina : undefined,
+        imagenes_metadata_por_pagina: Object.keys(imagenesMetadataPorPagina).length > 0 ? imagenesMetadataPorPagina : undefined,
       });
 
       setJobStatus({ estado: start.estado, progress: start.progress, message: start.message });
@@ -505,6 +564,7 @@ export default function TeacherTrabajoLibroWizard() {
     updatePregunta(index, {
       imagen_base64: undefined,
       imagen_fuente: undefined,
+      imagen_manual_override: true,
     });
   };
 
@@ -518,6 +578,7 @@ export default function TeacherTrabajoLibroWizard() {
     updatePregunta(index, {
       imagen_base64: image,
       imagen_fuente: "pdf_pagina",
+      imagen_manual_override: true,
     });
   };
 

@@ -3,11 +3,17 @@ package libro
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"image"
+	"image/color"
+	"image/draw"
+	"image/jpeg"
 	"io"
 	"net/http"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -25,10 +31,16 @@ type AIService struct {
 }
 
 type pageChunk struct {
-	Page        int
-	Content     string
-	ImageBase64 *string
+	Page          int
+	Content       string
+	ImageBase64   *string
+	ImageMetadata *PdfPaginaMetadata
 }
+
+const (
+	visualCueThreshold   = 0.55
+	maxVisualByPageLimit = 2
+)
 
 func NewAIService(cfg config.HuggingFaceConfig) *AIService {
 	timeoutSeconds := cfg.TimeoutSeconds
@@ -53,8 +65,11 @@ func NewAIService(cfg config.HuggingFaceConfig) *AIService {
 
 func (s *AIService) ExtractQuestions(ctx context.Context, req ExtractLibroRequest) ([]TrabajoPregunta, bool, string, error) {
 	maxPreguntas := 10
-	if req.MaxPreguntas != nil && *req.MaxPreguntas > 0 && *req.MaxPreguntas <= 30 {
+	if req.MaxPreguntas != nil && *req.MaxPreguntas > 0 {
 		maxPreguntas = *req.MaxPreguntas
+		if maxPreguntas > 400 {
+			maxPreguntas = 400
+		}
 	}
 
 	if strings.TrimSpace(req.Contenido) == "" {
@@ -62,7 +77,8 @@ func (s *AIService) ExtractQuestions(ctx context.Context, req ExtractLibroReques
 	}
 
 	imageByPage := normalizeImageMapByPage(req.ImagenesPorPagina)
-	chunks := splitContentByPageMarkers(req.Contenido, req.PaginaInicio, imageByPage)
+	metadataByPage := normalizeMetadataMapByPage(req.ImagenesMetadata)
+	chunks := splitContentByPageMarkers(req.Contenido, req.PaginaInicio, imageByPage, metadataByPage)
 	return s.extractQuestionsByPageChunks(ctx, chunks, maxPreguntas)
 }
 
@@ -84,7 +100,10 @@ func (s *AIService) extractQuestionsByPageChunks(ctx context.Context, chunks []p
 			fallback := heuristicExtract(chunk.Content, remaining, &chunk.Page)
 			for i := range fallback {
 				enrichQuestionWithVisualContext(&fallback[i], chunk)
+				// Ensure pagina_libro is always set from the chunk
+				fallback[i].PaginaLibro = &chunk.Page
 			}
+			applyVisualImageCapPerPage(fallback, chunk, maxVisualByPageLimit)
 			all = append(all, fallback...)
 			usedFallback = true
 			continue
@@ -104,6 +123,7 @@ func (s *AIService) extractQuestionsByPageChunks(ctx context.Context, chunks []p
 			for i := range fallback {
 				enrichQuestionWithVisualContext(&fallback[i], chunk)
 			}
+			applyVisualImageCapPerPage(fallback, chunk, maxVisualByPageLimit)
 			all = append(all, fallback...)
 			usedFallback = true
 			continue
@@ -112,7 +132,10 @@ func (s *AIService) extractQuestionsByPageChunks(ctx context.Context, chunks []p
 		for i := range pageQuestions {
 			pageQuestions[i].Orden = len(all) + i + 1
 			enrichQuestionWithVisualContext(&pageQuestions[i], chunk)
+			// Ensure pagina_libro is always set from the chunk
+			pageQuestions[i].PaginaLibro = &chunk.Page
 		}
+		applyVisualImageCapPerPage(pageQuestions, chunk, maxVisualByPageLimit)
 		all = append(all, pageQuestions...)
 	}
 
@@ -536,10 +559,130 @@ func (s *AIService) shouldUseModelFallback() bool {
 	return strings.TrimSpace(s.fallbackModel) != strings.TrimSpace(s.model)
 }
 
-func buildExtractionPrompt(content string, maxPreguntas int) string {
-	if len(content) > 12000 {
-		content = content[:12000]
+func (s *AIService) GenerateChatAnswer(ctx context.Context, messages []map[string]string) (string, bool, string, error) {
+	if len(messages) == 0 {
+		return "", false, "", fmt.Errorf("mensajes requeridos")
 	}
+
+	if strings.TrimSpace(s.model) == "" {
+		return "", true, "", fmt.Errorf("modelo no configurado")
+	}
+
+	budgets := []localInferenceBudget{{maxTokens: 420, numCtx: 2048, seed: 42}}
+	if s.isLocalProvider() {
+		budgets = []localInferenceBudget{
+			{maxTokens: 420, numCtx: 3072, seed: 42},
+			{maxTokens: 320, numCtx: 2048, seed: 42},
+		}
+	}
+
+	answer, err := s.requestChatCompletionWithMessages(ctx, s.model, messages, budgets)
+	if err == nil && strings.TrimSpace(answer) != "" {
+		model := strings.TrimSpace(s.model)
+		return answer, false, model, nil
+	}
+
+	if s.shouldUseModelFallback() {
+		fallbackBudgets := []localInferenceBudget{{maxTokens: 360, numCtx: 2048, seed: 42}}
+		fallbackAnswer, fallbackErr := s.requestChatCompletionWithMessages(ctx, s.fallbackModel, messages, fallbackBudgets)
+		if fallbackErr == nil && strings.TrimSpace(fallbackAnswer) != "" {
+			model := strings.TrimSpace(s.fallbackModel)
+			return fallbackAnswer, true, model, nil
+		}
+		if fallbackErr != nil {
+			return "", true, "", fallbackErr
+		}
+	}
+
+	if err != nil {
+		return "", true, "", err
+	}
+	return "", true, "", fmt.Errorf("respuesta vacia")
+}
+
+func (s *AIService) requestChatCompletionWithMessages(ctx context.Context, model string, messages []map[string]string, budgets []localInferenceBudget) (string, error) {
+	if strings.TrimSpace(model) == "" {
+		return "", fmt.Errorf("modelo no configurado")
+	}
+
+	var lastErr error
+	for _, budget := range budgets {
+		payload := map[string]interface{}{
+			"model":       model,
+			"messages":    messages,
+			"temperature": 0.2,
+			"max_tokens":  budget.maxTokens,
+		}
+
+		if s.isLocalProvider() {
+			payload["keep_alive"] = "30m"
+			payload["options"] = map[string]interface{}{
+				"num_ctx":     budget.numCtx,
+				"num_predict": budget.maxTokens,
+				"seed":        budget.seed,
+				"top_p":       0.9,
+			}
+		}
+
+		body, _ := json.Marshal(payload)
+		url := s.baseURL + "/v1/chat/completions"
+		req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(body))
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		if s.apiKey != "" {
+			req.Header.Set("Authorization", "Bearer "+s.apiKey)
+		}
+		req.Header.Set("Content-Type", "application/json")
+
+		resp, err := s.httpClient.Do(req)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+
+		respBody, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			lastErr = fmt.Errorf("AI chat status %d: %s", resp.StatusCode, string(respBody))
+			continue
+		}
+
+		var chatResp struct {
+			Choices []struct {
+				Message struct {
+					Content string `json:"content"`
+				} `json:"message"`
+			} `json:"choices"`
+		}
+
+		if err := json.Unmarshal(respBody, &chatResp); err != nil {
+			lastErr = err
+			continue
+		}
+		if len(chatResp.Choices) == 0 {
+			lastErr = fmt.Errorf("respuesta vacia")
+			continue
+		}
+
+		content := strings.TrimSpace(chatResp.Choices[0].Message.Content)
+		if content == "" {
+			lastErr = fmt.Errorf("respuesta vacia")
+			continue
+		}
+		return content, nil
+	}
+
+	if lastErr != nil {
+		return "", lastErr
+	}
+	return "", fmt.Errorf("respuesta vacia")
+}
+
+func buildExtractionPrompt(content string, maxPreguntas int) string {
+	content = truncateAtWordBoundary(content, 12000)
 
 	return fmt.Sprintf(`Eres un asistente educativo. A partir del siguiente texto de libro, extrae preguntas evaluables para estudiantes.
 
@@ -569,9 +712,7 @@ Reglas:
 }
 
 func buildExtractionPromptForPage(content string, maxPreguntas int, page int) string {
-	if len(content) > 3200 {
-		content = content[:3200]
-	}
+	content = truncateAtWordBoundary(content, 3200)
 
 	return fmt.Sprintf(`Eres un asistente educativo. A partir del siguiente texto de la pagina %d, extrae preguntas evaluables para estudiantes.
 
@@ -614,7 +755,7 @@ func isFaithfulQuestionText(question string, sourceText string) bool {
 
 	// For short questions, allow partial lexical overlap instead of exact containment.
 	if len(strings.Fields(q)) <= 5 {
-		return tokenOverlapRatio(q, s) >= 0.5
+		return tokenOverlapRatio(q, s) >= 0.65
 	}
 
 	words := strings.Fields(q)
@@ -641,7 +782,7 @@ func isFaithfulQuestionText(question string, sourceText string) bool {
 	}
 
 	ratio := float64(matches) / float64(len(significant))
-	return ratio >= 0.6
+	return ratio >= 0.7
 }
 
 func tokenOverlapRatio(question string, source string) float64 {
@@ -687,7 +828,7 @@ func normalizeForMatch(text string) string {
 	return strings.Join(strings.Fields(clean), " ")
 }
 
-func splitContentByPageMarkers(content string, paginaInicio *int, imageByPage map[int]string) []pageChunk {
+func splitContentByPageMarkers(content string, paginaInicio *int, imageByPage map[int]string, metadataByPage map[int]PdfPaginaMetadata) []pageChunk {
 	defaultPage := 1
 	if paginaInicio != nil && *paginaInicio > 0 {
 		defaultPage = *paginaInicio
@@ -701,7 +842,12 @@ func splitContentByPageMarkers(content string, paginaInicio *int, imageByPage ma
 			copyImage := image
 			imageBase64 = &copyImage
 		}
-		return []pageChunk{{Page: defaultPage, Content: content, ImageBase64: imageBase64}}
+		var imageMetadata *PdfPaginaMetadata
+		if metadata, ok := metadataByPage[defaultPage]; ok {
+			copyMetadata := metadata
+			imageMetadata = &copyMetadata
+		}
+		return []pageChunk{{Page: defaultPage, Content: content, ImageBase64: imageBase64, ImageMetadata: imageMetadata}}
 	}
 
 	chunks := make([]pageChunk, 0, len(indices))
@@ -728,7 +874,12 @@ func splitContentByPageMarkers(content string, paginaInicio *int, imageByPage ma
 			copyImage := image
 			imageBase64 = &copyImage
 		}
-		chunks = append(chunks, pageChunk{Page: pageText, Content: block, ImageBase64: imageBase64})
+		var imageMetadata *PdfPaginaMetadata
+		if metadata, ok := metadataByPage[pageText]; ok {
+			copyMetadata := metadata
+			imageMetadata = &copyMetadata
+		}
+		chunks = append(chunks, pageChunk{Page: pageText, Content: block, ImageBase64: imageBase64, ImageMetadata: imageMetadata})
 	}
 
 	if len(chunks) == 0 {
@@ -737,7 +888,12 @@ func splitContentByPageMarkers(content string, paginaInicio *int, imageByPage ma
 			copyImage := image
 			imageBase64 = &copyImage
 		}
-		return []pageChunk{{Page: defaultPage, Content: content, ImageBase64: imageBase64}}
+		var imageMetadata *PdfPaginaMetadata
+		if metadata, ok := metadataByPage[defaultPage]; ok {
+			copyMetadata := metadata
+			imageMetadata = &copyMetadata
+		}
+		return []pageChunk{{Page: defaultPage, Content: content, ImageBase64: imageBase64, ImageMetadata: imageMetadata}}
 	}
 
 	return chunks
@@ -856,7 +1012,10 @@ func extractQuestionCandidatesFromLines(content string) []string {
 		clean := l
 		clean = regexp.MustCompile(`^\s*(\d{1,2}[\.)]|[a-dA-D][\.)])\s*`).ReplaceAllString(clean, "")
 		clean = strings.TrimSpace(clean)
-		if len(clean) < 10 {
+		if len(clean) < 20 {
+			continue
+		}
+		if len(strings.Fields(clean)) < 3 {
 			continue
 		}
 
@@ -909,6 +1068,72 @@ func normalizeImageMapByPage(raw map[string]string) map[int]string {
 	return out
 }
 
+func normalizeMetadataMapByPage(raw map[string]PdfPaginaMetadata) map[int]PdfPaginaMetadata {
+	if len(raw) == 0 {
+		return nil
+	}
+
+	out := make(map[int]PdfPaginaMetadata, len(raw))
+	for key, value := range raw {
+		page, err := strconv.Atoi(strings.TrimSpace(key))
+		if err != nil || page <= 0 {
+			continue
+		}
+		if value.ImageWidth <= 0 || value.ImageHeight <= 0 {
+			continue
+		}
+
+		regions := make([]PdfTextoRegion, 0, len(value.TextRegions))
+		for _, region := range value.TextRegions {
+			text := strings.TrimSpace(region.Texto)
+			if text == "" {
+				continue
+			}
+			if region.Width <= 1 || region.Height <= 1 {
+				continue
+			}
+
+			x := clampFloat(region.X, 0, float64(value.ImageWidth-1))
+			y := clampFloat(region.Y, 0, float64(value.ImageHeight-1))
+			width := clampFloat(region.Width, 1, float64(value.ImageWidth))
+			height := clampFloat(region.Height, 1, float64(value.ImageHeight))
+
+			regions = append(regions, PdfTextoRegion{
+				Texto:  text,
+				X:      x,
+				Y:      y,
+				Width:  width,
+				Height: height,
+			})
+		}
+
+		if len(regions) == 0 {
+			continue
+		}
+
+		out[page] = PdfPaginaMetadata{
+			ImageWidth:  value.ImageWidth,
+			ImageHeight: value.ImageHeight,
+			TextRegions: regions,
+		}
+	}
+
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func clampFloat(v, min, max float64) float64 {
+	if v < min {
+		return min
+	}
+	if v > max {
+		return max
+	}
+	return v
+}
+
 func normalizeRespuestaEsperadaTipo(input *string, tipoPregunta string) *string {
 	if input != nil {
 		v := strings.ToLower(strings.TrimSpace(*input))
@@ -945,47 +1170,337 @@ func enrichQuestionWithVisualContext(q *TrabajoPregunta, chunk pageChunk) {
 		placeholder := "Escribe tu respuesta"
 		q.Placeholder = &placeholder
 	}
-	if chunk.ImageBase64 != nil && isVisualCueQuestion(q.Texto) {
-		source := "pdf_pagina"
-		q.ImagenBase64 = chunk.ImageBase64
-		q.ImagenFuente = &source
+	if chunk.ImageBase64 != nil && calculateVisualCueScore(q.Texto, chunk.Content) >= visualCueThreshold {
+		cropped, source := cropQuestionImageSection(q.Texto, chunk)
+		if cropped != nil {
+			q.ImagenBase64 = cropped
+			q.ImagenFuente = source
+		}
 	}
 }
 
-func isVisualCueQuestion(text string) bool {
+func cropQuestionImageSection(question string, chunk pageChunk) (*string, *string) {
+	if chunk.ImageBase64 == nil || chunk.ImageMetadata == nil || len(chunk.ImageMetadata.TextRegions) == 0 {
+		return nil, nil
+	}
+
+	qNorm := normalizeForMatch(question)
+	qTokens := textTokensForMatch(qNorm)
+	if len(qTokens) == 0 {
+		return nil, nil
+	}
+
+	type regionMatch struct {
+		region  PdfTextoRegion
+		score   float64
+		matches int
+	}
+
+	matches := make([]regionMatch, 0, len(chunk.ImageMetadata.TextRegions))
+	bestScore := 0.0
+	bestIndex := -1
+	for _, region := range chunk.ImageMetadata.TextRegions {
+		rNorm := normalizeForMatch(region.Texto)
+		if rNorm == "" {
+			continue
+		}
+
+		score, hits := regionTextMatchScore(qNorm, qTokens, rNorm)
+		if hits == 0 || score < 0.34 {
+			continue
+		}
+
+		if hits < 2 && !(len(qTokens) <= 4 && score >= 0.5) {
+			continue
+		}
+
+		matches = append(matches, regionMatch{region: region, score: score, matches: hits})
+		if score > bestScore {
+			bestScore = score
+			bestIndex = len(matches) - 1
+		}
+	}
+
+	if len(matches) == 0 || bestIndex < 0 || bestScore < 0.5 {
+		return nil, nil
+	}
+
+	best := matches[bestIndex].region
+	bestCenterY := best.Y + (best.Height / 2)
+
+	minX := best.X
+	minY := best.Y
+	maxX := best.X + best.Width
+	maxY := best.Y + best.Height
+
+	for _, m := range matches {
+		centerY := m.region.Y + (m.region.Height / 2)
+		if absFloat(centerY-bestCenterY) > 140 && m.score < bestScore*0.8 {
+			continue
+		}
+
+		if m.region.X < minX {
+			minX = m.region.X
+		}
+		if m.region.Y < minY {
+			minY = m.region.Y
+		}
+		right := m.region.X + m.region.Width
+		bottom := m.region.Y + m.region.Height
+		if right > maxX {
+			maxX = right
+		}
+		if bottom > maxY {
+			maxY = bottom
+		}
+	}
+
+	decoded, format, err := decodeDataURLImage(*chunk.ImageBase64)
+	if err != nil || decoded == nil {
+		return nil, nil
+	}
+
+	bounds := decoded.Bounds()
+	if bounds.Dx() <= 0 || bounds.Dy() <= 0 {
+		return nil, nil
+	}
+
+	paddingX := (maxX - minX) * 0.18
+	paddingY := (maxY - minY) * 0.18
+
+	left := int(clampFloat(minX-paddingX, 0, float64(bounds.Dx()-1)))
+	top := int(clampFloat(minY-paddingY, 0, float64(bounds.Dy()-1)))
+	right := int(clampFloat(maxX+paddingX, float64(left+1), float64(bounds.Dx())))
+	bottom := int(clampFloat(maxY+paddingY, float64(top+1), float64(bounds.Dy())))
+
+	if right-left < 24 || bottom-top < 24 {
+		return nil, nil
+	}
+
+	cropRect := image.Rect(left, top, right, bottom)
+	canvas := image.NewRGBA(image.Rect(0, 0, cropRect.Dx(), cropRect.Dy()))
+	draw.Draw(canvas, canvas.Bounds(), &image.Uniform{C: color.White}, image.Point{}, draw.Src)
+	draw.Draw(canvas, canvas.Bounds(), decoded, cropRect.Min, draw.Over)
+
+	var buf bytes.Buffer
+	if err := jpeg.Encode(&buf, canvas, &jpeg.Options{Quality: 78}); err != nil {
+		return nil, nil
+	}
+
+	encoded := "data:image/jpeg;base64," + base64.StdEncoding.EncodeToString(buf.Bytes())
+	source := "pdf_pregunta_crop"
+	if strings.EqualFold(format, "png") {
+		source = "pdf_pregunta_crop_png"
+	}
+
+	return &encoded, &source
+}
+
+func decodeDataURLImage(dataURL string) (image.Image, string, error) {
+	trimmed := strings.TrimSpace(dataURL)
+	if trimmed == "" {
+		return nil, "", fmt.Errorf("data url vacia")
+	}
+
+	parts := strings.SplitN(trimmed, ",", 2)
+	if len(parts) != 2 {
+		return nil, "", fmt.Errorf("data url invalida")
+	}
+
+	payload := parts[1]
+	raw, err := base64.StdEncoding.DecodeString(payload)
+	if err != nil {
+		return nil, "", err
+	}
+
+	img, format, err := image.Decode(bytes.NewReader(raw))
+	if err != nil {
+		return nil, "", err
+	}
+	return img, format, nil
+}
+
+func textTokensForMatch(normalized string) []string {
+	if normalized == "" {
+		return nil
+	}
+	words := strings.Fields(normalized)
+	out := make([]string, 0, len(words))
+	for _, w := range words {
+		if len(w) >= 3 {
+			out = append(out, w)
+		}
+	}
+	return out
+}
+
+func regionTextMatchScore(questionNorm string, questionTokens []string, regionNorm string) (float64, int) {
+	if regionNorm == "" || len(questionTokens) == 0 {
+		return 0, 0
+	}
+
+	matchCount := 0
+	for _, token := range questionTokens {
+		if strings.Contains(regionNorm, token) {
+			matchCount++
+		}
+	}
+
+	if matchCount == 0 {
+		return 0, 0
+	}
+
+	score := float64(matchCount) / float64(len(questionTokens))
+	if strings.Contains(regionNorm, questionNorm) {
+		score += 0.25
+	} else if strings.Contains(questionNorm, regionNorm) && len(regionNorm) > 14 {
+		score += 0.12
+	}
+
+	if score > 1 {
+		score = 1
+	}
+
+	return score, matchCount
+}
+
+func absFloat(v float64) float64 {
+	if v < 0 {
+		return -v
+	}
+	return v
+}
+
+func applyVisualImageCapPerPage(questions []TrabajoPregunta, chunk pageChunk, maxWithImage int) {
+	if maxWithImage <= 0 || len(questions) == 0 {
+		return
+	}
+
+	type visualCandidate struct {
+		index int
+		score float64
+	}
+
+	candidates := make([]visualCandidate, 0, len(questions))
+	for i := range questions {
+		if questions[i].ImagenBase64 == nil {
+			continue
+		}
+		score := calculateVisualCueScore(questions[i].Texto, chunk.Content)
+		candidates = append(candidates, visualCandidate{index: i, score: score})
+	}
+
+	if len(candidates) <= maxWithImage {
+		return
+	}
+
+	sort.SliceStable(candidates, func(i, j int) bool {
+		if candidates[i].score == candidates[j].score {
+			return candidates[i].index < candidates[j].index
+		}
+		return candidates[i].score > candidates[j].score
+	})
+
+	keep := make(map[int]struct{}, maxWithImage)
+	for i := 0; i < maxWithImage; i++ {
+		keep[candidates[i].index] = struct{}{}
+	}
+
+	for _, candidate := range candidates {
+		if _, ok := keep[candidate.index]; ok {
+			continue
+		}
+		questions[candidate.index].ImagenBase64 = nil
+		questions[candidate.index].ImagenFuente = nil
+	}
+}
+
+func truncateAtWordBoundary(content string, maxLen int) string {
+	if maxLen <= 0 || len(content) <= maxLen {
+		return content
+	}
+
+	trimmed := content[:maxLen]
+	if idx := strings.LastIndex(trimmed, " "); idx > maxLen/2 {
+		return strings.TrimSpace(trimmed[:idx])
+	}
+
+	return strings.TrimSpace(trimmed)
+}
+
+func calculateVisualCueScore(text string, pageContent string) float64 {
 	lower := strings.ToLower(strings.TrimSpace(text))
 	if lower == "" {
-		return false
+		return 0
 	}
 
-	positiveSignals := []string{
-		"observa", "ilustracion", "imagen", "grafico", "gráfico", "figura", "diagrama", "esquema", "foto",
-		"basandote en la imagen", "basándote en la imagen", "segun la figura", "según la figura", "de acuerdo con la imagen",
+	pageLower := strings.ToLower(pageContent)
+	score := 0.0
+
+	positiveSignals := map[string]float64{
+		"observa":                  0.30,
+		"ilustracion":              0.35,
+		"imagen":                   0.30,
+		"grafico":                  0.30,
+		"gráfico":                  0.30,
+		"figura":                   0.30,
+		"diagrama":                 0.35,
+		"esquema":                  0.30,
+		"foto":                     0.25,
+		"basandote en la imagen":   0.45,
+		"basándote en la imagen":   0.45,
+		"segun la figura":          0.40,
+		"según la figura":          0.40,
+		"de acuerdo con la imagen": 0.40,
 	}
-	for _, signal := range positiveSignals {
+	for signal, weight := range positiveSignals {
 		if strings.Contains(lower, signal) {
-			return true
+			score += weight
 		}
 	}
 
-	if regexp.MustCompile(`\b(figura|imagen|grafico|gráfico|diagrama)\s*\d+\b`).MatchString(lower) {
-		return true
-	}
-
-	negativeSignals := []string{
-		"define", "explique", "explica", "mencione", "enumere", "resuma", "concepto", "teoria", "teoría",
-	}
-	hasNegativeOnly := false
-	for _, signal := range negativeSignals {
-		if strings.Contains(lower, signal) {
-			hasNegativeOnly = true
-			break
+	visualRefRe := regexp.MustCompile(`\b(figura|imagen|grafico|gráfico|diagrama)\s*\d+\b`)
+	refs := visualRefRe.FindAllString(lower, -1)
+	if len(refs) > 0 {
+		score += 0.20
+		for _, ref := range refs {
+			if pageLower != "" && strings.Contains(pageLower, ref) {
+				score += 0.10
+				break
+			}
 		}
 	}
 
-	if hasNegativeOnly && !regexp.MustCompile(`\b(imagen|figura|grafico|gráfico|diagrama|ilustracion|ilustración)\b`).MatchString(lower) {
-		return false
+	negativeSignals := map[string]float64{
+		"define":   0.20,
+		"explique": 0.20,
+		"explica":  0.20,
+		"mencione": 0.15,
+		"enumere":  0.15,
+		"resuma":   0.20,
+		"concepto": 0.15,
+		"teoria":   0.15,
+		"teoría":   0.15,
+	}
+	for signal, weight := range negativeSignals {
+		if strings.Contains(lower, signal) {
+			score -= weight
+		}
 	}
 
-	return false
+	if len(strings.Fields(lower)) < 4 {
+		score -= 0.10
+	}
+
+	if score < 0 {
+		return 0
+	}
+	if score > 1 {
+		return 1
+	}
+	return score
+}
+
+func isVisualCueQuestion(text string) bool {
+	return calculateVisualCueScore(text, "") >= visualCueThreshold
 }

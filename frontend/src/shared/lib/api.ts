@@ -1,4 +1,5 @@
-const BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:8082";
+export const API_BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:8082";
+const REQUEST_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
 
 export interface ApiError {
   status: number;
@@ -34,24 +35,33 @@ async function request<T>(
     headers["Authorization"] = `Bearer ${token}`;
   }
 
-  const res = await fetch(`${BASE_URL}${path}`, {
-    ...options,
-    headers,
-  });
+  // Wrap fetch with explicit timeout
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
-  if (!res.ok) {
-    let message = res.statusText;
-    try {
-      const body = await res.json();
-      message = body.error ?? body.message ?? message;
-    } catch { /* ignore */ }
-    const err: ApiError = { status: res.status, message };
-    throw err;
+  try {
+    const res = await fetch(`${API_BASE_URL}${path}`, {
+      ...options,
+      headers,
+      signal: controller.signal,
+    });
+
+    if (!res.ok) {
+      let message = res.statusText;
+      try {
+        const body = await res.json();
+        message = body.error ?? body.message ?? message;
+      } catch { /* ignore */ }
+      const err: ApiError = { status: res.status, message };
+      throw err;
+    }
+
+    if (res.status === 204) return undefined as unknown as T;
+
+    return res.json() as Promise<T>;
+  } finally {
+    clearTimeout(timeoutId);
   }
-
-  if (res.status === 204) return undefined as unknown as T;
-
-  return res.json() as Promise<T>;
 }
 
 export const api = {
@@ -64,5 +74,13 @@ export const api = {
     request<T>(path, { method: "PATCH", body: body ? JSON.stringify(body) : undefined }),
   delete: <T>(path: string) => request<T>(path, { method: "DELETE" }),
 };
+
+export function isMissingRouteError(err: unknown): boolean {
+  if (typeof err !== "object" || err === null) return false;
+  const maybe = err as { status?: unknown; message?: unknown };
+  if (typeof maybe.status !== "number" || maybe.status !== 404) return false;
+  if (typeof maybe.message !== "string") return false;
+  return maybe.message.toLowerCase().includes("404 page not found");
+}
 
 export default api;

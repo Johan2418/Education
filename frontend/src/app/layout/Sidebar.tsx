@@ -16,6 +16,7 @@ import {
   FileSpreadsheet,
   X,
   LayoutDashboard,
+  Library,
 } from "lucide-react";
 import HelpModal from "./HelpModal";
 import { useSidebar } from "@/app/layout/hooks/useSidebar";
@@ -32,6 +33,38 @@ interface SidebarProps {
   setVisualAlertsEnabled?: (val: boolean) => void;
   setVoiceReadingEnabled?: (val: boolean) => void;
 }
+
+const SidebarItem = ({
+  onClick,
+  icon: Icon,
+  label,
+  iconSize = 18,
+  isActive = false,
+}: {
+  onClick: () => void;
+  icon: any;
+  label: string;
+  iconSize?: number;
+  isActive?: boolean;
+}) => (
+  <button
+    onClick={onClick}
+    className={`flex items-center space-x-3 w-full p-2.5 rounded-xl transition-all duration-200 text-left group
+      ${isActive
+        ? "bg-white/15 text-white border-l-[3px] border-indigo-400 pl-3"
+        : "text-white/70 hover:bg-white/10 hover:text-white border-l-[3px] border-transparent hover:border-white/30 pl-3"
+      }`}
+  >
+    <Icon size={iconSize} className={`shrink-0 transition-colors ${isActive ? "text-indigo-300" : "text-white/50 group-hover:text-white/80"}`} />
+    <span className="truncate">{label}</span>
+  </button>
+);
+
+const SectionLabel = ({ label }: { label: string }) => (
+  <div className="px-3 pt-4 pb-1">
+    <span className="text-[10px] font-bold uppercase tracking-widest text-white/30">{label}</span>
+  </div>
+);
 
 const Sidebar: FC<SidebarProps> = ({
   open,
@@ -61,11 +94,37 @@ const Sidebar: FC<SidebarProps> = ({
   const isAdmin = hook.profile?.role === "admin" || hook.profile?.role === "super_admin";
   const isTeacher = hook.profile?.role === "teacher";
 
+  const ToggleRow = ({
+    icon: Icon,
+    label,
+    active,
+    onClick,
+  }: {
+    icon: any;
+    label: string;
+    active: boolean;
+    onClick: () => void;
+  }) => (
+    <button
+      aria-pressed={active}
+      onClick={onClick}
+      className="flex items-center justify-between w-full p-2.5 rounded-xl hover:bg-white/10 transition-all duration-200 text-left text-white/70 hover:text-white group pl-3 border-l-[3px] border-transparent"
+    >
+      <div className="flex items-center space-x-3">
+        <Icon size={16} className="text-white/50 group-hover:text-white/80 shrink-0" />
+        <span className="truncate">{label}</span>
+      </div>
+      <div className={`w-8 h-4 rounded-full transition-all duration-300 flex items-center ${active ? "bg-emerald-400 justify-end" : "bg-white/20 justify-start"}`}>
+        <div className={`w-3 h-3 rounded-full mx-0.5 transition-all ${active ? "bg-white shadow-sm" : "bg-white/60"}`} />
+      </div>
+    </button>
+  );
+
   return (
     <>
       {open && (
         <div
-          className="fixed inset-0 bg-black/50 z-30 lg:hidden"
+          className="fixed inset-0 bg-black/60 backdrop-blur-sm z-30 lg:hidden"
           role="presentation"
           onClick={() => setSidebarOpen?.(false)}
         />
@@ -75,133 +134,91 @@ const Sidebar: FC<SidebarProps> = ({
         id="main-sidebar"
         className={`fixed top-[64px] left-0 w-64 transform transition-transform duration-300 ease-in-out z-40 
         ${open ? "translate-x-0" : "-translate-x-full"}
-        ${highContrast ? "bg-black text-yellow-300" : "bg-blue-900 text-white"}
-        h-[calc(100vh-64px)] overflow-y-auto shadow-lg`}
+        ${highContrast ? "bg-black text-yellow-300" : "bg-gradient-to-b from-slate-900 via-indigo-950 to-slate-900 text-white"}
+        h-[calc(100vh-64px)] overflow-y-auto`}
+        style={!highContrast ? { boxShadow: "4px 0 24px rgba(0, 0, 0, 0.15)" } : undefined}
         aria-label={hook.t("sidebarLabel")}
         aria-hidden={!open}
         role="dialog"
         aria-modal={open}
         ref={hook.sidebarRef}
       >
-        <nav className={`flex flex-col p-4 space-y-2 ${textSizeLarge ? "text-lg" : "text-sm"}`}>
-          <div className="lg:hidden flex justify-end mb-4">
-            <button aria-label={hook.t("close")} onClick={() => setSidebarOpen?.(false)}>
+        <nav className={`flex flex-col p-3 space-y-0.5 ${textSizeLarge ? "text-base" : "text-sm"}`}>
+          <div className="lg:hidden flex justify-end mb-3">
+            <button 
+              aria-label={hook.t("close")} 
+              onClick={() => setSidebarOpen?.(false)}
+              className="p-1.5 rounded-lg hover:bg-white/10 transition-colors text-white/70 hover:text-white"
+            >
               <X size={20} />
             </button>
           </div>
 
-          {/* Learn */}
+          {/* Learn Section */}
+          <SectionLabel label={hook.t("learn")} />
           <button
             onClick={() => hook.toggleMenu("aprende")}
-            className="flex items-center justify-between w-full p-2 rounded hover:bg-blue-800 transition"
+            className="flex items-center justify-between w-full p-2.5 rounded-xl hover:bg-white/10 transition-all duration-200 text-white/80 hover:text-white group pl-3 border-l-[3px] border-transparent"
           >
-            <div className="flex items-center space-x-2">
-              <BookOpenText size={18} /> <span>{hook.t("learn")}</span>
+            <div className="flex items-center space-x-3">
+              <BookOpenText size={18} className="text-indigo-400" />
+              <span className="font-medium">{hook.t("learn")}</span>
             </div>
-            {hook.openMenus.aprende ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+            {hook.openMenus.aprende ? <ChevronDown size={16} className="text-white/40" /> : <ChevronRight size={16} className="text-white/40" />}
           </button>
 
           {hook.openMenus.aprende && (
-            <div className="ml-6 mt-1 flex flex-col space-y-1">
-              <button onClick={() => hook.navigate("/contents?type=molecule")} className="flex items-center space-x-2 p-2 rounded hover:bg-blue-800 transition text-left">
-                <Atom size={16} /> <span>{hook.t("molecules")}</span>
-              </button>
-              <button onClick={() => hook.navigate("/contents?type=atom")} className="flex items-center space-x-2 p-2 rounded hover:bg-blue-800 transition text-left">
-                <FlaskRound size={16} /> <span>{hook.t("atoms")}</span>
-              </button>
-              <button onClick={() => hook.navigate("/contents?type=periodic-table")} className="flex items-center space-x-2 p-2 rounded hover:bg-blue-800 transition text-left">
-                <FlaskConical size={16} /> <span>{hook.t("periodicTable")}</span>
-              </button>
-              <button onClick={() => hook.navigate("/lessons")} className="flex items-center space-x-2 p-2 rounded hover:bg-blue-800 transition text-left">
-                <BookOpenText size={16} /> <span>{hook.t("lessons.title")}</span>
-              </button>
-              <button onClick={() => hook.navigate("/contents?type=chemical-reaction")} className="flex items-center space-x-2 p-2 rounded hover:bg-blue-800 transition text-left">
-                <FlaskConical size={16} /> <span>{hook.t("chemicalReactions")}</span>
-              </button>
-              <button onClick={() => hook.navigate("/contents?type=article")} className="flex items-center space-x-2 p-2 rounded hover:bg-blue-800 transition text-left">
-                <BookOpenText size={16} /> <span>{hook.t("article")}</span>
-              </button>
+            <div className="ml-3 mt-0.5 flex flex-col space-y-0.5 animate-fade-in">
+              <SidebarItem onClick={() => hook.navigate("/contents?type=molecule")} icon={Atom} label={hook.t("molecules")} iconSize={16} />
+              <SidebarItem onClick={() => hook.navigate("/contents?type=atom")} icon={FlaskRound} label={hook.t("atoms")} iconSize={16} />
+              <SidebarItem onClick={() => hook.navigate("/contents?type=periodic-table")} icon={FlaskConical} label={hook.t("periodicTable")} iconSize={16} />
+              <SidebarItem onClick={() => hook.navigate("/lessons")} icon={BookOpenText} label={hook.t("lessons.title")} iconSize={16} />
+              <SidebarItem onClick={() => hook.navigate("/contents?type=chemical-reaction")} icon={FlaskConical} label={hook.t("chemicalReactions")} iconSize={16} />
+              <SidebarItem onClick={() => hook.navigate("/contents?type=article")} icon={BookOpenText} label={hook.t("article")} iconSize={16} />
             </div>
           )}
 
-          <button onClick={() => hook.navigate("/contents")} className="flex items-center space-x-2 p-2 rounded hover:bg-blue-800 transition text-left">
-            <BookOpenText size={18} /> <span>{hook.t("contents.title")}</span>
-          </button>
-          <button onClick={() => hook.navigate("/contents?type=experiment")} className="flex items-center space-x-2 p-2 rounded hover:bg-blue-800 transition text-left">
-            <FlaskConical size={16} /> <span>{hook.t("experiments")}</span>
-          </button>
+          <SidebarItem onClick={() => hook.navigate("/contents")} icon={BookOpenText} label={hook.t("contents.title")} />
+          <SidebarItem onClick={() => hook.navigate("/contents?type=experiment")} icon={FlaskConical} label={hook.t("experiments")} iconSize={16} />
 
           {/* Accessibility */}
+          <SectionLabel label={hook.t("accessibility")} />
           <button
             onClick={() => hook.toggleMenu("accesibilidad")}
-            className="flex items-center justify-between w-full p-2 rounded hover:bg-blue-800 transition"
+            className="flex items-center justify-between w-full p-2.5 rounded-xl hover:bg-white/10 transition-all duration-200 text-white/80 hover:text-white group pl-3 border-l-[3px] border-transparent"
           >
-            <div className="flex items-center space-x-2">
-              <PersonStanding size={16} /> <span>{hook.t("accessibility")}</span>
+            <div className="flex items-center space-x-3">
+              <PersonStanding size={16} className="text-violet-400" />
+              <span className="font-medium">{hook.t("accessibility")}</span>
             </div>
-            {hook.openMenus.accesibilidad ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+            {hook.openMenus.accesibilidad ? <ChevronDown size={16} className="text-white/40" /> : <ChevronRight size={16} className="text-white/40" />}
           </button>
 
           {hook.openMenus.accesibilidad && (
-            <div className="ml-6 mt-1 flex flex-col space-y-1">
-              <button aria-pressed={visualAlertsEnabled} onClick={hook.toggleVisualAlerts} className="flex items-center justify-between w-full p-2 rounded hover:bg-blue-800 transition text-left">
-                <div className="flex items-center space-x-2"><Eye size={16} /> <span>{hook.t("visualAlerts")}</span></div>
-                <div className={`w-2 h-2 rounded-full ${visualAlertsEnabled ? "bg-emerald-400" : "bg-gray-500"}`} />
-              </button>
-              <button aria-pressed={voiceReadingEnabled} onClick={hook.toggleVoiceReading} className="flex items-center justify-between w-full p-2 rounded hover:bg-blue-800 transition text-left">
-                <div className="flex items-center space-x-2"><Volume2 size={16} /> <span>{hook.t("voiceReading")}</span></div>
-                <div className={`w-2 h-2 rounded-full ${voiceReadingEnabled ? "bg-emerald-400" : "bg-gray-500"}`} />
-              </button>
-              <button aria-pressed={textSizeLarge} onClick={hook.toggleTextSize} className="flex items-center space-x-2 p-2 rounded hover:bg-blue-800 transition text-left">
-                <Type size={16} /> <span>{hook.t("textSize")}</span>
-                <div className={`w-2 h-2 rounded-full ${textSizeLarge ? "bg-emerald-400" : "bg-gray-500"}`} />
-              </button>
-              <button aria-pressed={highContrast} onClick={hook.toggleHighContrast} className="flex items-center space-x-2 p-2 rounded hover:bg-blue-800 transition text-left">
-                <Contrast size={16} /> <span>{hook.t("highContrast")}</span>
-                <div className={`w-2 h-2 rounded-full ${highContrast ? "bg-emerald-400" : "bg-gray-500"}`} />
-              </button>
+            <div className="ml-3 mt-0.5 flex flex-col space-y-0.5 animate-fade-in">
+              <ToggleRow icon={Eye} label={hook.t("visualAlerts")} active={visualAlertsEnabled} onClick={hook.toggleVisualAlerts} />
+              <ToggleRow icon={Volume2} label={hook.t("voiceReading")} active={voiceReadingEnabled} onClick={hook.toggleVoiceReading} />
+              <ToggleRow icon={Type} label={hook.t("textSize")} active={textSizeLarge} onClick={hook.toggleTextSize} />
+              <ToggleRow icon={Contrast} label={hook.t("highContrast")} active={highContrast} onClick={hook.toggleHighContrast} />
             </div>
           )}
 
-          <button onClick={() => hook.navigate("/settings")} className="flex items-center space-x-2 p-2 rounded hover:bg-blue-800 transition text-left">
-            <Settings size={18} /> <span>{hook.t("settings")}</span>
-          </button>
+          <SidebarItem onClick={() => hook.navigate("/settings")} icon={Settings} label={hook.t("settings")} />
 
           {/* Teacher/Admin items */}
           {hook.profile && (isTeacher || isAdmin) && (
             <>
-              <button onClick={() => hook.navigate("/add-content")} className="flex items-center space-x-2 p-2 rounded hover:bg-blue-800 transition text-left">
-                <Plus size={16} /> <span>{hook.t("addContent")}</span>
-              </button>
-              <button onClick={() => hook.navigate("/teacher/contents")} className="flex items-center space-x-2 p-2 rounded hover:bg-blue-800 transition text-left">
-                <BookOpenText size={16} />
-                <span>{isAdmin ? hook.t("teacher.contents.titleAll") : hook.t("teacher.myContents")}</span>
-              </button>
-              <button onClick={() => hook.navigate("/teacher/pruebas")} className="flex items-center space-x-2 p-2 rounded hover:bg-blue-800 transition text-left">
-                <BookOpenText size={16} />
-                <span>{isAdmin ? hook.t("teacher.pruebas.titleAll") : hook.t("teacher.pruebas.title")}</span>
-              </button>
-              <button onClick={() => hook.navigate("/teacher/trabajos")} className="flex items-center space-x-2 p-2 rounded hover:bg-blue-800 transition text-left">
-                <BookOpenText size={16} />
-                <span>{hook.t("teacher.trabajos.title", { defaultValue: "Trabajos" })}</span>
-              </button>
-              <button onClick={() => hook.navigate("/teacher/trabajos/analytics")} className="flex items-center space-x-2 p-2 rounded hover:bg-blue-800 transition text-left">
-                <LayoutDashboard size={16} />
-                <span>{hook.t("teacher.trabajos.analytics.nav", { defaultValue: "Analytics v2" })}</span>
-              </button>
-              <button onClick={() => hook.navigate("/teacher/performance")} className="flex items-center space-x-2 p-2 rounded hover:bg-blue-800 transition text-left">
-                <BookOpenText size={16} />
-                <span>{isAdmin ? hook.t("teacher.performance.titleAll") : hook.t("teacher.performance.title")}</span>
-              </button>
-              <button onClick={() => hook.navigate("/teacher/estudiantes")} className="flex items-center space-x-2 p-2 rounded hover:bg-blue-800 transition text-left">
-                <BookOpenText size={16} />
-                <span>{hook.t("teacher.estudiantes.title", { defaultValue: "Mis Estudiantes" })}</span>
-              </button>
+              <SectionLabel label={isAdmin ? "Admin / Docente" : "Docente"} />
+              <SidebarItem onClick={() => hook.navigate("/add-content")} icon={Plus} label={hook.t("addContent")} iconSize={16} />
+              <SidebarItem onClick={() => hook.navigate("/teacher/contents")} icon={BookOpenText} label={isAdmin ? hook.t("teacher.contents.titleAll") : hook.t("teacher.myContents")} iconSize={16} />
+              <SidebarItem onClick={() => hook.navigate("/teacher/pruebas")} icon={BookOpenText} label={isAdmin ? hook.t("teacher.pruebas.titleAll") : hook.t("teacher.pruebas.title")} iconSize={16} />
+              <SidebarItem onClick={() => hook.navigate("/teacher/trabajos")} icon={BookOpenText} label={hook.t("teacher.trabajos.title", { defaultValue: "Trabajos" })} iconSize={16} />
+              <SidebarItem onClick={() => hook.navigate("/teacher/trabajos/analytics")} icon={LayoutDashboard} label={hook.t("teacher.trabajos.analytics.nav", { defaultValue: "Analytics v2" })} iconSize={16} />
+              <SidebarItem onClick={() => hook.navigate("/teacher/recursos")} icon={Library} label={hook.t("teacher.recursos.title", { defaultValue: "Recursos" })} iconSize={16} />
+              <SidebarItem onClick={() => hook.navigate("/teacher/performance")} icon={BookOpenText} label={isAdmin ? hook.t("teacher.performance.titleAll") : hook.t("teacher.performance.title")} iconSize={16} />
+              <SidebarItem onClick={() => hook.navigate("/teacher/estudiantes")} icon={BookOpenText} label={hook.t("teacher.estudiantes.title", { defaultValue: "Mis Estudiantes" })} iconSize={16} />
               {!isAdmin && (
-                <button onClick={() => hook.navigate("/teacher/bulk-import")} className="flex items-center space-x-2 p-2 rounded hover:bg-blue-800 transition text-left">
-                  <FileSpreadsheet size={16} />
-                  <span>Importar Estudiantes</span>
-                </button>
+                <SidebarItem onClick={() => hook.navigate("/teacher/bulk-import")} icon={FileSpreadsheet} label="Importar Estudiantes" iconSize={16} />
               )}
             </>
           )}
@@ -209,41 +226,29 @@ const Sidebar: FC<SidebarProps> = ({
           {/* Admin only */}
           {hook.profile && isAdmin && (
             <>
-              <button onClick={() => hook.navigate("/admin/dashboard")} className="flex items-center space-x-2 p-2 rounded hover:bg-blue-800 transition text-left">
-                <LayoutDashboard size={16} /> <span>{hook.t("admin.dashboard.title")}</span>
-              </button>
-              <button onClick={() => hook.navigate("/admin/users")} className="flex items-center space-x-2 p-2 rounded hover:bg-blue-800 transition text-left">
-                <PersonStanding size={16} /> <span>{hook.t("admin.users.title")}</span>
-              </button>
-              <button onClick={() => hook.navigate("/admin/cursos")} className="flex items-center space-x-2 p-2 rounded hover:bg-blue-800 transition text-left">
-                <BookOpenText size={16} /> <span>{hook.t("admin.cursos.title", { defaultValue: "Cursos" })}</span>
-              </button>
-              <button onClick={() => hook.navigate("/admin/bulk-import")} className="flex items-center space-x-2 p-2 rounded hover:bg-blue-800 transition text-left">
-                <FileSpreadsheet size={16} /> <span>Crear Cuentas (Masivo)</span>
-              </button>
-              <button onClick={() => hook.navigate("/admin/bulk-enroll")} className="flex items-center space-x-2 p-2 rounded hover:bg-blue-800 transition text-left">
-                <FileSpreadsheet size={16} /> <span>Inscribir Estudiantes (Masivo)</span>
-              </button>
+              <SectionLabel label="Administración" />
+              <SidebarItem onClick={() => hook.navigate("/admin/dashboard")} icon={LayoutDashboard} label={hook.t("admin.dashboard.title")} iconSize={16} />
+              <SidebarItem onClick={() => hook.navigate("/admin/users")} icon={PersonStanding} label={hook.t("admin.users.title")} iconSize={16} />
+              <SidebarItem onClick={() => hook.navigate("/admin/cursos")} icon={BookOpenText} label={hook.t("admin.cursos.title", { defaultValue: "Cursos" })} iconSize={16} />
+              <SidebarItem onClick={() => hook.navigate("/admin/bulk-import")} icon={FileSpreadsheet} label="Crear Cuentas (Masivo)" iconSize={16} />
+              <SidebarItem onClick={() => hook.navigate("/admin/bulk-enroll")} icon={FileSpreadsheet} label="Inscribir Estudiantes (Masivo)" iconSize={16} />
             </>
           )}
 
           {/* Student dashboard */}
           {hook.profile?.role === "student" && (
             <>
-              <button onClick={() => hook.navigate("/student/dashboard")} className="flex items-center space-x-2 p-2 rounded hover:bg-blue-800 transition text-left">
-                <LayoutDashboard size={16} /> <span>Dashboard</span>
-              </button>
-              <button onClick={() => hook.navigate("/student/trabajos")} className="flex items-center space-x-2 p-2 rounded hover:bg-blue-800 transition text-left">
-                <BookOpenText size={16} /> <span>{hook.t("student.trabajos.title", { defaultValue: "Mis Trabajos" })}</span>
-              </button>
+              <SectionLabel label="Estudiante" />
+              <SidebarItem onClick={() => hook.navigate("/student/dashboard")} icon={LayoutDashboard} label="Dashboard" iconSize={16} />
+              <SidebarItem onClick={() => hook.navigate("/student/trabajos")} icon={BookOpenText} label={hook.t("student.trabajos.title", { defaultValue: "Mis Trabajos" })} iconSize={16} />
             </>
           )}
         </nav>
 
-        <div className="mt-auto p-4 border-t pt-3">
+        <div className="mt-auto p-4 border-t border-white/10 pt-3">
           <button
             onClick={() => hook.setHelpOpen(true)}
-            className="w-full flex items-center justify-center space-x-2 p-2 rounded hover:bg-blue-800 transition text-sm"
+            className="w-full flex items-center justify-center space-x-2 p-2.5 rounded-xl hover:bg-white/10 transition-all duration-200 text-sm text-white/60 hover:text-white"
             aria-label={hook.t("help")}
           >
             <span>❔</span>

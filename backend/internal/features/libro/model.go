@@ -19,6 +19,7 @@ const (
 type LibroExtraccion struct {
 	ID                  string                `json:"id" gorm:"column:id;primaryKey;default:gen_random_uuid()"`
 	TrabajoID           string                `json:"trabajo_id" gorm:"column:trabajo_id"`
+	LibroRecursoID      *string               `json:"libro_recurso_id,omitempty" gorm:"column:libro_recurso_id"`
 	ArchivoURL          *string               `json:"archivo_url" gorm:"column:archivo_url"`
 	Idioma              string                `json:"idioma" gorm:"column:idioma"`
 	PaginaInicio        int                   `json:"pagina_inicio" gorm:"column:pagina_inicio"`
@@ -37,6 +38,58 @@ type LibroExtraccion struct {
 }
 
 func (LibroExtraccion) TableName() string { return "internal.libro_extraccion" }
+
+type EstadoLibroRecurso string
+
+const (
+	EstadoLibroRecursoPendiente  EstadoLibroRecurso = "pendiente"
+	EstadoLibroRecursoProcesando EstadoLibroRecurso = "procesando"
+	EstadoLibroRecursoCompletado EstadoLibroRecurso = "completado"
+	EstadoLibroRecursoError      EstadoLibroRecurso = "error"
+	EstadoLibroRecursoArchivado  EstadoLibroRecurso = "archivado"
+)
+
+type LibroRecurso struct {
+	ID             string             `json:"id" gorm:"column:id;primaryKey;default:gen_random_uuid()"`
+	Titulo         string             `json:"titulo" gorm:"column:titulo"`
+	Descripcion    *string            `json:"descripcion" gorm:"column:descripcion"`
+	ArchivoURL     *string            `json:"archivo_url" gorm:"column:archivo_url"`
+	Idioma         string             `json:"idioma" gorm:"column:idioma"`
+	PaginasTotales *int               `json:"paginas_totales" gorm:"column:paginas_totales"`
+	HashContenido  string             `json:"hash_contenido" gorm:"column:hash_contenido"`
+	HashArchivo    *string            `json:"hash_archivo" gorm:"column:hash_archivo"`
+	HashVersion    string             `json:"hash_version" gorm:"column:hash_version"`
+	Estado         EstadoLibroRecurso `json:"estado" gorm:"column:estado;type:internal.estado_libro_recurso"`
+	EsPublico      bool               `json:"es_publico" gorm:"column:es_publico"`
+	Metadata       json.RawMessage    `json:"metadata" gorm:"column:metadata;type:jsonb"`
+	CreatedBy      *string            `json:"created_by" gorm:"column:created_by"`
+	CreatedAt      time.Time          `json:"created_at" gorm:"column:created_at;autoCreateTime"`
+	UpdatedAt      time.Time          `json:"updated_at" gorm:"column:updated_at;autoUpdateTime"`
+}
+
+func (LibroRecurso) TableName() string { return "internal.libro_recurso" }
+
+type LibroContenidoPagina struct {
+	ID             string          `json:"id" gorm:"column:id;primaryKey;default:gen_random_uuid()"`
+	LibroRecursoID string          `json:"libro_recurso_id" gorm:"column:libro_recurso_id"`
+	Pagina         int             `json:"pagina" gorm:"column:pagina"`
+	Contenido      string          `json:"contenido" gorm:"column:contenido"`
+	ImagenBase64   *string         `json:"imagen_base64,omitempty" gorm:"column:imagen_base64"`
+	Metadata       json.RawMessage `json:"metadata,omitempty" gorm:"column:metadata;type:jsonb"`
+	CreatedAt      time.Time       `json:"created_at" gorm:"column:created_at;autoCreateTime"`
+	UpdatedAt      time.Time       `json:"updated_at" gorm:"column:updated_at;autoUpdateTime"`
+}
+
+func (LibroContenidoPagina) TableName() string { return "internal.libro_contenido_pagina" }
+
+type TrabajoLibroRecurso struct {
+	TrabajoID      string    `json:"trabajo_id" gorm:"column:trabajo_id;primaryKey"`
+	LibroRecursoID string    `json:"libro_recurso_id" gorm:"column:libro_recurso_id"`
+	CreatedBy      *string   `json:"created_by" gorm:"column:created_by"`
+	CreatedAt      time.Time `json:"created_at" gorm:"column:created_at;autoCreateTime"`
+}
+
+func (TrabajoLibroRecurso) TableName() string { return "internal.trabajo_libro_recurso" }
 
 type TrabajoPregunta struct {
 	ID                    string          `json:"id" gorm:"column:id;primaryKey;default:gen_random_uuid()"`
@@ -66,13 +119,30 @@ type Trabajo struct {
 func (Trabajo) TableName() string { return "internal.trabajo" }
 
 type ExtractLibroRequest struct {
-	ArchivoURL        *string           `json:"archivo_url"`
-	Contenido         string            `json:"contenido"`
-	PaginaInicio      *int              `json:"pagina_inicio"`
-	PaginaFin         *int              `json:"pagina_fin"`
-	Idioma            string            `json:"idioma"`
-	MaxPreguntas      *int              `json:"max_preguntas"`
-	ImagenesPorPagina map[string]string `json:"imagenes_por_pagina"`
+	ArchivoURL        *string                      `json:"archivo_url"`
+	Contenido         string                       `json:"contenido"`
+	HashArchivo       *string                      `json:"hash_archivo,omitempty"`
+	HashContenido     *string                      `json:"hash_contenido,omitempty"`
+	PaginaInicio      *int                         `json:"pagina_inicio"`
+	PaginaFin         *int                         `json:"pagina_fin"`
+	Idioma            string                       `json:"idioma"`
+	MaxPreguntas      *int                         `json:"max_preguntas"`
+	ImagenesPorPagina map[string]string            `json:"imagenes_por_pagina"`
+	ImagenesMetadata  map[string]PdfPaginaMetadata `json:"imagenes_metadata_por_pagina"`
+}
+
+type PdfTextoRegion struct {
+	Texto  string  `json:"texto"`
+	X      float64 `json:"x"`
+	Y      float64 `json:"y"`
+	Width  float64 `json:"width"`
+	Height float64 `json:"height"`
+}
+
+type PdfPaginaMetadata struct {
+	ImageWidth  int              `json:"image_width"`
+	ImageHeight int              `json:"image_height"`
+	TextRegions []PdfTextoRegion `json:"text_regions"`
 }
 
 type LibroPreguntaInput struct {
@@ -84,6 +154,7 @@ type LibroPreguntaInput struct {
 	ConfianzaIA           *float64        `json:"confianza_ia,omitempty"`
 	ImagenBase64          *string         `json:"imagen_base64,omitempty"`
 	ImagenFuente          *string         `json:"imagen_fuente,omitempty"`
+	ImagenManualOverride  *bool           `json:"imagen_manual_override,omitempty"`
 	RespuestaEsperadaTipo *string         `json:"respuesta_esperada_tipo,omitempty"`
 	Placeholder           *string         `json:"placeholder,omitempty"`
 	Orden                 int             `json:"orden"`
@@ -106,8 +177,10 @@ type LibroEstadoResponse struct {
 }
 
 type ExtractLibroResponse struct {
-	Extraccion *LibroExtraccion  `json:"extraccion"`
-	Preguntas  []TrabajoPregunta `json:"preguntas"`
+	Extraccion     *LibroExtraccion  `json:"extraccion"`
+	Preguntas      []TrabajoPregunta `json:"preguntas"`
+	Reutilizado    bool              `json:"reutilizado"`
+	LibroRecursoID *string           `json:"libro_recurso_id,omitempty"`
 }
 
 type ConfirmarLibroResponse struct {
@@ -161,4 +234,170 @@ type LibroExtractJobStatusResponse struct {
 	FailedAt     *time.Time            `json:"failed_at,omitempty"`
 	DurationMs   int64                 `json:"duration_ms"`
 	Result       *ExtractLibroResponse `json:"result,omitempty"`
+}
+
+type LibroRecursoListQuery struct {
+	Search    string
+	Estado    *EstadoLibroRecurso
+	EsPublico *bool
+	Page      int
+	PageSize  int
+}
+
+type LibroRecursoListItem struct {
+	ID               string             `json:"id"`
+	Titulo           string             `json:"titulo"`
+	Descripcion      *string            `json:"descripcion,omitempty"`
+	Idioma           string             `json:"idioma"`
+	PaginasTotales   *int               `json:"paginas_totales,omitempty"`
+	Estado           EstadoLibroRecurso `json:"estado"`
+	EsPublico        bool               `json:"es_publico"`
+	PreguntasTotales int64              `json:"preguntas_totales"`
+	CreatedAt        time.Time          `json:"created_at"`
+	UpdatedAt        time.Time          `json:"updated_at"`
+}
+
+type LibroRecursoListResponse struct {
+	Items    []LibroRecursoListItem `json:"items"`
+	Total    int64                  `json:"total"`
+	Page     int                    `json:"page"`
+	PageSize int                    `json:"page_size"`
+}
+
+type LibroRecursoDetailResponse struct {
+	ID                string             `json:"id"`
+	Titulo            string             `json:"titulo"`
+	Descripcion       *string            `json:"descripcion,omitempty"`
+	Idioma            string             `json:"idioma"`
+	PaginasTotales    *int               `json:"paginas_totales,omitempty"`
+	Estado            EstadoLibroRecurso `json:"estado"`
+	EsPublico         bool               `json:"es_publico"`
+	PreguntasTotales  int64              `json:"preguntas_totales"`
+	PaginasDetectadas int64              `json:"paginas_detectadas"`
+	CreatedAt         time.Time          `json:"created_at"`
+	UpdatedAt         time.Time          `json:"updated_at"`
+}
+
+type ViewerWatermarkConfig struct {
+	Enabled bool   `json:"enabled"`
+	Text    string `json:"text"`
+}
+
+type ViewerControls struct {
+	DisableDownload    bool `json:"disable_download"`
+	DisablePrint       bool `json:"disable_print"`
+	DisableContextMenu bool `json:"disable_context_menu"`
+}
+
+type LibroRecursoPaginaResponse struct {
+	LibroRecursoID string                `json:"libro_recurso_id"`
+	Pagina         int                   `json:"pagina"`
+	TotalPaginas   int                   `json:"total_paginas"`
+	Contenido      string                `json:"contenido"`
+	ImagenBase64   *string               `json:"imagen_base64,omitempty"`
+	Preguntas      []TrabajoPregunta     `json:"preguntas"`
+	Watermark      ViewerWatermarkConfig `json:"watermark"`
+	Controles      ViewerControls        `json:"controles"`
+}
+
+type ChatMessageRole string
+
+const (
+	ChatMessageRoleSystem    ChatMessageRole = "system"
+	ChatMessageRoleUser      ChatMessageRole = "user"
+	ChatMessageRoleAssistant ChatMessageRole = "assistant"
+	ChatMessageRoleTool      ChatMessageRole = "tool"
+)
+
+type LibroChatSession struct {
+	ID             string     `json:"id" gorm:"column:id;primaryKey;default:gen_random_uuid()"`
+	LibroRecursoID string     `json:"libro_recurso_id" gorm:"column:libro_recurso_id"`
+	Titulo         *string    `json:"titulo,omitempty" gorm:"column:titulo"`
+	CreatedBy      *string    `json:"created_by,omitempty" gorm:"column:created_by"`
+	CreatedAt      time.Time  `json:"created_at" gorm:"column:created_at;autoCreateTime"`
+	UpdatedAt      time.Time  `json:"updated_at" gorm:"column:updated_at;autoUpdateTime"`
+	LastMessageAt  *time.Time `json:"last_message_at,omitempty" gorm:"column:last_message_at"`
+}
+
+func (LibroChatSession) TableName() string { return "internal.libro_chat_session" }
+
+type LibroChatMessage struct {
+	ID           string          `json:"id" gorm:"column:id;primaryKey;default:gen_random_uuid()"`
+	SessionID    string          `json:"session_id" gorm:"column:session_id"`
+	Role         ChatMessageRole `json:"role" gorm:"column:role;type:internal.chat_message_role"`
+	Content      string          `json:"content" gorm:"column:content"`
+	ToolName     *string         `json:"tool_name,omitempty" gorm:"column:tool_name"`
+	Metadata     json.RawMessage `json:"metadata,omitempty" gorm:"column:metadata;type:jsonb"`
+	Model        *string         `json:"model,omitempty" gorm:"column:model"`
+	LatencyMs    *int            `json:"latency_ms,omitempty" gorm:"column:latency_ms"`
+	UsedFallback bool            `json:"used_fallback" gorm:"column:used_fallback"`
+	CreatedBy    *string         `json:"created_by,omitempty" gorm:"column:created_by"`
+	CreatedAt    time.Time       `json:"created_at" gorm:"column:created_at;autoCreateTime"`
+}
+
+func (LibroChatMessage) TableName() string { return "internal.libro_chat_message" }
+
+type LibroChatTelemetria struct {
+	ID             string          `json:"id" gorm:"column:id;primaryKey;default:gen_random_uuid()"`
+	SessionID      string          `json:"session_id" gorm:"column:session_id"`
+	LibroRecursoID string          `json:"libro_recurso_id" gorm:"column:libro_recurso_id"`
+	UserID         *string         `json:"user_id,omitempty" gorm:"column:user_id"`
+	EventType      string          `json:"event_type" gorm:"column:event_type"`
+	LatencyMs      *int            `json:"latency_ms,omitempty" gorm:"column:latency_ms"`
+	UsedFallback   bool            `json:"used_fallback" gorm:"column:used_fallback"`
+	ErrorCode      *string         `json:"error_code,omitempty" gorm:"column:error_code"`
+	Metadata       json.RawMessage `json:"metadata,omitempty" gorm:"column:metadata;type:jsonb"`
+	CreatedAt      time.Time       `json:"created_at" gorm:"column:created_at;autoCreateTime"`
+}
+
+func (LibroChatTelemetria) TableName() string { return "internal.libro_chat_telemetria" }
+
+type LibroChatSessionListResponse struct {
+	Items  []LibroChatSession `json:"items"`
+	Total  int64              `json:"total"`
+	Limit  int                `json:"limit"`
+	Offset int                `json:"offset"`
+}
+
+type CreateLibroChatSessionRequest struct {
+	Titulo *string `json:"titulo,omitempty"`
+}
+
+type LibroChatSendMessageRequest struct {
+	Mensaje string `json:"mensaje"`
+}
+
+type MCPToolCall struct {
+	Name          string          `json:"name"`
+	Input         json.RawMessage `json:"input,omitempty"`
+	OutputSummary string          `json:"output_summary,omitempty"`
+	DurationMs    int64           `json:"duration_ms"`
+}
+
+type LibroChatToolUsage struct {
+	Name       string `json:"name"`
+	UsageCount int64  `json:"usage_count"`
+}
+
+type LibroChatReportResponse struct {
+	RecursoID          string               `json:"recurso_id"`
+	SesionesTotal      int64                `json:"sesiones_total"`
+	MensajesTotal      int64                `json:"mensajes_total"`
+	MensajesUsuario    int64                `json:"mensajes_usuario"`
+	MensajesAsistente  int64                `json:"mensajes_asistente"`
+	FallbackTotal      int64                `json:"fallback_total"`
+	LatenciaPromedioMs float64              `json:"latencia_promedio_ms"`
+	UltimoMensajeAt    *time.Time           `json:"ultimo_mensaje_at,omitempty"`
+	TopTools           []LibroChatToolUsage `json:"top_tools"`
+}
+
+type LibroChatSendMessageResponse struct {
+	SessionID    string        `json:"session_id"`
+	RecursoID    string        `json:"recurso_id"`
+	UserMessage  string        `json:"user_message"`
+	Answer       string        `json:"answer"`
+	Model        *string       `json:"model,omitempty"`
+	UsedFallback bool          `json:"used_fallback"`
+	LatencyMs    int64         `json:"latency_ms"`
+	ToolCalls    []MCPToolCall `json:"tool_calls"`
 }

@@ -3,6 +3,7 @@ package libro
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -14,6 +15,7 @@ import (
 type Service struct {
 	repo        *Repository
 	ai          *AIService
+	mcp         *mcpOrchestrator
 	metricsMu   sync.RWMutex
 	metricsByID map[string]*LibroObservabilityResponse
 	jobsMu      sync.RWMutex
@@ -43,6 +45,7 @@ func NewService(repo *Repository, ai *AIService) *Service {
 	return &Service{
 		repo:        repo,
 		ai:          ai,
+		mcp:         newMCPOrchestrator(repo),
 		metricsByID: make(map[string]*LibroObservabilityResponse),
 		jobsByID:    make(map[string]*extractLibroJob),
 	}
@@ -216,6 +219,41 @@ func (s *Service) ExtractLibro(ctx context.Context, trabajoID string, req Extrac
 		return nil, err
 	}
 
+	contentHash := req.HashContenido
+	if contentHash != nil {
+		trimmed := strings.TrimSpace(*contentHash)
+		contentHash = &trimmed
+	}
+	if contentHash == nil || *contentHash == "" {
+		h := hashNormalizedContent(req.Contenido)
+		contentHash = &h
+	}
+
+	var fileHash *string
+	if req.HashArchivo != nil {
+		trimmed := strings.TrimSpace(*req.HashArchivo)
+		if trimmed != "" {
+			fileHash = &trimmed
+		}
+	}
+
+	libroRecurso, err := s.repo.FindLibroRecursoByHashes(ctx, *contentHash, fileHash, "v1")
+	if err != nil {
+		finalErr = err
+		return nil, err
+	}
+
+	if libroRecurso != nil && libroRecurso.Estado == EstadoLibroRecursoCompletado {
+		reusedResp, reused, reuseErr := s.tryReuseLibroRecurso(ctx, trabajoID, req, userID, libroRecurso)
+		if reuseErr != nil {
+			finalErr = reuseErr
+			return nil, reuseErr
+		}
+		if reused {
+			return reusedResp, nil
+		}
+	}
+
 	idioma := strings.TrimSpace(req.Idioma)
 	if idioma == "" {
 		idioma = "es"
@@ -226,8 +264,35 @@ func (s *Service) ExtractLibro(ctx context.Context, trabajoID string, req Extrac
 	}
 
 	notaExtrayendo := "extrayendo con IA"
+	if libroRecurso == nil {
+		titulo := inferLibroTitulo(req.ArchivoURL, trabajoID)
+		libroRecurso, err = s.repo.CreateLibroRecurso(ctx, LibroRecurso{
+			Titulo:        titulo,
+			Descripcion:   nil,
+			ArchivoURL:    req.ArchivoURL,
+			Idioma:        idioma,
+			HashContenido: *contentHash,
+			HashArchivo:   fileHash,
+			HashVersion:   "v1",
+			Estado:        EstadoLibroRecursoProcesando,
+			EsPublico:     false,
+			Metadata:      []byte(`{"origen":"trabajo_libro_extract"}`),
+			CreatedBy:     &userID,
+		})
+		if err != nil {
+			finalErr = err
+			return nil, err
+		}
+	}
+
+	var libroRecursoID *string
+	if libroRecurso != nil {
+		libroRecursoID = &libroRecurso.ID
+	}
+
 	extraccion, err := s.repo.UpsertExtraccion(ctx, LibroExtraccion{
 		TrabajoID:       trabajoID,
+		LibroRecursoID:  libroRecursoID,
 		ArchivoURL:      req.ArchivoURL,
 		Idioma:          idioma,
 		PaginaInicio:    paginaInicio,
@@ -257,10 +322,45 @@ func (s *Service) ExtractLibro(ctx context.Context, trabajoID string, req Extrac
 		return nil, err
 	}
 
+	imageByPage := normalizeImageMapByPage(req.ImagenesPorPagina)
+	metadataByPage := normalizeMetadataMapByPage(req.ImagenesMetadata)
+	contentChunks := splitContentByPageMarkers(req.Contenido, req.PaginaInicio, imageByPage, metadataByPage)
+	maxPageFromContent := 0
+	for _, chunk := range contentChunks {
+		if chunk.Page > maxPageFromContent {
+			maxPageFromContent = chunk.Page
+		}
+	}
+
+	if libroRecurso != nil {
+		pageContents := buildLibroContenidoPaginas(contentChunks)
+		if err := s.repo.UpsertLibroContenidoPaginas(ctx, libroRecurso.ID, pageContents); err != nil {
+			finalErr = err
+			return nil, err
+		}
+	}
+
+	// Calculate total pages detected from the extracted questions
+	paginasDetectadas := make(map[int]bool)
+	for _, p := range preguntas {
+		if p.PaginaLibro != nil && *p.PaginaLibro > 0 {
+			paginasDetectadas[*p.PaginaLibro] = true
+		}
+	}
+	totalPaginasDetectadas := len(paginasDetectadas)
+	if maxPageFromContent > totalPaginasDetectadas {
+		totalPaginasDetectadas = maxPageFromContent
+	}
+	if totalPaginasDetectadas == 0 && req.PaginaFin != nil && *req.PaginaFin > 0 {
+		// Fallback if no pages detected in questions, use the range provided
+		totalPaginasDetectadas = *req.PaginaFin
+	}
+
 	prom := avgConfianza(preguntas)
 	nota := notaFinal
 	extraccion, err = s.repo.UpsertExtraccion(ctx, LibroExtraccion{
 		TrabajoID:           trabajoID,
+		LibroRecursoID:      libroRecursoID,
 		ArchivoURL:          req.ArchivoURL,
 		Idioma:              idioma,
 		PaginaInicio:        paginaInicio,
@@ -281,13 +381,87 @@ func (s *Service) ExtractLibro(ctx context.Context, trabajoID string, req Extrac
 		return nil, err
 	}
 
+	if libroRecurso != nil {
+		if err := s.repo.UpdateLibroRecursoAfterExtract(ctx, libroRecurso.ID, EstadoLibroRecursoCompletado, &totalPaginasDetectadas, req.ArchivoURL); err != nil {
+			finalErr = err
+			return nil, err
+		}
+		if err := s.repo.LinkTrabajoLibroRecurso(ctx, trabajoID, libroRecurso.ID, userID); err != nil {
+			finalErr = err
+			return nil, err
+		}
+	}
+
 	stored, err := s.repo.ListPreguntasByTrabajo(ctx, trabajoID)
 	if err != nil {
 		finalErr = err
 		return nil, err
 	}
 
-	return &ExtractLibroResponse{Extraccion: extraccion, Preguntas: stored}, nil
+	return &ExtractLibroResponse{Extraccion: extraccion, Preguntas: stored, Reutilizado: false, LibroRecursoID: libroRecursoID}, nil
+}
+
+func (s *Service) tryReuseLibroRecurso(ctx context.Context, trabajoID string, req ExtractLibroRequest, userID string, recurso *LibroRecurso) (*ExtractLibroResponse, bool, error) {
+	if recurso == nil {
+		return nil, false, nil
+	}
+
+	preguntas, err := s.repo.ListPreguntasByLibroRecurso(ctx, recurso.ID)
+	if err != nil {
+		return nil, false, err
+	}
+	if len(preguntas) == 0 {
+		return nil, false, nil
+	}
+
+	copyPreguntas := make([]TrabajoPregunta, 0, len(preguntas))
+	for idx := range preguntas {
+		item := preguntas[idx]
+		item.ID = ""
+		item.TrabajoID = trabajoID
+		copyPreguntas = append(copyPreguntas, item)
+	}
+
+	if err := s.repo.ReplacePreguntas(ctx, trabajoID, copyPreguntas); err != nil {
+		return nil, false, err
+	}
+
+	nota := fmt.Sprintf("reutilizado desde libro_recurso %s", recurso.ID)
+	extraccion, err := s.repo.UpsertExtraccion(ctx, LibroExtraccion{
+		TrabajoID:           trabajoID,
+		LibroRecursoID:      &recurso.ID,
+		ArchivoURL:          req.ArchivoURL,
+		Idioma:              recurso.Idioma,
+		PaginaInicio:        1,
+		PaginaFin:           req.PaginaFin,
+		Estado:              EstadoCompletado,
+		PreguntasDetectadas: len(copyPreguntas),
+		ConfianzaPromedio:   avgConfianza(copyPreguntas),
+		NotasExtraccion:     &nota,
+		UsadoFallback:       false,
+	})
+	if err != nil {
+		return nil, false, err
+	}
+
+	if err := s.repo.UpdateTrabajoPostExtraccion(ctx, trabajoID, extraccion.ID); err != nil {
+		return nil, false, err
+	}
+	if err := s.repo.LinkTrabajoLibroRecurso(ctx, trabajoID, recurso.ID, userID); err != nil {
+		return nil, false, err
+	}
+
+	stored, err := s.repo.ListPreguntasByTrabajo(ctx, trabajoID)
+	if err != nil {
+		return nil, false, err
+	}
+
+	return &ExtractLibroResponse{
+		Extraccion:     extraccion,
+		Preguntas:      stored,
+		Reutilizado:    true,
+		LibroRecursoID: &recurso.ID,
+	}, true, nil
 }
 
 func (s *Service) GetObservability(ctx context.Context, trabajoID, userID, role string) (*LibroObservabilityResponse, error) {
@@ -304,6 +478,329 @@ func (s *Service) GetObservability(ctx context.Context, trabajoID, userID, role 
 	}
 
 	return &LibroObservabilityResponse{TrabajoID: trabajoID}, nil
+}
+
+func (s *Service) ListLibroRecursos(ctx context.Context, q LibroRecursoListQuery, userID, role string) (*LibroRecursoListResponse, error) {
+	if err := authorizeLibroRecursosAccess(role); err != nil {
+		return nil, err
+	}
+
+	if q.Page < 1 {
+		q.Page = 1
+	}
+	if q.PageSize < 1 {
+		q.PageSize = 20
+	}
+	if q.PageSize > 100 {
+		q.PageSize = 100
+	}
+
+	items, total, err := s.repo.ListLibroRecursos(ctx, q)
+	if err != nil {
+		return nil, err
+	}
+
+	return &LibroRecursoListResponse{
+		Items:    items,
+		Total:    total,
+		Page:     q.Page,
+		PageSize: q.PageSize,
+	}, nil
+}
+
+func (s *Service) GetLibroRecursoDetail(ctx context.Context, recursoID, userID, role string) (*LibroRecursoDetailResponse, error) {
+	if err := authorizeLibroRecursosAccess(role); err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(recursoID) == "" {
+		return nil, errors.New("recurso_id es requerido")
+	}
+	return s.repo.GetLibroRecursoDetail(ctx, recursoID)
+}
+
+func (s *Service) GetLibroRecursoPagina(ctx context.Context, recursoID string, pagina int, userID, role string) (*LibroRecursoPaginaResponse, error) {
+	if err := authorizeLibroRecursosAccess(role); err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(recursoID) == "" {
+		return nil, errors.New("recurso_id es requerido")
+	}
+	if pagina < 1 {
+		return nil, errors.New("pagina invalida")
+	}
+
+	detail, err := s.repo.GetLibroRecursoDetail(ctx, recursoID)
+	if err != nil {
+		return nil, err
+	}
+
+	totalPaginas := pagina
+	if detail.PaginasTotales != nil && *detail.PaginasTotales > 0 {
+		totalPaginas = *detail.PaginasTotales
+	} else if detail.PaginasDetectadas > 0 {
+		totalPaginas = int(detail.PaginasDetectadas)
+	}
+	if totalPaginas > 0 && pagina > totalPaginas {
+		return nil, errors.New("pagina fuera de rango")
+	}
+
+	preguntas, err := s.repo.ListPreguntasByLibroRecursoAndPagina(ctx, recursoID, pagina)
+	if err != nil {
+		return nil, err
+	}
+
+	contenidoPagina, err := s.repo.GetLibroContenidoPagina(ctx, recursoID, pagina)
+	if err != nil {
+		return nil, err
+	}
+	contenido := ""
+	var imagenBase64 *string
+	if contenidoPagina != nil {
+		contenido = strings.TrimSpace(contenidoPagina.Contenido)
+		imagenBase64 = contenidoPagina.ImagenBase64
+	}
+
+	watermarkText := fmt.Sprintf("Arcanea • %s • %s", role, userID)
+
+	return &LibroRecursoPaginaResponse{
+		LibroRecursoID: recursoID,
+		Pagina:         pagina,
+		TotalPaginas:   totalPaginas,
+		Contenido:      contenido,
+		ImagenBase64:   imagenBase64,
+		Preguntas:      preguntas,
+		Watermark: ViewerWatermarkConfig{
+			Enabled: true,
+			Text:    watermarkText,
+		},
+		Controles: ViewerControls{
+			DisableDownload:    true,
+			DisablePrint:       true,
+			DisableContextMenu: true,
+		},
+	}, nil
+}
+
+func (s *Service) CreateLibroChatSession(ctx context.Context, recursoID string, req CreateLibroChatSessionRequest, userID, role string) (*LibroChatSession, error) {
+	if err := authorizeLibroRecursosAccess(role); err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(recursoID) == "" {
+		return nil, errors.New("recurso_id es requerido")
+	}
+	if _, err := s.repo.GetLibroRecursoDetail(ctx, recursoID); err != nil {
+		return nil, err
+	}
+
+	titulo := trimOrNil(req.Titulo)
+	session, err := s.repo.CreateLibroChatSession(ctx, LibroChatSession{
+		LibroRecursoID: recursoID,
+		Titulo:         titulo,
+		CreatedBy:      &userID,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return session, nil
+}
+
+func (s *Service) ListLibroChatSessions(ctx context.Context, recursoID, userID, role string, limit, offset int) (*LibroChatSessionListResponse, error) {
+	if err := authorizeLibroRecursosAccess(role); err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(recursoID) == "" {
+		return nil, errors.New("recurso_id es requerido")
+	}
+	if _, err := s.repo.GetLibroRecursoDetail(ctx, recursoID); err != nil {
+		return nil, err
+	}
+
+	items, total, err := s.repo.ListLibroChatSessions(ctx, recursoID, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+
+	if limit <= 0 {
+		limit = 20
+	}
+	if limit > 100 {
+		limit = 100
+	}
+	if offset < 0 {
+		offset = 0
+	}
+
+	return &LibroChatSessionListResponse{
+		Items:  items,
+		Total:  total,
+		Limit:  limit,
+		Offset: offset,
+	}, nil
+}
+
+func (s *Service) GetLibroChatMessages(ctx context.Context, recursoID, sessionID, userID, role string, limit int) ([]LibroChatMessage, error) {
+	if err := authorizeLibroRecursosAccess(role); err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(recursoID) == "" || strings.TrimSpace(sessionID) == "" {
+		return nil, errors.New("recurso_id y session_id son requeridos")
+	}
+
+	session, err := s.repo.GetLibroChatSession(ctx, recursoID, sessionID)
+	if err != nil {
+		return nil, err
+	}
+	if session == nil {
+		return nil, errors.New("sesion no encontrada")
+	}
+
+	return s.repo.ListLibroChatMessages(ctx, sessionID, limit)
+}
+
+func (s *Service) SendLibroChatMessage(ctx context.Context, recursoID, sessionID string, req LibroChatSendMessageRequest, userID, role string) (*LibroChatSendMessageResponse, error) {
+	if err := authorizeLibroRecursosAccess(role); err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(recursoID) == "" || strings.TrimSpace(sessionID) == "" {
+		return nil, errors.New("recurso_id y session_id son requeridos")
+	}
+	message := strings.TrimSpace(req.Mensaje)
+	if message == "" {
+		return nil, errors.New("mensaje es requerido")
+	}
+
+	session, err := s.repo.GetLibroChatSession(ctx, recursoID, sessionID)
+	if err != nil {
+		return nil, err
+	}
+	if session == nil {
+		return nil, errors.New("sesion no encontrada")
+	}
+
+	now := time.Now()
+	if _, err := s.repo.CreateLibroChatMessage(ctx, LibroChatMessage{
+		SessionID: sessionID,
+		Role:      ChatMessageRoleUser,
+		Content:   message,
+		Metadata:  []byte(`{"source":"user"}`),
+		CreatedBy: &userID,
+	}); err != nil {
+		return nil, err
+	}
+
+	history, err := s.repo.ListLibroChatMessages(ctx, sessionID, 8)
+	if err != nil {
+		return nil, err
+	}
+
+	mcpBundle, err := s.mcp.BuildChatContext(ctx, recursoID, message)
+	if err != nil {
+		return nil, err
+	}
+
+	systemPrompt := "Eres un tutor didactico para docentes. Usa solo el contexto MCP entregado. Si no hay datos suficientes, dilo claramente y sugiere revisar paginas concretas."
+	messages := make([]map[string]string, 0, 12)
+	messages = append(messages, map[string]string{"role": "system", "content": systemPrompt + "\n\n" + mcpBundle.PromptContext})
+
+	for _, item := range history {
+		roleText := string(item.Role)
+		if roleText != "user" && roleText != "assistant" && roleText != "system" {
+			continue
+		}
+		messages = append(messages, map[string]string{
+			"role":    roleText,
+			"content": strings.TrimSpace(item.Content),
+		})
+	}
+
+	if len(messages) == 1 || messages[len(messages)-1]["role"] != "user" {
+		messages = append(messages, map[string]string{"role": "user", "content": message})
+	}
+
+	started := time.Now()
+	answer, usedFallback, modelName, aiErr := s.ai.GenerateChatAnswer(ctx, messages)
+	latencyMs := time.Since(started).Milliseconds()
+
+	errorCode := (*string)(nil)
+	if aiErr != nil || strings.TrimSpace(answer) == "" {
+		fallback := buildChatFallbackAnswer(message, mcpBundle)
+		answer = fallback
+		usedFallback = true
+		e := "model_unavailable"
+		errorCode = &e
+	}
+
+	meta := asRawJSON(map[string]interface{}{
+		"tool_calls": mcpBundle.ToolCalls,
+	})
+	latencyInt := int(latencyMs)
+	var modelPtr *string
+	if strings.TrimSpace(modelName) != "" {
+		trimmedModel := strings.TrimSpace(modelName)
+		modelPtr = &trimmedModel
+	}
+
+	assistantMsg, err := s.repo.CreateLibroChatMessage(ctx, LibroChatMessage{
+		SessionID:    sessionID,
+		Role:         ChatMessageRoleAssistant,
+		Content:      answer,
+		Metadata:     meta,
+		Model:        modelPtr,
+		LatencyMs:    &latencyInt,
+		UsedFallback: usedFallback,
+		CreatedBy:    &userID,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	if err := s.repo.TouchLibroChatSession(ctx, sessionID, now); err != nil {
+		return nil, err
+	}
+
+	telemMeta := asRawJSON(map[string]interface{}{
+		"message_id": assistantMsg.ID,
+		"tool_calls": mcpBundle.ToolCalls,
+	})
+	_ = s.repo.CreateLibroChatTelemetria(ctx, LibroChatTelemetria{
+		SessionID:      sessionID,
+		LibroRecursoID: recursoID,
+		UserID:         &userID,
+		EventType:      "chat_message",
+		LatencyMs:      &latencyInt,
+		UsedFallback:   usedFallback,
+		ErrorCode:      errorCode,
+		Metadata:       telemMeta,
+	})
+
+	return &LibroChatSendMessageResponse{
+		SessionID:    sessionID,
+		RecursoID:    recursoID,
+		UserMessage:  message,
+		Answer:       answer,
+		Model:        modelPtr,
+		UsedFallback: usedFallback,
+		LatencyMs:    latencyMs,
+		ToolCalls:    mcpBundle.ToolCalls,
+	}, nil
+}
+
+func (s *Service) GetLibroChatReporte(ctx context.Context, recursoID, userID, role string, topToolsLimit int) (*LibroChatReportResponse, error) {
+	if err := authorizeLibroRecursosAccess(role); err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(recursoID) == "" {
+		return nil, errors.New("recurso_id es requerido")
+	}
+	if _, err := s.repo.GetLibroRecursoDetail(ctx, recursoID); err != nil {
+		return nil, err
+	}
+
+	report, err := s.repo.GetLibroChatReport(ctx, recursoID, topToolsLimit)
+	if err != nil {
+		return nil, err
+	}
+	return report, nil
 }
 
 func (s *Service) RevisarLibro(ctx context.Context, trabajoID string, req RevisionLibroRequest, userID, role string) (*LibroEstadoResponse, error) {
@@ -343,7 +840,17 @@ func (s *Service) RevisarLibro(ctx context.Context, trabajoID string, req Revisi
 
 			var imageBase64 *string
 			var imageFuente *string
-			if isVisualCueQuestion(itemText) {
+			manualOverride := p.ImagenManualOverride != nil && *p.ImagenManualOverride
+			if manualOverride {
+				imageBase64 = trimOrNil(p.ImagenBase64)
+				if imageBase64 != nil {
+					imageFuente = trimOrNil(p.ImagenFuente)
+					if imageFuente == nil {
+						manualSource := "manual_override"
+						imageFuente = &manualSource
+					}
+				}
+			} else if isVisualCueQuestion(itemText) {
 				imageBase64 = p.ImagenBase64
 				imageFuente = p.ImagenFuente
 			}
@@ -466,6 +973,15 @@ func (s *Service) authorizeTrabajo(ctx context.Context, trabajoID, userID, role 
 	return nil
 }
 
+func authorizeLibroRecursosAccess(role string) error {
+	switch role {
+	case "teacher", "admin", "super_admin", "resource_manager":
+		return nil
+	default:
+		return errors.New("no autorizado")
+	}
+}
+
 func avgConfianza(preguntas []TrabajoPregunta) *float64 {
 	if len(preguntas) == 0 {
 		return nil
@@ -525,6 +1041,38 @@ func (s *Service) recordExtractMetrics(trabajoID string, latency time.Duration, 
 	}
 }
 
+func buildChatFallbackAnswer(userMessage string, bundle *mcpContextBundle) string {
+	if bundle == nil {
+		return "No fue posible contactar el modelo local en este momento. Intenta nuevamente en unos segundos."
+	}
+
+	lines := []string{
+		"No fue posible contactar el modelo local en este momento.",
+		"Te dejo una guia rapida basada en el contexto del recurso:",
+	}
+
+	contextLines := strings.Split(bundle.PromptContext, "\n")
+	added := 0
+	for _, ln := range contextLines {
+		trimmed := strings.TrimSpace(ln)
+		if strings.HasPrefix(trimmed, "1)") || strings.HasPrefix(trimmed, "2)") || strings.HasPrefix(trimmed, "3)") {
+			lines = append(lines, "- "+trimmed)
+			added++
+		}
+		if added >= 3 {
+			break
+		}
+	}
+
+	if added == 0 {
+		lines = append(lines, "- Revisa las preguntas por pagina en el visor para construir la respuesta.")
+	}
+	lines = append(lines, "")
+	lines = append(lines, "Mensaje original: "+userMessage)
+
+	return strings.Join(lines, "\n")
+}
+
 func calcJobDurationMs(job *extractLibroJob, now time.Time) int64 {
 	if job == nil || job.StartedAt.IsZero() {
 		return 0
@@ -561,6 +1109,54 @@ func classifyExtractError(err error) string {
 	default:
 		return "unknown_error"
 	}
+}
+
+func hashNormalizedContent(content string) string {
+	normalized := strings.Join(strings.Fields(strings.ToLower(strings.TrimSpace(content))), " ")
+	sum := sha256.Sum256([]byte(normalized))
+	return hex.EncodeToString(sum[:])
+}
+
+func buildLibroContenidoPaginas(chunks []pageChunk) []LibroContenidoPagina {
+	if len(chunks) == 0 {
+		return nil
+	}
+
+	out := make([]LibroContenidoPagina, 0, len(chunks))
+	for _, chunk := range chunks {
+		contenido := strings.TrimSpace(chunk.Content)
+		if chunk.Page <= 0 || contenido == "" {
+			continue
+		}
+
+		meta := asRawJSON(map[string]interface{}{})
+		if chunk.ImageMetadata != nil {
+			meta = asRawJSON(map[string]interface{}{"image_metadata": chunk.ImageMetadata})
+		}
+
+		out = append(out, LibroContenidoPagina{
+			Pagina:       chunk.Page,
+			Contenido:    contenido,
+			ImagenBase64: chunk.ImageBase64,
+			Metadata:     meta,
+		})
+	}
+
+	return out
+}
+
+func inferLibroTitulo(archivoURL *string, trabajoID string) string {
+	if archivoURL != nil {
+		trimmed := strings.TrimSpace(*archivoURL)
+		if trimmed != "" {
+			parts := strings.Split(trimmed, "/")
+			candidate := strings.TrimSpace(parts[len(parts)-1])
+			if candidate != "" {
+				return candidate
+			}
+		}
+	}
+	return fmt.Sprintf("Libro trabajo %s", trabajoID)
 }
 
 func userErrorMessage(errorType string, err error) string {

@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "test:libro-heuristica": "node scripts/test-libro-heuristica.mjs",
     "lint": "eslint .",
     "preview": "vite preview"
   },

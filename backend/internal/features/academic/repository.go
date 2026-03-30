@@ -2,6 +2,7 @@ package academic
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/lib/pq"
@@ -354,7 +355,46 @@ func (r *Repository) ListLecciones(ctx context.Context, temaID string) ([]Leccio
 	return items, err
 }
 
+func (r *Repository) ListRecentLeccionesByUser(ctx context.Context, userID string, limit int) ([]Leccion, error) {
+	if strings.TrimSpace(userID) == "" {
+		return []Leccion{}, nil
+	}
+	if limit <= 0 {
+		limit = 6
+	}
+
+	var items []Leccion
+	err := r.db.WithContext(ctx).
+		Table("internal.progreso p").
+		Select("l.*").
+		Joins("JOIN internal.leccion l ON l.id = p.leccion_id").
+		Where("p.usuario_id = ?", userID).
+		Order("COALESCE(p.fecha_ultimo_acceso, p.updated_at, p.created_at) DESC").
+		Limit(limit).
+		Scan(&items).Error
+
+	return items, err
+}
+
+func (r *Repository) ListLatestLecciones(ctx context.Context, limit int) ([]Leccion, error) {
+	if limit <= 0 {
+		limit = 6
+	}
+
+	var items []Leccion
+	err := r.db.WithContext(ctx).
+		Order("created_at DESC").
+		Limit(limit).
+		Find(&items).Error
+
+	return items, err
+}
+
 func (r *Repository) GetLeccion(ctx context.Context, id string) (*Leccion, error) {
+	if strings.TrimSpace(id) == "" {
+		return nil, gorm.ErrRecordNotFound
+	}
+
 	var l Leccion
 	if err := r.db.WithContext(ctx).Where("id = ?", id).First(&l).Error; err != nil {
 		return nil, err

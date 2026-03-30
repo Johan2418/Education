@@ -35,6 +35,8 @@ import TeacherTrabajoCalificar from "@/features/trabajos/pages/teacherTrabajoCal
 import TeacherTrabajoLibroWizard from "@/features/trabajos/pages/teacherTrabajoLibroWizard";
 import TeacherTrabajoReportes from "@/features/trabajos/pages/teacherTrabajoReportes";
 import TeacherTrabajosAnalytics from "@/features/trabajos/pages/teacherTrabajosAnalytics";
+import TeacherRecursos from "@/features/resources/pages/teacherRecursos";
+import TeacherRecursoViewer from "@/features/resources/pages/teacherRecursoViewer";
 import StudentDashboard from "@/features/student/pages/studentDashboard";
 import StudentTrabajos from "@/features/trabajos/pages/studentTrabajos";
 import StudentTrabajoDetail from "@/features/trabajos/pages/studentTrabajoDetail";
@@ -131,7 +133,7 @@ function App() {
             setVoiceReadingEnabled={setVoiceReadingEnabled}
           />
 
-          <main className={`flex-1 p-6 pt-[64px] transition-all duration-300 ${sidebarOpen ? "lg:ml-64" : "lg:ml-0"} ${highContrast ? "bg-black text-yellow-300" : "bg-gray-50 text-gray-900"}`}>
+          <main className={`flex-1 p-6 pt-[64px] transition-all duration-300 ${sidebarOpen ? "lg:ml-64" : "lg:ml-0"} ${highContrast ? "bg-black text-yellow-300" : "bg-gradient-to-br from-gray-50 via-indigo-50/30 to-gray-50 text-gray-900"}`}>
             <Routes>
               <Route path="/" element={<MainContent textSizeLarge={textSizeLarge} highContrast={highContrast} />} />
               <Route path="/login" element={<Login textSizeLarge={textSizeLarge} highContrast={highContrast} />} />
@@ -140,12 +142,12 @@ function App() {
               <Route path="/verify" element={<VerifyEmail textSizeLarge={textSizeLarge} highContrast={highContrast} />} />
               <Route path="/reset-password" element={<ResetPassword textSizeLarge={textSizeLarge} highContrast={highContrast} />} />
               <Route path="/add-content" element={<AddContentPage />} />
-              <Route path="/contents" element={<ContentsPage />} />
-              <Route path="/lessons" element={<LessonsPage />} />
+              <Route path="/contents" element={<ContentsPage highContrast={highContrast} />} />
+              <Route path="/lessons" element={<LessonsPage highContrast={highContrast} />} />
               <Route path="/lesson/:lessonId" element={<LessonDetailPage />} />
               <Route path="/lesson/:lessonId/prueba/:pruebaId" element={<PruebaPage />} />
               <Route path="/settings" element={<SettingsPage />} />
-              <Route path="/teacher" element={<TeacherDashboard />} />
+              <Route path="/teacher" element={<TeacherDashboard highContrast={highContrast} />} />
               <Route path="/teacher/lessons" element={<TeacherLessons />} />
               <Route path="/teacher/contents" element={<TeacherContents />} />
               <Route path="/teacher/pruebas" element={<TeacherPruebas />} />
@@ -154,16 +156,18 @@ function App() {
               <Route path="/teacher/trabajos/:trabajoId/libro" element={<TeacherTrabajoLibroWizard />} />
               <Route path="/teacher/trabajos/:trabajoId/reportes" element={<TeacherTrabajoReportes />} />
               <Route path="/teacher/trabajos/analytics" element={<TeacherTrabajosAnalytics />} />
+              <Route path="/teacher/recursos" element={<TeacherRecursos />} />
+              <Route path="/teacher/recursos/:recursoId" element={<TeacherRecursoViewer />} />
               <Route path="/teacher/performance" element={<TeacherPerformance />} />
               <Route path="/teacher/estudiantes" element={<TeacherEstudiantes />} />
               <Route path="/admin/users" element={<AdminUsers />} />
-              <Route path="/admin/dashboard" element={<AdminDashboard />} />
+              <Route path="/admin/dashboard" element={<AdminDashboard highContrast={highContrast} />} />
               <Route path="/admin/modelos" element={<AdminModelos />} />
               <Route path="/admin/cursos" element={<AdminCursos />} />
               <Route path="/admin/bulk-import" element={<AdminBulkImport />} />
               <Route path="/admin/bulk-enroll" element={<AdminBulkEnroll />} />
               <Route path="/teacher/bulk-import" element={<TeacherBulkImport />} />
-              <Route path="/student/dashboard" element={<StudentDashboard />} />
+              <Route path="/student/dashboard" element={<StudentDashboard highContrast={highContrast} />} />
               <Route path="/student/trabajos" element={<StudentTrabajos />} />
               <Route path="/student/trabajos/:trabajoId" element={<StudentTrabajoDetail />} />
               <Route path="/molecules" element={<Molecules />} />

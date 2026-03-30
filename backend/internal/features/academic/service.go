@@ -141,6 +141,24 @@ func (s *Service) ListLecciones(ctx context.Context, temaID string) ([]Leccion, 
 	return s.repo.ListLecciones(ctx, temaID)
 }
 
+func (s *Service) ListRecentLecciones(ctx context.Context, userID string, limit int) ([]Leccion, error) {
+	if limit <= 0 {
+		limit = 6
+	}
+
+	if userID != "" {
+		items, err := s.repo.ListRecentLeccionesByUser(ctx, userID, limit)
+		if err != nil {
+			return nil, err
+		}
+		if len(items) > 0 {
+			return items, nil
+		}
+	}
+
+	return s.repo.ListLatestLecciones(ctx, limit)
+}
+
 func (s *Service) GetLeccion(ctx context.Context, id string) (*Leccion, error) {
 	return s.repo.GetLeccion(ctx, id)
 }

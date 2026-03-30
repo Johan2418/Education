@@ -68,11 +68,28 @@ export interface LibroEstadoResponse {
 export interface ExtractLibroRequest {
   archivo_url?: string;
   contenido: string;
+  hash_archivo?: string;
+  hash_contenido?: string;
   pagina_inicio?: number;
   pagina_fin?: number;
   idioma?: string;
   max_preguntas?: number;
   imagenes_por_pagina?: Record<string, string>;
+  imagenes_metadata_por_pagina?: Record<string, PdfPaginaMetadata>;
+}
+
+export interface PdfTextoRegion {
+  texto: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface PdfPaginaMetadata {
+  image_width: number;
+  image_height: number;
+  text_regions: PdfTextoRegion[];
 }
 
 export interface LibroPreguntaInput {
@@ -84,6 +101,7 @@ export interface LibroPreguntaInput {
   confianza_ia?: number;
   imagen_base64?: string;
   imagen_fuente?: string;
+  imagen_manual_override?: boolean;
   respuesta_esperada_tipo?: "abierta" | "opciones";
   placeholder?: string;
   orden: number;
