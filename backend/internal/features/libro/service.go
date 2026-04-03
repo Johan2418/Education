@@ -831,6 +831,11 @@ func (s *Service) RevisarLibro(ctx context.Context, trabajoID string, req Revisi
 				continue
 			}
 
+			puntajeMaximo := 1.0
+			if p.PuntajeMaximo != nil && *p.PuntajeMaximo > 0 {
+				puntajeMaximo = *p.PuntajeMaximo
+			}
+
 			tipo := inferQuestionTypeFromText(baseTipo, itemText)
 			opciones := normalizeOptionsForQuestion(p.Opciones, tipo, itemText, len(parts) == 1)
 			if tipo == "opcion_multiple" && isEmptyJSONArray(opciones) {
@@ -859,6 +864,7 @@ func (s *Service) RevisarLibro(ctx context.Context, trabajoID string, req Revisi
 				Texto:                 itemText,
 				Tipo:                  tipo,
 				Opciones:              opciones,
+				PuntajeMaximo:         puntajeMaximo,
 				PaginaLibro:           p.PaginaLibro,
 				ConfianzaIA:           p.ConfianzaIA,
 				ImagenBase64:          imageBase64,

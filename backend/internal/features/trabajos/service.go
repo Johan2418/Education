@@ -23,6 +23,12 @@ func (s *Service) CreateTrabajo(ctx context.Context, req CreateTrabajoRequest, u
 	if req.LeccionID == "" || strings.TrimSpace(req.Titulo) == "" {
 		return nil, errors.New("leccion_id y titulo son requeridos")
 	}
+	if req.NotaMaxima != nil && *req.NotaMaxima <= 0 {
+		return nil, errors.New("nota_maxima debe ser > 0")
+	}
+	if req.PesoCalif != nil && *req.PesoCalif < 0 {
+		return nil, errors.New("peso_calificacion debe ser >= 0")
+	}
 	if !canManage(userRole) {
 		return nil, errors.New("no autorizado")
 	}
@@ -71,6 +77,12 @@ func (s *Service) UpdateTrabajo(ctx context.Context, trabajoID string, req Updat
 	}
 	if strings.TrimSpace(req.Titulo) == "" {
 		return nil, errors.New("titulo es requerido")
+	}
+	if req.NotaMaxima != nil && *req.NotaMaxima <= 0 {
+		return nil, errors.New("nota_maxima debe ser > 0")
+	}
+	if req.PesoCalif != nil && *req.PesoCalif < 0 {
+		return nil, errors.New("peso_calificacion debe ser >= 0")
 	}
 	if !canManage(userRole) {
 		return nil, errors.New("no autorizado")
@@ -452,6 +464,12 @@ func (s *Service) GetTrabajoAnalyticsV2(ctx context.Context, filter TrabajoAnaly
 	if filter.CursoID != nil && *filter.CursoID == "" {
 		filter.CursoID = nil
 	}
+	if filter.UnidadID != nil && *filter.UnidadID == "" {
+		filter.UnidadID = nil
+	}
+	if filter.TemaID != nil && *filter.TemaID == "" {
+		filter.TemaID = nil
+	}
 	if filter.LeccionID != nil && *filter.LeccionID == "" {
 		filter.LeccionID = nil
 	}
@@ -489,7 +507,19 @@ func (s *Service) CalificarEntrega(ctx context.Context, entregaID string, req Ca
 			return nil, errors.New("no autorizado para calificar esta entrega")
 		}
 	}
-	calificacion, err := s.repo.UpsertCalificacion(ctx, entregaID, userID, req)
+
+	current, err := s.repo.GetCalificacionByEntrega(ctx, entregaID)
+	if err != nil {
+		return nil, err
+	}
+	tipoCambio, motivo, err := resolveCalificacionCambio(req.TipoCambio, req.Motivo, current != nil)
+	if err != nil {
+		return nil, err
+	}
+	req.TipoCambio = tipoCambio
+	req.Motivo = motivo
+
+	calificacion, err := s.repo.UpsertCalificacion(ctx, entregaID, userID, userRole, req)
 	if err != nil {
 		return nil, err
 	}
@@ -610,7 +640,18 @@ func (s *Service) CalificarEntregaPorPregunta(ctx context.Context, entregaID str
 		}
 	}
 
-	if _, err := s.repo.UpsertCalificacionPorPregunta(ctx, entregaID, userID, req); err != nil {
+	current, err := s.repo.GetCalificacionByEntrega(ctx, entregaID)
+	if err != nil {
+		return nil, err
+	}
+	tipoCambio, motivo, err := resolveCalificacionCambio(req.TipoCambio, req.Motivo, current != nil)
+	if err != nil {
+		return nil, err
+	}
+	req.TipoCambio = tipoCambio
+	req.Motivo = motivo
+
+	if _, err := s.repo.UpsertCalificacionPorPregunta(ctx, entregaID, userID, userRole, req); err != nil {
 		return nil, err
 	}
 
@@ -636,6 +677,74 @@ func (s *Service) CalificarEntregaPorPregunta(ctx context.Context, entregaID str
 	}
 
 	return detalle, nil
+}
+
+func (s *Service) GetCalificacionHistorial(ctx context.Context, entregaID, userID, userRole string) ([]TrabajoCalificacionHistorial, error) {
+	if entregaID == "" {
+		return nil, errors.New("entrega_id es requerido")
+	}
+	if !canManage(userRole) {
+		return nil, errors.New("no autorizado")
+	}
+
+	entrega, err := s.repo.GetEntregaByID(ctx, entregaID)
+	if err != nil {
+		return nil, err
+	}
+	if userRole == "teacher" {
+		ok, err := s.repo.IsTeacherOfTrabajo(ctx, userID, entrega.TrabajoID)
+		if err != nil {
+			return nil, err
+		}
+		if !ok {
+			return nil, errors.New("no autorizado para este trabajo")
+		}
+	}
+
+	return s.repo.ListCalificacionHistorialByEntrega(ctx, entregaID)
+}
+
+func resolveCalificacionCambio(tipoRaw string, motivo *string, isOverwrite bool) (string, *string, error) {
+	tipo := strings.TrimSpace(tipoRaw)
+	if tipo == "" {
+		if isOverwrite {
+			tipo = CalificacionTipoManualOverride
+		} else {
+			tipo = CalificacionTipoManual
+		}
+	}
+
+	switch tipo {
+	case CalificacionTipoManual, CalificacionTipoManualOverride, CalificacionTipoAutoObjetiva, CalificacionTipoAutoHeuristica:
+		// tipo válido
+	default:
+		return "", nil, errors.New("tipo_cambio inválido")
+	}
+
+	if isOverwrite && tipo == CalificacionTipoManual {
+		tipo = CalificacionTipoManualOverride
+	}
+	if !isOverwrite && tipo == CalificacionTipoManualOverride {
+		return "", nil, errors.New("tipo_cambio manual_override solo aplica a sobreescrituras")
+	}
+
+	motivoNormalizado := trimOptionalText(motivo)
+	if isOverwrite && motivoNormalizado == nil {
+		return "", nil, errors.New("motivo es obligatorio para sobreescribir una calificación")
+	}
+
+	return tipo, motivoNormalizado, nil
+}
+
+func trimOptionalText(value *string) *string {
+	if value == nil {
+		return nil
+	}
+	trimmed := strings.TrimSpace(*value)
+	if trimmed == "" {
+		return nil
+	}
+	return &trimmed
 }
 
 func buildRespuestasPreguntasFallback(entregaID string, respuestasJSON json.RawMessage, preguntas []TrabajoPregunta) []TrabajoRespuestaPregunta {

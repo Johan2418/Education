@@ -170,6 +170,9 @@ type LeccionSeccion struct {
 	RecursoID     *string        `json:"recurso_id" gorm:"column:recurso_id"`
 	PruebaID      *string        `json:"prueba_id" gorm:"column:prueba_id"`
 	ModeloID      *string        `json:"modelo_id" gorm:"column:modelo_id"`
+	NotaMaxima    float64        `json:"nota_maxima" gorm:"column:nota_maxima;default:10"`
+	PesoCalif     float64        `json:"peso_calificacion" gorm:"column:peso_calificacion;default:1"`
+	Calificable   bool           `json:"calificable" gorm:"column:calificable;default:false"`
 	Orden         int            `json:"orden" gorm:"column:orden;default:0"`
 	EsObligatorio bool           `json:"es_obligatorio" gorm:"column:es_obligatorio;default:true"`
 	Requisitos    pq.StringArray `json:"requisitos" gorm:"column:requisitos;type:text[]"`
@@ -184,6 +187,9 @@ type LeccionSeccionRequest struct {
 	RecursoID     *string  `json:"recurso_id"`
 	PruebaID      *string  `json:"prueba_id"`
 	ModeloID      *string  `json:"modelo_id"`
+	NotaMaxima    *float64 `json:"nota_maxima"`
+	PesoCalif     *float64 `json:"peso_calificacion"`
+	Calificable   *bool    `json:"calificable"`
 	Orden         *int     `json:"orden"`
 	EsObligatorio *bool    `json:"es_obligatorio"`
 	Requisitos    []string `json:"requisitos"`

@@ -479,6 +479,21 @@ func (r *Repository) CreateSeccion(ctx context.Context, req LeccionSeccionReques
 		PruebaID:  req.PruebaID,
 		ModeloID:  req.ModeloID,
 	}
+	if req.NotaMaxima != nil {
+		s.NotaMaxima = *req.NotaMaxima
+	} else {
+		s.NotaMaxima = 10
+	}
+	if req.PesoCalif != nil {
+		s.PesoCalif = *req.PesoCalif
+	} else {
+		s.PesoCalif = 1
+	}
+	if req.Calificable != nil {
+		s.Calificable = *req.Calificable
+	} else {
+		s.Calificable = req.Tipo == "prueba"
+	}
 	if req.Orden != nil {
 		s.Orden = *req.Orden
 	}
@@ -505,6 +520,15 @@ func (r *Repository) UpdateSeccion(ctx context.Context, id string, req LeccionSe
 	updates["recurso_id"] = req.RecursoID
 	updates["prueba_id"] = req.PruebaID
 	updates["modelo_id"] = req.ModeloID
+	if req.NotaMaxima != nil {
+		updates["nota_maxima"] = *req.NotaMaxima
+	}
+	if req.PesoCalif != nil {
+		updates["peso_calificacion"] = *req.PesoCalif
+	}
+	if req.Calificable != nil {
+		updates["calificable"] = *req.Calificable
+	}
 	if req.Orden != nil {
 		updates["orden"] = *req.Orden
 	}

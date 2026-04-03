@@ -97,6 +97,7 @@ type TrabajoPregunta struct {
 	Texto                 string          `json:"texto" gorm:"column:texto"`
 	Tipo                  string          `json:"tipo" gorm:"column:tipo;type:internal.tipo_pregunta"`
 	Opciones              json.RawMessage `json:"opciones" gorm:"column:opciones;type:jsonb"`
+	PuntajeMaximo         float64         `json:"puntaje_maximo" gorm:"column:puntaje_maximo;default:1"`
 	PaginaLibro           *int            `json:"pagina_libro" gorm:"column:pagina_libro"`
 	ConfianzaIA           *float64        `json:"confianza_ia" gorm:"column:confianza_ia"`
 	ImagenBase64          *string         `json:"imagen_base64" gorm:"column:imagen_base64"`
@@ -112,6 +113,7 @@ func (TrabajoPregunta) TableName() string { return "internal.trabajo_pregunta" }
 type Trabajo struct {
 	ID              string  `json:"id" gorm:"column:id;primaryKey"`
 	Estado          string  `json:"estado" gorm:"column:estado;type:internal.estado_trabajo"`
+	NotaMaxima      float64 `json:"nota_maxima" gorm:"column:nota_maxima"`
 	ExtraidoDeLibro bool    `json:"extraido_de_libro" gorm:"column:extraido_de_libro"`
 	IDExtraccion    *string `json:"id_extraccion" gorm:"column:id_extraccion"`
 }
@@ -150,6 +152,7 @@ type LibroPreguntaInput struct {
 	Texto                 string          `json:"texto"`
 	Tipo                  string          `json:"tipo"`
 	Opciones              json.RawMessage `json:"opciones,omitempty"`
+	PuntajeMaximo         *float64        `json:"puntaje_maximo,omitempty"`
 	PaginaLibro           *int            `json:"pagina_libro,omitempty"`
 	ConfianzaIA           *float64        `json:"confianza_ia,omitempty"`
 	ImagenBase64          *string         `json:"imagen_base64,omitempty"`

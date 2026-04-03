@@ -240,6 +240,7 @@ func main() {
 		r.Get("/trabajos/{trabajoId}/entregas/export", trabH.ExportEntregasCSV)
 		r.Get("/trabajos/{trabajoId}/entregas/export.xlsx", trabH.ExportEntregasXLSX)
 		r.Get("/entregas/{entregaId}/detalle", trabH.GetEntregaDetalle)
+		r.Get("/entregas/{entregaId}/calificacion-historial", trabH.GetCalificacionHistorial)
 		r.Put("/entregas/{entregaId}/calificar", trabH.CalificarEntrega)
 		r.Put("/entregas/{entregaId}/calificar-por-pregunta", trabH.CalificarEntregaPorPregunta)
 		r.Get("/trabajos/{trabajoId}/libro", libroH.GetEstado)

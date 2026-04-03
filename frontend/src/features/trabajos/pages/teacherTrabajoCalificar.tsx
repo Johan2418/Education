@@ -33,6 +33,7 @@ export default function TeacherTrabajoCalificar() {
 
   const [items, setItems] = useState<CalificarEntregaPreguntaItem[]>([]);
   const [feedbackGeneral, setFeedbackGeneral] = useState("");
+  const [motivoOverride, setMotivoOverride] = useState("");
 
   const selected = useMemo(() => entregas.find((item) => item.entrega.id === selectedEntrega), [entregas, selectedEntrega]);
 
@@ -78,6 +79,7 @@ export default function TeacherTrabajoCalificar() {
       setDetalle(null);
       setItems([]);
       setFeedbackGeneral("");
+      setMotivoOverride("");
       return;
     }
 
@@ -101,6 +103,7 @@ export default function TeacherTrabajoCalificar() {
 
         setItems(initialItems);
         setFeedbackGeneral(payload.calificacion?.feedback || "");
+        setMotivoOverride("");
       } catch (err) {
         if (!cancelled) {
           toast.error(normalizeError(err));
@@ -133,6 +136,13 @@ export default function TeacherTrabajoCalificar() {
       return;
     }
 
+    const isOverride = Boolean(detalle.calificacion);
+    const motivo = motivoOverride.trim();
+    if (isOverride && motivo.length === 0) {
+      toast.error(t("teacher.trabajos.overrideReasonRequired", { defaultValue: "Debes indicar un motivo para sobrescribir una calificacion" }));
+      return;
+    }
+
     setSaving(true);
     try {
       const updated = await calificarEntregaPorPregunta(selected.entrega.id, {
@@ -143,9 +153,12 @@ export default function TeacherTrabajoCalificar() {
         })),
         feedback: feedbackGeneral.trim() || undefined,
         sugerencia_ia: {},
+        tipo_cambio: isOverride ? "manual_override" : "manual",
+        motivo: isOverride ? motivo : undefined,
       });
 
       setDetalle(updated);
+      setMotivoOverride("");
 
       const calByPregunta = new Map(updated.calificaciones_pregunta.map((item) => [item.pregunta_id, item]));
       setItems(updated.preguntas.map((pregunta) => {
@@ -309,6 +322,24 @@ export default function TeacherTrabajoCalificar() {
                 onChange={(e) => setFeedbackGeneral(e.target.value)}
               />
             </div>
+
+            {detalle.calificacion && (
+              <div>
+                <label className="block text-sm font-medium mb-1">
+                  {t("teacher.trabajos.overrideReason", { defaultValue: "Motivo de sobreescritura" })}
+                </label>
+                <textarea
+                  rows={3}
+                  className="w-full border border-gray-300 rounded px-3 py-2"
+                  value={motivoOverride}
+                  onChange={(e) => setMotivoOverride(e.target.value)}
+                  placeholder={t("teacher.trabajos.overrideReasonPlaceholder", { defaultValue: "Explica por que se modifica la calificacion anterior" })}
+                />
+                <p className="text-xs text-amber-700 mt-1">
+                  {t("teacher.trabajos.overrideReasonHint", { defaultValue: "La entrega ya tenia una calificacion; este motivo quedara registrado en el historial." })}
+                </p>
+              </div>
+            )}
 
             <button
               disabled={saving}

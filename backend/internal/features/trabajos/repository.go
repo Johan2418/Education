@@ -3,7 +3,9 @@ package trabajos
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -19,12 +21,23 @@ func NewRepository(db *gorm.DB) *Repository {
 }
 
 func (r *Repository) CreateTrabajo(ctx context.Context, req CreateTrabajoRequest, createdBy string) (*Trabajo, error) {
+	notaMaxima := 10.0
+	if req.NotaMaxima != nil {
+		notaMaxima = *req.NotaMaxima
+	}
+	pesoCalif := 1.0
+	if req.PesoCalif != nil {
+		pesoCalif = *req.PesoCalif
+	}
+
 	t := Trabajo{
 		LeccionID:        req.LeccionID,
 		Titulo:           req.Titulo,
 		Descripcion:      req.Descripcion,
 		Instrucciones:    req.Instrucciones,
 		FechaVencimiento: req.FechaVencimiento,
+		NotaMaxima:       notaMaxima,
+		PesoCalif:        pesoCalif,
 		Estado:           "borrador",
 		CreatedBy:        &createdBy,
 	}
@@ -84,6 +97,12 @@ func (r *Repository) UpdateTrabajo(ctx context.Context, id string, req UpdateTra
 		"descripcion":       req.Descripcion,
 		"instrucciones":     req.Instrucciones,
 		"fecha_vencimiento": req.FechaVencimiento,
+	}
+	if req.NotaMaxima != nil {
+		updates["nota_maxima"] = *req.NotaMaxima
+	}
+	if req.PesoCalif != nil {
+		updates["peso_calificacion"] = *req.PesoCalif
 	}
 
 	if err := r.db.WithContext(ctx).
@@ -406,9 +425,21 @@ func derefFloat64(v *float64) float64 {
 	return *v
 }
 
-func (r *Repository) UpsertCalificacion(ctx context.Context, entregaID, docenteID string, req CalificarEntregaRequest) (*TrabajoCalificacion, error) {
+func (r *Repository) UpsertCalificacion(ctx context.Context, entregaID, docenteID, actorRole string, req CalificarEntregaRequest) (*TrabajoCalificacion, error) {
 	var cal TrabajoCalificacion
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var previous *TrabajoCalificacion
+		var existing TrabajoCalificacion
+		switch err := tx.Where("entrega_id = ?", entregaID).First(&existing).Error; {
+		case err == nil:
+			copyExisting := existing
+			previous = &copyExisting
+		case errors.Is(err, gorm.ErrRecordNotFound):
+			// first grade, no previous snapshot
+		default:
+			return err
+		}
+
 		newCal := TrabajoCalificacion{
 			EntregaID:    entregaID,
 			DocenteID:    docenteID,
@@ -441,6 +472,22 @@ func (r *Repository) UpsertCalificacion(ctx context.Context, entregaID, docenteI
 		if err := tx.Where("entrega_id = ?", entregaID).First(&cal).Error; err != nil {
 			return err
 		}
+
+		if err := r.insertCalificacionHistorialTx(
+			ctx,
+			tx,
+			entregaID,
+			docenteID,
+			actorRole,
+			req.TipoCambio,
+			req.Motivo,
+			previous,
+			&cal,
+			nil,
+			nil,
+		); err != nil {
+			return err
+		}
 		return nil
 	})
 	if err != nil {
@@ -449,11 +496,29 @@ func (r *Repository) UpsertCalificacion(ctx context.Context, entregaID, docenteI
 	return &cal, nil
 }
 
-func (r *Repository) UpsertCalificacionPorPregunta(ctx context.Context, entregaID, docenteID string, req CalificarEntregaPorPreguntaRequest) (*TrabajoCalificacion, error) {
+func (r *Repository) UpsertCalificacionPorPregunta(ctx context.Context, entregaID, docenteID, actorRole string, req CalificarEntregaPorPreguntaRequest) (*TrabajoCalificacion, error) {
 	var cal TrabajoCalificacion
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		entrega, err := r.getEntregaByIDTx(ctx, tx, entregaID)
 		if err != nil {
+			return err
+		}
+
+		var previous *TrabajoCalificacion
+		var previousDetalles []TrabajoCalificacionPregunta
+		var existing TrabajoCalificacion
+		switch err := tx.Where("entrega_id = ?", entregaID).First(&existing).Error; {
+		case err == nil:
+			copyExisting := existing
+			previous = &copyExisting
+			if err := tx.Where("calificacion_id = ?", existing.ID).
+				Order("created_at ASC").
+				Find(&previousDetalles).Error; err != nil {
+				return err
+			}
+		case errors.Is(err, gorm.ErrRecordNotFound):
+			// first grade, no previous snapshot
+		default:
 			return err
 		}
 
@@ -478,6 +543,9 @@ func (r *Repository) UpsertCalificacionPorPregunta(ctx context.Context, entregaI
 			}
 			total += item.Puntaje
 		}
+
+		detalleAnterior := buildCalificacionDetalleFromRows(previousDetalles)
+		detalleNuevo := buildCalificacionDetalleFromItems(req.Items)
 
 		newCal := TrabajoCalificacion{
 			EntregaID:    entregaID,
@@ -528,6 +596,22 @@ func (r *Repository) UpsertCalificacionPorPregunta(ctx context.Context, entregaI
 			return err
 		}
 
+		if err := r.insertCalificacionHistorialTx(
+			ctx,
+			tx,
+			entregaID,
+			docenteID,
+			actorRole,
+			req.TipoCambio,
+			req.Motivo,
+			previous,
+			&cal,
+			detalleAnterior,
+			detalleNuevo,
+		); err != nil {
+			return err
+		}
+
 		return nil
 	})
 	if err != nil {
@@ -573,6 +657,118 @@ func (r *Repository) ListCalificacionesPreguntaByCalificacion(ctx context.Contex
 		Order("created_at ASC").
 		Find(&items).Error
 	return items, err
+}
+
+func (r *Repository) ListCalificacionHistorialByEntrega(ctx context.Context, entregaID string) ([]TrabajoCalificacionHistorial, error) {
+	var items []TrabajoCalificacionHistorial
+	err := r.db.WithContext(ctx).
+		Where("entrega_id = ?", entregaID).
+		Order("created_at DESC").
+		Find(&items).Error
+	return items, err
+}
+
+type calificacionDetalleSnapshot struct {
+	PreguntaID string  `json:"pregunta_id"`
+	Puntaje    float64 `json:"puntaje"`
+	Feedback   *string `json:"feedback,omitempty"`
+}
+
+func buildCalificacionDetalleFromItems(items []CalificarEntregaPreguntaItem) json.RawMessage {
+	if len(items) == 0 {
+		return nil
+	}
+
+	snapshot := make([]calificacionDetalleSnapshot, 0, len(items))
+	for _, item := range items {
+		snapshot = append(snapshot, calificacionDetalleSnapshot{
+			PreguntaID: item.PreguntaID,
+			Puntaje:    item.Puntaje,
+			Feedback:   normalizeOptionalText(item.Feedback),
+		})
+	}
+
+	payload, err := json.Marshal(snapshot)
+	if err != nil {
+		return nil
+	}
+	return payload
+}
+
+func buildCalificacionDetalleFromRows(rows []TrabajoCalificacionPregunta) json.RawMessage {
+	if len(rows) == 0 {
+		return nil
+	}
+
+	snapshot := make([]calificacionDetalleSnapshot, 0, len(rows))
+	for _, row := range rows {
+		snapshot = append(snapshot, calificacionDetalleSnapshot{
+			PreguntaID: row.PreguntaID,
+			Puntaje:    row.Puntaje,
+			Feedback:   normalizeOptionalText(row.Feedback),
+		})
+	}
+
+	payload, err := json.Marshal(snapshot)
+	if err != nil {
+		return nil
+	}
+	return payload
+}
+
+func normalizeOptionalText(value *string) *string {
+	if value == nil {
+		return nil
+	}
+	trimmed := strings.TrimSpace(*value)
+	if trimmed == "" {
+		return nil
+	}
+	return &trimmed
+}
+
+func (r *Repository) insertCalificacionHistorialTx(
+	ctx context.Context,
+	tx *gorm.DB,
+	entregaID string,
+	actorID string,
+	actorRole string,
+	tipoCambio string,
+	motivo *string,
+	previous *TrabajoCalificacion,
+	current *TrabajoCalificacion,
+	detalleAnterior json.RawMessage,
+	detalleNuevo json.RawMessage,
+) error {
+	if current == nil {
+		return errors.New("calificacion actual requerida para historial")
+	}
+
+	motivo = normalizeOptionalText(motivo)
+	calificacionID := current.ID
+	hist := TrabajoCalificacionHistorial{
+		EntregaID:      entregaID,
+		CalificacionID: &calificacionID,
+		ActorID:        actorID,
+		ActorRole:      actorRole,
+		TipoCambio:     tipoCambio,
+		Motivo:         motivo,
+		PuntajeNuevo:   current.Puntaje,
+		FeedbackNuevo:  normalizeOptionalText(current.Feedback),
+	}
+
+	if previous != nil {
+		hist.PuntajeAnterior = &previous.Puntaje
+		hist.FeedbackAnterior = normalizeOptionalText(previous.Feedback)
+	}
+	if len(detalleAnterior) > 0 {
+		hist.DetalleAnterior = detalleAnterior
+	}
+	if len(detalleNuevo) > 0 {
+		hist.DetalleNuevo = detalleNuevo
+	}
+
+	return tx.WithContext(ctx).Create(&hist).Error
 }
 
 func (r *Repository) getEntregaByIDTx(ctx context.Context, tx *gorm.DB, id string) (*TrabajoEntrega, error) {
@@ -763,7 +959,27 @@ func (r *Repository) GetTrabajoAnalyticsV2(ctx context.Context, filter TrabajoAn
 		return nil, err
 	}
 
+	finalSummary, err := r.getFinalSummaryAnalytics(ctx, filter)
+	if err != nil {
+		return nil, err
+	}
+	summary.PromedioFinal10 = finalSummary.PromedioFinal10
+	summary.TotalContribuciones = finalSummary.TotalContribuciones
+	if finalSummary.EstudiantesActivos > summary.EstudiantesActivos {
+		summary.EstudiantesActivos = finalSummary.EstudiantesActivos
+	}
+
 	cursos, err := r.listCursoAnalytics(ctx, filter)
+	if err != nil {
+		return nil, err
+	}
+
+	unidades, err := r.listUnidadAnalytics(ctx, filter)
+	if err != nil {
+		return nil, err
+	}
+
+	temas, err := r.listTemaAnalytics(ctx, filter)
 	if err != nil {
 		return nil, err
 	}
@@ -778,14 +994,53 @@ func (r *Repository) GetTrabajoAnalyticsV2(ctx context.Context, filter TrabajoAn
 		return nil, err
 	}
 
+	estudiantesFinales, err := r.listEstudianteFinalAnalytics(ctx, filter)
+	if err != nil {
+		return nil, err
+	}
+
+	contribuciones, err := r.listContribucionTipoRecurso(ctx, filter)
+	if err != nil {
+		return nil, err
+	}
+
 	return &TrabajoAnalyticsV2Response{
-		Scope:       filter,
-		Summary:     summary,
-		Cursos:      cursos,
-		Lecciones:   lecciones,
-		Estudiantes: estudiantes,
-		GeneratedAt: time.Now(),
+		Scope:              filter,
+		Summary:            summary,
+		Cursos:             cursos,
+		Unidades:           unidades,
+		Temas:              temas,
+		Lecciones:          lecciones,
+		Estudiantes:        estudiantes,
+		EstudiantesFinales: estudiantesFinales,
+		Contribuciones:     contribuciones,
+		GeneratedAt:        time.Now(),
 	}, nil
+}
+
+type finalSummaryAnalytics struct {
+	TotalContribuciones int64    `gorm:"column:total_contribuciones"`
+	EstudiantesActivos  int64    `gorm:"column:estudiantes_activos"`
+	PromedioFinal10     *float64 `gorm:"column:promedio_final_10"`
+}
+
+func (r *Repository) getFinalSummaryAnalytics(ctx context.Context, filter TrabajoAnalyticsFilter) (finalSummaryAnalytics, error) {
+	cte, args := buildFinalRowsCTE(filter)
+	query := cte + `
+		SELECT
+			COUNT(*) FILTER (WHERE peso > 0)::bigint AS total_contribuciones,
+			COUNT(DISTINCT user_id) FILTER (WHERE peso > 0)::bigint AS estudiantes_activos,
+			CASE
+				WHEN COALESCE(SUM(CASE WHEN peso > 0 THEN peso ELSE 0 END), 0) > 0
+				THEN ROUND((SUM(CASE WHEN peso > 0 THEN nota_10 * peso ELSE 0 END) / SUM(CASE WHEN peso > 0 THEN peso ELSE 0 END))::numeric, 2)::double precision
+				ELSE NULL
+			END AS promedio_final_10
+		FROM final_rows
+	`
+
+	var row finalSummaryAnalytics
+	err := r.db.WithContext(ctx).Raw(query, args...).Scan(&row).Error
+	return row, err
 }
 
 func (r *Repository) getAnalyticsSummary(ctx context.Context, filter TrabajoAnalyticsFilter) (TrabajoAnalyticsSummary, error) {
@@ -875,6 +1130,58 @@ func (r *Repository) listCursoAnalytics(ctx context.Context, filter TrabajoAnaly
 	return items, err
 }
 
+func (r *Repository) listUnidadAnalytics(ctx context.Context, filter TrabajoAnalyticsFilter) ([]UnidadAnalyticsItem, error) {
+	cte, args := buildFinalRowsCTE(filter)
+	query := cte + `
+		SELECT
+			unidad_id,
+			unidad_nombre,
+			curso_id,
+			curso_nombre,
+			COUNT(*) FILTER (WHERE peso > 0)::bigint AS total_contribuciones,
+			COUNT(DISTINCT user_id) FILTER (WHERE peso > 0)::bigint AS estudiantes_activos,
+			CASE
+				WHEN COALESCE(SUM(CASE WHEN peso > 0 THEN peso ELSE 0 END), 0) > 0
+				THEN ROUND((SUM(CASE WHEN peso > 0 THEN nota_10 * peso ELSE 0 END) / SUM(CASE WHEN peso > 0 THEN peso ELSE 0 END))::numeric, 2)::double precision
+				ELSE NULL
+			END AS promedio_final_10
+		FROM final_rows
+		GROUP BY unidad_id, unidad_nombre, curso_id, curso_nombre
+		ORDER BY curso_nombre ASC, unidad_nombre ASC
+	`
+
+	var items []UnidadAnalyticsItem
+	err := r.db.WithContext(ctx).Raw(query, args...).Scan(&items).Error
+	return items, err
+}
+
+func (r *Repository) listTemaAnalytics(ctx context.Context, filter TrabajoAnalyticsFilter) ([]TemaAnalyticsItem, error) {
+	cte, args := buildFinalRowsCTE(filter)
+	query := cte + `
+		SELECT
+			tema_id,
+			tema_nombre,
+			unidad_id,
+			unidad_nombre,
+			curso_id,
+			curso_nombre,
+			COUNT(*) FILTER (WHERE peso > 0)::bigint AS total_contribuciones,
+			COUNT(DISTINCT user_id) FILTER (WHERE peso > 0)::bigint AS estudiantes_activos,
+			CASE
+				WHEN COALESCE(SUM(CASE WHEN peso > 0 THEN peso ELSE 0 END), 0) > 0
+				THEN ROUND((SUM(CASE WHEN peso > 0 THEN nota_10 * peso ELSE 0 END) / SUM(CASE WHEN peso > 0 THEN peso ELSE 0 END))::numeric, 2)::double precision
+				ELSE NULL
+			END AS promedio_final_10
+		FROM final_rows
+		GROUP BY tema_id, tema_nombre, unidad_id, unidad_nombre, curso_id, curso_nombre
+		ORDER BY curso_nombre ASC, unidad_nombre ASC, tema_nombre ASC
+	`
+
+	var items []TemaAnalyticsItem
+	err := r.db.WithContext(ctx).Raw(query, args...).Scan(&items).Error
+	return items, err
+}
+
 func (r *Repository) listLeccionAnalytics(ctx context.Context, filter TrabajoAnalyticsFilter) ([]LeccionAnalyticsItem, error) {
 	var items []LeccionAnalyticsItem
 	query := r.db.WithContext(ctx).
@@ -944,12 +1251,66 @@ func (r *Repository) listEstudianteAnalytics(ctx context.Context, filter Trabajo
 	return items, err
 }
 
+func (r *Repository) listEstudianteFinalAnalytics(ctx context.Context, filter TrabajoAnalyticsFilter) ([]EstudianteFinalAnalyticsItem, error) {
+	cte, args := buildFinalRowsCTE(filter)
+	query := cte + `
+		SELECT
+			user_id AS estudiante_id,
+			estudiante_nombre,
+			estudiante_email,
+			curso_id,
+			curso_nombre,
+			COUNT(*) FILTER (WHERE peso > 0)::bigint AS total_contribuciones,
+			COALESCE(SUM(CASE WHEN peso > 0 THEN peso ELSE 0 END), 0)::double precision AS peso_total,
+			CASE
+				WHEN COALESCE(SUM(CASE WHEN peso > 0 THEN peso ELSE 0 END), 0) > 0
+				THEN ROUND((SUM(CASE WHEN peso > 0 THEN nota_10 * peso ELSE 0 END) / SUM(CASE WHEN peso > 0 THEN peso ELSE 0 END))::numeric, 2)::double precision
+				ELSE NULL
+			END AS promedio_final_10
+		FROM final_rows
+		GROUP BY user_id, estudiante_nombre, estudiante_email, curso_id, curso_nombre
+		ORDER BY estudiante_nombre ASC NULLS LAST, estudiante_email ASC NULLS LAST
+	`
+
+	var items []EstudianteFinalAnalyticsItem
+	err := r.db.WithContext(ctx).Raw(query, args...).Scan(&items).Error
+	return items, err
+}
+
+func (r *Repository) listContribucionTipoRecurso(ctx context.Context, filter TrabajoAnalyticsFilter) ([]ContribucionTipoRecursoItem, error) {
+	cte, args := buildFinalRowsCTE(filter)
+	query := cte + `
+		SELECT
+			tipo_recurso,
+			COUNT(*) FILTER (WHERE peso > 0)::bigint AS total_contribuciones,
+			COALESCE(SUM(CASE WHEN peso > 0 THEN peso ELSE 0 END), 0)::double precision AS peso_total,
+			CASE
+				WHEN COALESCE(SUM(CASE WHEN peso > 0 THEN peso ELSE 0 END), 0) > 0
+				THEN ROUND((SUM(CASE WHEN peso > 0 THEN nota_10 * peso ELSE 0 END) / SUM(CASE WHEN peso > 0 THEN peso ELSE 0 END))::numeric, 2)::double precision
+				ELSE NULL
+			END AS promedio_final_10
+		FROM final_rows
+		GROUP BY tipo_recurso
+		ORDER BY tipo_recurso ASC
+	`
+
+	var items []ContribucionTipoRecursoItem
+	err := r.db.WithContext(ctx).Raw(query, args...).Scan(&items).Error
+	return items, err
+}
+
 func applyTrabajoScope(query *gorm.DB, filter TrabajoAnalyticsFilter) *gorm.DB {
 	if filter.TeacherID != nil && *filter.TeacherID != "" {
 		query = query.Where("c.teacher_id = ?", *filter.TeacherID)
 	}
 	if filter.CursoID != nil && *filter.CursoID != "" {
 		query = query.Where("c.id = ?", *filter.CursoID)
+	}
+	if filter.UnidadID != nil && *filter.UnidadID != "" {
+		query = query.Where("u.id = ?", *filter.UnidadID)
+	}
+	if filter.TemaID != nil && *filter.TemaID != "" {
+		query = query.Where("t.id = ?", *filter.TemaID)
 	}
 	if filter.LeccionID != nil && *filter.LeccionID != "" {
 		query = query.Where("l.id = ?", *filter.LeccionID)
@@ -968,4 +1329,172 @@ func applyEntregaScope(query *gorm.DB, filter TrabajoAnalyticsFilter) *gorm.DB {
 		query = query.Where("e.submitted_at <= ?", *filter.To)
 	}
 	return query
+}
+
+func buildFinalRowsCTE(filter TrabajoAnalyticsFilter) (string, []interface{}) {
+	trabajoWhere, trabajoArgs := buildFinalRowsFilterClause(filter,
+		"c.teacher_id", "c.id", "u.id", "t.id", "l.id", "te.estudiante_id", "te.submitted_at",
+	)
+	pruebaWhere, pruebaArgs := buildFinalRowsFilterClause(filter,
+		"c.teacher_id", "c.id", "u.id", "t.id", "l.id", "br.usuario_id", "br.event_at",
+	)
+	recursoWhere, recursoArgs := buildFinalRowsFilterClause(filter,
+		"c.teacher_id", "c.id", "u.id", "t.id", "l.id", "ps.user_id", "ps.updated_at",
+	)
+
+	cte := `
+		WITH best_resultados AS (
+			SELECT DISTINCT ON (rp.usuario_id, rp.prueba_id)
+				rp.usuario_id,
+				rp.prueba_id,
+				rp.puntaje_obtenido,
+				COALESCE(rp.completed_at, rp.created_at) AS event_at
+			FROM internal.resultado_prueba rp
+			ORDER BY rp.usuario_id, rp.prueba_id, rp.puntaje_obtenido DESC, COALESCE(rp.completed_at, rp.created_at) DESC
+		),
+		final_rows AS (
+			SELECT
+				te.estudiante_id AS user_id,
+				p.display_name AS estudiante_nombre,
+				p.email AS estudiante_email,
+				c.id AS curso_id,
+				c.nombre AS curso_nombre,
+				u.id AS unidad_id,
+				u.nombre AS unidad_nombre,
+				t.id AS tema_id,
+				t.nombre AS tema_nombre,
+				l.id AS leccion_id,
+				l.titulo AS leccion_titulo,
+				'trabajo'::text AS tipo_recurso,
+				COALESCE(tr.peso_calificacion, 1)::double precision AS peso,
+				(LEAST(GREATEST(tc.puntaje, 0), 100) / 10.0)::double precision AS nota_10
+			FROM internal.trabajo_entrega te
+			JOIN internal.trabajo tr ON tr.id = te.trabajo_id
+			JOIN internal.trabajo_calificacion tc ON tc.entrega_id = te.id
+			JOIN internal.leccion l ON l.id = tr.leccion_id
+			JOIN internal.tema t ON t.id = l.tema_id
+			JOIN internal.unidad u ON u.id = t.unidad_id
+			JOIN internal.materia m ON m.id = u.materia_id
+			JOIN internal.curso c ON c.id = m.curso_id
+			LEFT JOIN internal.profiles p ON p.id = te.estudiante_id
+			WHERE 1 = 1` + trabajoWhere + `
+
+			UNION ALL
+
+			SELECT
+				br.usuario_id AS user_id,
+				p.display_name AS estudiante_nombre,
+				p.email AS estudiante_email,
+				c.id AS curso_id,
+				c.nombre AS curso_nombre,
+				u.id AS unidad_id,
+				u.nombre AS unidad_nombre,
+				t.id AS tema_id,
+				t.nombre AS tema_nombre,
+				l.id AS leccion_id,
+				l.titulo AS leccion_titulo,
+				'prueba'::text AS tipo_recurso,
+				COALESCE(pr.peso_calificacion, 1)::double precision AS peso,
+				(LEAST(GREATEST(br.puntaje_obtenido, 0), 100) / 10.0)::double precision AS nota_10
+			FROM best_resultados br
+			JOIN internal.prueba pr ON pr.id = br.prueba_id
+			JOIN internal.leccion l ON l.id = pr.leccion_id
+			JOIN internal.tema t ON t.id = l.tema_id
+			JOIN internal.unidad u ON u.id = t.unidad_id
+			JOIN internal.materia m ON m.id = u.materia_id
+			JOIN internal.curso c ON c.id = m.curso_id
+			LEFT JOIN internal.profiles p ON p.id = br.usuario_id
+			WHERE 1 = 1` + pruebaWhere + `
+
+			UNION ALL
+
+			SELECT
+				ps.user_id AS user_id,
+				p.display_name AS estudiante_nombre,
+				p.email AS estudiante_email,
+				c.id AS curso_id,
+				c.nombre AS curso_nombre,
+				u.id AS unidad_id,
+				u.nombre AS unidad_nombre,
+				t.id AS tema_id,
+				t.nombre AS tema_nombre,
+				l.id AS leccion_id,
+				l.titulo AS leccion_titulo,
+				'otro_recurso'::text AS tipo_recurso,
+				COALESCE(ls.peso_calificacion, 1)::double precision AS peso,
+				CASE
+					WHEN ps.puntuacion <= 10 THEN GREATEST(ps.puntuacion, 0)::double precision
+					ELSE (LEAST(GREATEST(ps.puntuacion, 0), 100) / 10.0)::double precision
+				END AS nota_10
+			FROM internal.progreso_seccion ps
+			JOIN internal.leccion_seccion ls ON ls.id = ps.leccion_seccion_id
+			JOIN internal.leccion l ON l.id = ls.leccion_id
+			JOIN internal.tema t ON t.id = l.tema_id
+			JOIN internal.unidad u ON u.id = t.unidad_id
+			JOIN internal.materia m ON m.id = u.materia_id
+			JOIN internal.curso c ON c.id = m.curso_id
+			LEFT JOIN internal.profiles p ON p.id = ps.user_id
+			WHERE ls.calificable = TRUE
+			  AND ls.tipo <> 'prueba'::internal.tipo_seccion
+			  AND ps.puntuacion IS NOT NULL` + recursoWhere + `
+		)
+	`
+
+	args := make([]interface{}, 0, len(trabajoArgs)+len(pruebaArgs)+len(recursoArgs))
+	args = append(args, trabajoArgs...)
+	args = append(args, pruebaArgs...)
+	args = append(args, recursoArgs...)
+	return cte, args
+}
+
+func buildFinalRowsFilterClause(
+	filter TrabajoAnalyticsFilter,
+	teacherCol string,
+	cursoCol string,
+	unidadCol string,
+	temaCol string,
+	leccionCol string,
+	estudianteCol string,
+	timeCol string,
+) (string, []interface{}) {
+	clauses := make([]string, 0, 7)
+	args := make([]interface{}, 0, 7)
+
+	if filter.TeacherID != nil && *filter.TeacherID != "" {
+		clauses = append(clauses, teacherCol+" = ?")
+		args = append(args, *filter.TeacherID)
+	}
+	if filter.CursoID != nil && *filter.CursoID != "" {
+		clauses = append(clauses, cursoCol+" = ?")
+		args = append(args, *filter.CursoID)
+	}
+	if filter.UnidadID != nil && *filter.UnidadID != "" {
+		clauses = append(clauses, unidadCol+" = ?")
+		args = append(args, *filter.UnidadID)
+	}
+	if filter.TemaID != nil && *filter.TemaID != "" {
+		clauses = append(clauses, temaCol+" = ?")
+		args = append(args, *filter.TemaID)
+	}
+	if filter.LeccionID != nil && *filter.LeccionID != "" {
+		clauses = append(clauses, leccionCol+" = ?")
+		args = append(args, *filter.LeccionID)
+	}
+	if filter.EstudianteID != nil && *filter.EstudianteID != "" {
+		clauses = append(clauses, estudianteCol+" = ?")
+		args = append(args, *filter.EstudianteID)
+	}
+	if filter.From != nil {
+		clauses = append(clauses, timeCol+" >= ?")
+		args = append(args, *filter.From)
+	}
+	if filter.To != nil {
+		clauses = append(clauses, timeCol+" <= ?")
+		args = append(args, *filter.To)
+	}
+
+	if len(clauses) == 0 {
+		return "", args
+	}
+	return "\n\t\t\t  AND " + strings.Join(clauses, "\n\t\t\t  AND "), args
 }

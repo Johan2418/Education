@@ -243,6 +243,12 @@ func (h *Handler) GetTrabajoAnalyticsV2(w http.ResponseWriter, r *http.Request) 
 	if cursoID := query.Get("curso_id"); cursoID != "" {
 		filter.CursoID = &cursoID
 	}
+	if unidadID := query.Get("unidad_id"); unidadID != "" {
+		filter.UnidadID = &unidadID
+	}
+	if temaID := query.Get("tema_id"); temaID != "" {
+		filter.TemaID = &temaID
+	}
 	if leccionID := query.Get("leccion_id"); leccionID != "" {
 		filter.LeccionID = &leccionID
 	}
@@ -535,4 +541,14 @@ func (h *Handler) CalificarEntregaPorPregunta(w http.ResponseWriter, r *http.Req
 		return
 	}
 	shared.Success(w, item)
+}
+
+func (h *Handler) GetCalificacionHistorial(w http.ResponseWriter, r *http.Request) {
+	claims := middleware.GetClaims(r.Context())
+	items, err := h.svc.GetCalificacionHistorial(r.Context(), chi.URLParam(r, "entregaId"), claims.Subject, claims.UserRole)
+	if err != nil {
+		shared.Error(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	shared.Success(w, items)
 }

@@ -5,6 +5,13 @@ import (
 	"time"
 )
 
+const (
+	CalificacionTipoManual         = "manual"
+	CalificacionTipoManualOverride = "manual_override"
+	CalificacionTipoAutoObjetiva   = "auto_objetiva"
+	CalificacionTipoAutoHeuristica = "auto_heuristica"
+)
+
 type Trabajo struct {
 	ID               string     `json:"id" gorm:"column:id;primaryKey;default:gen_random_uuid()"`
 	LeccionID        string     `json:"leccion_id" gorm:"column:leccion_id"`
@@ -12,6 +19,8 @@ type Trabajo struct {
 	Descripcion      *string    `json:"descripcion" gorm:"column:descripcion"`
 	Instrucciones    *string    `json:"instrucciones" gorm:"column:instrucciones"`
 	FechaVencimiento *time.Time `json:"fecha_vencimiento" gorm:"column:fecha_vencimiento"`
+	NotaMaxima       float64    `json:"nota_maxima" gorm:"column:nota_maxima;default:10"`
+	PesoCalif        float64    `json:"peso_calificacion" gorm:"column:peso_calificacion;default:1"`
 	Estado           string     `json:"estado" gorm:"column:estado;type:internal.estado_trabajo"`
 	ExtraidoDeLibro  bool       `json:"extraido_de_libro" gorm:"column:extraido_de_libro"`
 	IDExtraccion     *string    `json:"id_extraccion" gorm:"column:id_extraccion"`
@@ -28,6 +37,7 @@ type TrabajoPregunta struct {
 	Texto                 string          `json:"texto" gorm:"column:texto"`
 	Tipo                  string          `json:"tipo" gorm:"column:tipo;type:internal.tipo_pregunta"`
 	Opciones              json.RawMessage `json:"opciones" gorm:"column:opciones;type:jsonb"`
+	PuntajeMaximo         float64         `json:"puntaje_maximo" gorm:"column:puntaje_maximo;default:1"`
 	PaginaLibro           *int            `json:"pagina_libro" gorm:"column:pagina_libro"`
 	ConfianzaIA           *float64        `json:"confianza_ia" gorm:"column:confianza_ia"`
 	ImagenBase64          *string         `json:"imagen_base64" gorm:"column:imagen_base64"`
@@ -68,6 +78,27 @@ type TrabajoCalificacion struct {
 
 func (TrabajoCalificacion) TableName() string { return "internal.trabajo_calificacion" }
 
+type TrabajoCalificacionHistorial struct {
+	ID               string          `json:"id" gorm:"column:id;primaryKey;default:gen_random_uuid()"`
+	EntregaID        string          `json:"entrega_id" gorm:"column:entrega_id"`
+	CalificacionID   *string         `json:"calificacion_id,omitempty" gorm:"column:calificacion_id"`
+	ActorID          string          `json:"actor_id" gorm:"column:actor_id"`
+	ActorRole        string          `json:"actor_role" gorm:"column:actor_role"`
+	TipoCambio       string          `json:"tipo_cambio" gorm:"column:tipo_cambio"`
+	Motivo           *string         `json:"motivo,omitempty" gorm:"column:motivo"`
+	PuntajeAnterior  *float64        `json:"puntaje_anterior,omitempty" gorm:"column:puntaje_anterior"`
+	PuntajeNuevo     float64         `json:"puntaje_nuevo" gorm:"column:puntaje_nuevo"`
+	FeedbackAnterior *string         `json:"feedback_anterior,omitempty" gorm:"column:feedback_anterior"`
+	FeedbackNuevo    *string         `json:"feedback_nuevo,omitempty" gorm:"column:feedback_nuevo"`
+	DetalleAnterior  json.RawMessage `json:"detalle_anterior,omitempty" gorm:"column:detalle_anterior;type:jsonb"`
+	DetalleNuevo     json.RawMessage `json:"detalle_nuevo,omitempty" gorm:"column:detalle_nuevo;type:jsonb"`
+	CreatedAt        time.Time       `json:"created_at" gorm:"column:created_at;autoCreateTime"`
+}
+
+func (TrabajoCalificacionHistorial) TableName() string {
+	return "internal.trabajo_calificacion_historial"
+}
+
 type TrabajoRespuestaPregunta struct {
 	ID              string    `json:"id" gorm:"column:id;primaryKey;default:gen_random_uuid()"`
 	EntregaID       string    `json:"entrega_id" gorm:"column:entrega_id"`
@@ -101,6 +132,8 @@ type CreateTrabajoRequest struct {
 	Descripcion      *string    `json:"descripcion"`
 	Instrucciones    *string    `json:"instrucciones"`
 	FechaVencimiento *time.Time `json:"fecha_vencimiento"`
+	NotaMaxima       *float64   `json:"nota_maxima"`
+	PesoCalif        *float64   `json:"peso_calificacion"`
 }
 
 type UpdateTrabajoRequest struct {
@@ -108,6 +141,8 @@ type UpdateTrabajoRequest struct {
 	Descripcion      *string    `json:"descripcion"`
 	Instrucciones    *string    `json:"instrucciones"`
 	FechaVencimiento *time.Time `json:"fecha_vencimiento"`
+	NotaMaxima       *float64   `json:"nota_maxima"`
+	PesoCalif        *float64   `json:"peso_calificacion"`
 }
 
 type CreateEntregaRequest struct {
@@ -121,6 +156,8 @@ type CalificarEntregaRequest struct {
 	Puntaje      float64         `json:"puntaje"`
 	Feedback     *string         `json:"feedback"`
 	SugerenciaIA json.RawMessage `json:"sugerencia_ia"`
+	TipoCambio   string          `json:"tipo_cambio,omitempty"`
+	Motivo       *string         `json:"motivo,omitempty"`
 }
 
 type CreateEntregaPreguntaRespuesta struct {
@@ -139,6 +176,8 @@ type CalificarEntregaPorPreguntaRequest struct {
 	Items        []CalificarEntregaPreguntaItem `json:"items"`
 	Feedback     *string                        `json:"feedback"`
 	SugerenciaIA json.RawMessage                `json:"sugerencia_ia"`
+	TipoCambio   string                         `json:"tipo_cambio,omitempty"`
+	Motivo       *string                        `json:"motivo,omitempty"`
 }
 
 type EntregaDetalleResponse struct {
@@ -201,6 +240,8 @@ type PaginatedEntregasResponse struct {
 
 type TrabajoAnalyticsFilter struct {
 	CursoID      *string    `json:"curso_id,omitempty"`
+	UnidadID     *string    `json:"unidad_id,omitempty"`
+	TemaID       *string    `json:"tema_id,omitempty"`
 	LeccionID    *string    `json:"leccion_id,omitempty"`
 	EstudianteID *string    `json:"estudiante_id,omitempty"`
 	From         *time.Time `json:"from,omitempty"`
@@ -209,11 +250,13 @@ type TrabajoAnalyticsFilter struct {
 }
 
 type TrabajoAnalyticsSummary struct {
-	TotalTrabajos      int64    `json:"total_trabajos"`
-	TotalEntregas      int64    `json:"total_entregas"`
-	TotalCalificadas   int64    `json:"total_calificadas"`
-	PromedioPuntaje    *float64 `json:"promedio_puntaje,omitempty"`
-	EstudiantesActivos int64    `json:"estudiantes_activos"`
+	TotalTrabajos       int64    `json:"total_trabajos"`
+	TotalEntregas       int64    `json:"total_entregas"`
+	TotalCalificadas    int64    `json:"total_calificadas"`
+	PromedioPuntaje     *float64 `json:"promedio_puntaje,omitempty"`
+	PromedioFinal10     *float64 `json:"promedio_final_10,omitempty"`
+	TotalContribuciones int64    `json:"total_contribuciones"`
+	EstudiantesActivos  int64    `json:"estudiantes_activos"`
 }
 
 type CursoAnalyticsItem struct {
@@ -252,11 +295,55 @@ type EstudianteAnalyticsItem struct {
 	UltimaEntregaAt  *time.Time `json:"ultima_entrega_at,omitempty"`
 }
 
+type UnidadAnalyticsItem struct {
+	UnidadID            string   `json:"unidad_id"`
+	UnidadNombre        string   `json:"unidad_nombre"`
+	CursoID             string   `json:"curso_id"`
+	CursoNombre         string   `json:"curso_nombre"`
+	TotalContribuciones int64    `json:"total_contribuciones"`
+	EstudiantesActivos  int64    `json:"estudiantes_activos"`
+	PromedioFinal10     *float64 `json:"promedio_final_10,omitempty" gorm:"column:promedio_final_10"`
+}
+
+type TemaAnalyticsItem struct {
+	TemaID              string   `json:"tema_id"`
+	TemaNombre          string   `json:"tema_nombre"`
+	UnidadID            string   `json:"unidad_id"`
+	UnidadNombre        string   `json:"unidad_nombre"`
+	CursoID             string   `json:"curso_id"`
+	CursoNombre         string   `json:"curso_nombre"`
+	TotalContribuciones int64    `json:"total_contribuciones"`
+	EstudiantesActivos  int64    `json:"estudiantes_activos"`
+	PromedioFinal10     *float64 `json:"promedio_final_10,omitempty" gorm:"column:promedio_final_10"`
+}
+
+type EstudianteFinalAnalyticsItem struct {
+	EstudianteID        string   `json:"estudiante_id"`
+	EstudianteNombre    *string  `json:"estudiante_nombre,omitempty"`
+	EstudianteEmail     *string  `json:"estudiante_email,omitempty"`
+	CursoID             string   `json:"curso_id"`
+	CursoNombre         string   `json:"curso_nombre"`
+	TotalContribuciones int64    `json:"total_contribuciones"`
+	PesoTotal           float64  `json:"peso_total"`
+	PromedioFinal10     *float64 `json:"promedio_final_10,omitempty" gorm:"column:promedio_final_10"`
+}
+
+type ContribucionTipoRecursoItem struct {
+	TipoRecurso         string   `json:"tipo_recurso"`
+	TotalContribuciones int64    `json:"total_contribuciones"`
+	PesoTotal           float64  `json:"peso_total"`
+	PromedioFinal10     *float64 `json:"promedio_final_10,omitempty" gorm:"column:promedio_final_10"`
+}
+
 type TrabajoAnalyticsV2Response struct {
-	Scope       TrabajoAnalyticsFilter    `json:"scope"`
-	Summary     TrabajoAnalyticsSummary   `json:"summary"`
-	Cursos      []CursoAnalyticsItem      `json:"cursos"`
-	Lecciones   []LeccionAnalyticsItem    `json:"lecciones"`
-	Estudiantes []EstudianteAnalyticsItem `json:"estudiantes"`
-	GeneratedAt time.Time                 `json:"generated_at"`
+	Scope              TrabajoAnalyticsFilter         `json:"scope"`
+	Summary            TrabajoAnalyticsSummary        `json:"summary"`
+	Cursos             []CursoAnalyticsItem           `json:"cursos"`
+	Unidades           []UnidadAnalyticsItem          `json:"unidades"`
+	Temas              []TemaAnalyticsItem            `json:"temas"`
+	Lecciones          []LeccionAnalyticsItem         `json:"lecciones"`
+	Estudiantes        []EstudianteAnalyticsItem      `json:"estudiantes"`
+	EstudiantesFinales []EstudianteFinalAnalyticsItem `json:"estudiantes_finales"`
+	Contribuciones     []ContribucionTipoRecursoItem  `json:"contribuciones"`
+	GeneratedAt        time.Time                      `json:"generated_at"`
 }

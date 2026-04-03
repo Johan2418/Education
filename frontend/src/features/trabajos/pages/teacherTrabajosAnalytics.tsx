@@ -42,9 +42,23 @@ export default function TeacherTrabajosAnalytics() {
   const [from, setFrom] = useState<string>(toDateInputValue(new Date(today.getFullYear(), today.getMonth(), Math.max(1, today.getDate() - 30))));
   const [to, setTo] = useState<string>(toDateInputValue(today));
   const [cursoId, setCursoId] = useState<string>("");
+  const [unidadId, setUnidadId] = useState<string>("");
+  const [temaId, setTemaId] = useState<string>("");
   const [leccionId, setLeccionId] = useState<string>("");
 
   const cursoOptions = useMemo(() => analytics?.cursos ?? [], [analytics]);
+  const unidadOptions = useMemo(() => {
+    const all = analytics?.unidades ?? [];
+    if (!cursoId) return all;
+    return all.filter((item) => item.curso_id === cursoId);
+  }, [analytics, cursoId]);
+  const temaOptions = useMemo(() => {
+    const all = analytics?.temas ?? [];
+    let filtered = all;
+    if (cursoId) filtered = filtered.filter((item) => item.curso_id === cursoId);
+    if (unidadId) filtered = filtered.filter((item) => item.unidad_id === unidadId);
+    return filtered;
+  }, [analytics, cursoId, unidadId]);
   const leccionOptions = useMemo(() => {
     const all = analytics?.lecciones ?? [];
     if (!cursoId) return all;
@@ -60,6 +74,8 @@ export default function TeacherTrabajosAnalytics() {
         from,
         to,
         curso_id: cursoId || undefined,
+        unidad_id: unidadId || undefined,
+        tema_id: temaId || undefined,
         leccion_id: leccionId || undefined,
       });
       setAnalytics(current);
@@ -75,6 +91,8 @@ export default function TeacherTrabajosAnalytics() {
         from: prevFrom,
         to: prevTo,
         curso_id: cursoId || undefined,
+        unidad_id: unidadId || undefined,
+        tema_id: temaId || undefined,
         leccion_id: leccionId || undefined,
       });
       setPreviousSummary(previous.summary);
@@ -84,7 +102,7 @@ export default function TeacherTrabajosAnalytics() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [cursoId, from, leccionId, to]);
+  }, [cursoId, from, leccionId, temaId, to, unidadId]);
 
   useEffect(() => {
     (async () => {
@@ -145,7 +163,7 @@ export default function TeacherTrabajosAnalytics() {
         </button>
       </div>
 
-      <div className="bg-white border border-gray-200 rounded-xl p-4 grid grid-cols-1 md:grid-cols-4 gap-3">
+      <div className="bg-white border border-gray-200 rounded-xl p-4 grid grid-cols-1 md:grid-cols-6 gap-3">
         <label className="text-sm">
           <span className="text-gray-600">{t("teacher.trabajos.analytics.from", { defaultValue: "Desde" })}</span>
           <input type="date" className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2" value={from} onChange={(e) => setFrom(e.target.value)} />
@@ -158,11 +176,38 @@ export default function TeacherTrabajosAnalytics() {
           <span className="text-gray-600">{t("teacher.trabajos.analytics.course", { defaultValue: "Curso" })}</span>
           <select className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2" value={cursoId} onChange={(e) => {
             setCursoId(e.target.value);
+            setUnidadId("");
+            setTemaId("");
             setLeccionId("");
           }}>
             <option value="">{t("teacher.trabajos.analytics.all", { defaultValue: "Todos" })}</option>
             {cursoOptions.map((curso) => (
               <option key={curso.curso_id} value={curso.curso_id}>{curso.curso_nombre}</option>
+            ))}
+          </select>
+        </label>
+        <label className="text-sm">
+          <span className="text-gray-600">{t("teacher.trabajos.analytics.unit", { defaultValue: "Unidad" })}</span>
+          <select className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2" value={unidadId} onChange={(e) => {
+            setUnidadId(e.target.value);
+            setTemaId("");
+            setLeccionId("");
+          }}>
+            <option value="">{t("teacher.trabajos.analytics.all", { defaultValue: "Todos" })}</option>
+            {unidadOptions.map((unidad) => (
+              <option key={unidad.unidad_id} value={unidad.unidad_id}>{unidad.unidad_nombre}</option>
+            ))}
+          </select>
+        </label>
+        <label className="text-sm">
+          <span className="text-gray-600">{t("teacher.trabajos.analytics.topic", { defaultValue: "Tema" })}</span>
+          <select className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2" value={temaId} onChange={(e) => {
+            setTemaId(e.target.value);
+            setLeccionId("");
+          }}>
+            <option value="">{t("teacher.trabajos.analytics.all", { defaultValue: "Todos" })}</option>
+            {temaOptions.map((tema) => (
+              <option key={tema.tema_id} value={tema.tema_id}>{tema.tema_nombre}</option>
             ))}
           </select>
         </label>
@@ -177,7 +222,7 @@ export default function TeacherTrabajosAnalytics() {
         </label>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+      <div className="grid grid-cols-1 md:grid-cols-6 gap-3">
         <div className="bg-white border border-gray-200 rounded-xl p-4">
           <p className="text-xs text-gray-500">{t("teacher.trabajos.analytics.totalTrabajos", { defaultValue: "Trabajos" })}</p>
           <p className="text-2xl font-bold mt-1">{analytics?.summary.total_trabajos ?? 0}</p>
@@ -197,6 +242,16 @@ export default function TeacherTrabajosAnalytics() {
           <p className="text-xs text-gray-500">{t("teacher.trabajos.analytics.promedio", { defaultValue: "Promedio" })}</p>
           <p className="text-2xl font-bold mt-1">{analytics?.summary.promedio_puntaje != null ? analytics.summary.promedio_puntaje.toFixed(1) : "-"}</p>
           <p className="text-xs text-gray-500 mt-1">{t("teacher.trabajos.analytics.activeStudents", { defaultValue: "Estudiantes activos" })}: {analytics?.summary.estudiantes_activos ?? 0}</p>
+        </div>
+        <div className="bg-white border border-gray-200 rounded-xl p-4">
+          <p className="text-xs text-gray-500">{t("teacher.trabajos.analytics.finalAverage10", { defaultValue: "Promedio final /10" })}</p>
+          <p className="text-2xl font-bold mt-1">{analytics?.summary.promedio_final_10 != null ? analytics.summary.promedio_final_10.toFixed(2) : "-"}</p>
+          <p className="text-xs text-gray-500 mt-1">{compareText(analytics?.summary.promedio_final_10 ?? 0, previousSummary?.promedio_final_10)}</p>
+        </div>
+        <div className="bg-white border border-gray-200 rounded-xl p-4">
+          <p className="text-xs text-gray-500">{t("teacher.trabajos.analytics.totalContribs", { defaultValue: "Contribuciones" })}</p>
+          <p className="text-2xl font-bold mt-1">{analytics?.summary.total_contribuciones ?? 0}</p>
+          <p className="text-xs text-gray-500 mt-1">{compareText(analytics?.summary.total_contribuciones ?? 0, previousSummary?.total_contribuciones)}</p>
         </div>
       </div>
 
@@ -250,6 +305,82 @@ export default function TeacherTrabajosAnalytics() {
         </div>
       </div>
 
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+        <div className="bg-white border border-gray-200 rounded-xl p-4">
+          <h2 className="font-semibold mb-2 inline-flex items-center gap-2"><CalendarRange size={16} />{t("teacher.trabajos.analytics.byUnit", { defaultValue: "Por unidad (ponderado /10)" })}</h2>
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-sm">
+              <thead>
+                <tr className="text-left border-b border-gray-200">
+                  <th className="py-2 pr-2">{t("teacher.trabajos.analytics.unit", { defaultValue: "Unidad" })}</th>
+                  <th className="py-2 pr-2">{t("teacher.trabajos.analytics.totalContribs", { defaultValue: "Contribuciones" })}</th>
+                  <th className="py-2 pr-2">{t("teacher.trabajos.analytics.finalAverage10", { defaultValue: "Promedio /10" })}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(analytics?.unidades ?? []).map((item) => (
+                  <tr key={item.unidad_id} className="border-b border-gray-100">
+                    <td className="py-2 pr-2">{item.unidad_nombre}</td>
+                    <td className="py-2 pr-2">{item.total_contribuciones}</td>
+                    <td className="py-2 pr-2">{item.promedio_final_10 != null ? item.promedio_final_10.toFixed(2) : "-"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div className="bg-white border border-gray-200 rounded-xl p-4">
+          <h2 className="font-semibold mb-2 inline-flex items-center gap-2"><CalendarRange size={16} />{t("teacher.trabajos.analytics.byTopic", { defaultValue: "Por tema (ponderado /10)" })}</h2>
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-sm">
+              <thead>
+                <tr className="text-left border-b border-gray-200">
+                  <th className="py-2 pr-2">{t("teacher.trabajos.analytics.topic", { defaultValue: "Tema" })}</th>
+                  <th className="py-2 pr-2">{t("teacher.trabajos.analytics.totalContribs", { defaultValue: "Contribuciones" })}</th>
+                  <th className="py-2 pr-2">{t("teacher.trabajos.analytics.finalAverage10", { defaultValue: "Promedio /10" })}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(analytics?.temas ?? []).map((item) => (
+                  <tr key={item.tema_id} className="border-b border-gray-100">
+                    <td className="py-2 pr-2">{item.tema_nombre}</td>
+                    <td className="py-2 pr-2">{item.total_contribuciones}</td>
+                    <td className="py-2 pr-2">{item.promedio_final_10 != null ? item.promedio_final_10.toFixed(2) : "-"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div className="bg-white border border-gray-200 rounded-xl p-4">
+        <h2 className="font-semibold mb-2">{t("teacher.trabajos.analytics.byResourceType", { defaultValue: "Contribucion por tipo de recurso" })}</h2>
+        <div className="overflow-x-auto">
+          <table className="min-w-full text-sm">
+            <thead>
+              <tr className="text-left border-b border-gray-200">
+                <th className="py-2 pr-2">{t("teacher.trabajos.analytics.resourceType", { defaultValue: "Tipo" })}</th>
+                <th className="py-2 pr-2">{t("teacher.trabajos.analytics.totalContribs", { defaultValue: "Contribuciones" })}</th>
+                <th className="py-2 pr-2">{t("teacher.trabajos.analytics.weightTotal", { defaultValue: "Peso total" })}</th>
+                <th className="py-2 pr-2">{t("teacher.trabajos.analytics.finalAverage10", { defaultValue: "Promedio /10" })}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(analytics?.contribuciones ?? []).map((item) => (
+                <tr key={item.tipo_recurso} className="border-b border-gray-100">
+                  <td className="py-2 pr-2">{item.tipo_recurso}</td>
+                  <td className="py-2 pr-2">{item.total_contribuciones}</td>
+                  <td className="py-2 pr-2">{item.peso_total.toFixed(2)}</td>
+                  <td className="py-2 pr-2">{item.promedio_final_10 != null ? item.promedio_final_10.toFixed(2) : "-"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
       <div className="bg-white border border-gray-200 rounded-xl p-4">
         <h2 className="font-semibold mb-2">{t("teacher.trabajos.analytics.byStudent", { defaultValue: "Por estudiante" })}</h2>
         <div className="overflow-x-auto">
@@ -271,6 +402,34 @@ export default function TeacherTrabajosAnalytics() {
                   <td className="py-2 pr-2">{item.leccion_titulo}</td>
                   <td className="py-2 pr-2">{item.total_entregas}</td>
                   <td className="py-2 pr-2">{item.promedio_puntaje != null ? item.promedio_puntaje.toFixed(1) : "-"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div className="bg-white border border-gray-200 rounded-xl p-4">
+        <h2 className="font-semibold mb-2">{t("teacher.trabajos.analytics.byStudentFinal", { defaultValue: "Promedio final por estudiante (/10)" })}</h2>
+        <div className="overflow-x-auto">
+          <table className="min-w-full text-sm">
+            <thead>
+              <tr className="text-left border-b border-gray-200">
+                <th className="py-2 pr-2">{t("teacher.trabajos.analytics.student", { defaultValue: "Estudiante" })}</th>
+                <th className="py-2 pr-2">{t("teacher.trabajos.analytics.course", { defaultValue: "Curso" })}</th>
+                <th className="py-2 pr-2">{t("teacher.trabajos.analytics.totalContribs", { defaultValue: "Contribuciones" })}</th>
+                <th className="py-2 pr-2">{t("teacher.trabajos.analytics.weightTotal", { defaultValue: "Peso total" })}</th>
+                <th className="py-2 pr-2">{t("teacher.trabajos.analytics.finalAverage10", { defaultValue: "Promedio /10" })}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(analytics?.estudiantes_finales ?? []).map((item) => (
+                <tr key={`${item.estudiante_id}-${item.curso_id}`} className="border-b border-gray-100">
+                  <td className="py-2 pr-2">{item.estudiante_nombre || item.estudiante_email || item.estudiante_id}</td>
+                  <td className="py-2 pr-2">{item.curso_nombre}</td>
+                  <td className="py-2 pr-2">{item.total_contribuciones}</td>
+                  <td className="py-2 pr-2">{item.peso_total.toFixed(2)}</td>
+                  <td className="py-2 pr-2">{item.promedio_final_10 != null ? item.promedio_final_10.toFixed(2) : "-"}</td>
                 </tr>
               ))}
             </tbody>

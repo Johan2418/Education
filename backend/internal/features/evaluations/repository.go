@@ -63,7 +63,15 @@ func (r *Repository) CreatePrueba(ctx context.Context, req PruebaRequest, create
 		LeccionID:    req.LeccionID,
 		Titulo:       req.Titulo,
 		TiempoLimite: req.TiempoLimite,
+		NotaMaxima:   10,
+		PesoCalif:    1,
 		CreatedBy:    &createdBy,
+	}
+	if req.NotaMaxima != nil {
+		p.NotaMaxima = *req.NotaMaxima
+	}
+	if req.PesoCalif != nil {
+		p.PesoCalif = *req.PesoCalif
 	}
 	if req.PuntajeMinimo != nil {
 		p.PuntajeMinimo = *req.PuntajeMinimo
@@ -84,6 +92,12 @@ func (r *Repository) UpdatePrueba(ctx context.Context, id string, req PruebaRequ
 	}
 	if req.TiempoLimite != nil {
 		updates["tiempo_limite"] = *req.TiempoLimite
+	}
+	if req.NotaMaxima != nil {
+		updates["nota_maxima"] = *req.NotaMaxima
+	}
+	if req.PesoCalif != nil {
+		updates["peso_calificacion"] = *req.PesoCalif
 	}
 	if req.PuntajeMinimo != nil {
 		updates["puntaje_minimo"] = *req.PuntajeMinimo
@@ -134,10 +148,15 @@ func (r *Repository) GetPregunta(ctx context.Context, id string) (*Pregunta, err
 }
 
 func (r *Repository) CreatePregunta(ctx context.Context, req PreguntaRequest) (*Pregunta, error) {
+	puntajeMaximo := 1.0
+	if req.PuntajeMaximo != nil {
+		puntajeMaximo = *req.PuntajeMaximo
+	}
 	p := Pregunta{
-		PruebaID: req.PruebaID,
-		Texto:    req.Texto,
-		Tipo:     req.Tipo,
+		PruebaID:      req.PruebaID,
+		Texto:         req.Texto,
+		Tipo:          req.Tipo,
+		PuntajeMaximo: puntajeMaximo,
 	}
 	if req.Orden != nil {
 		p.Orden = *req.Orden
@@ -155,6 +174,9 @@ func (r *Repository) UpdatePregunta(ctx context.Context, id string, req Pregunta
 	}
 	if req.Tipo != "" {
 		updates["tipo"] = gorm.Expr("?::internal.tipo_pregunta", req.Tipo)
+	}
+	if req.PuntajeMaximo != nil {
+		updates["puntaje_maximo"] = *req.PuntajeMaximo
 	}
 	if req.Orden != nil {
 		updates["orden"] = *req.Orden
@@ -315,9 +337,14 @@ func (r *Repository) GetProgreso(ctx context.Context, usuarioID, leccionID strin
 // ═══════════════════════════════════════════════════════════════
 
 func (r *Repository) UpsertProgresoSeccion(ctx context.Context, userID string, req ProgresoSeccionRequest) (*ProgresoSeccion, error) {
+	leccionSeccionID := req.LeccionSeccionID
+	if leccionSeccionID == "" {
+		leccionSeccionID = req.SeccionID
+	}
+
 	ps := ProgresoSeccion{
 		UserID:           userID,
-		LeccionSeccionID: req.LeccionSeccionID,
+		LeccionSeccionID: leccionSeccionID,
 	}
 	if req.Completado != nil {
 		ps.Completado = *req.Completado
@@ -355,10 +382,11 @@ func (r *Repository) UpsertProgresoSeccion(ctx context.Context, userID string, r
 
 	// Re-fetch the upserted record
 	var result ProgresoSeccion
-	if err := r.db.WithContext(ctx).Where("user_id = ? AND leccion_seccion_id = ?", userID, req.LeccionSeccionID).
+	if err := r.db.WithContext(ctx).Where("user_id = ? AND leccion_seccion_id = ?", userID, leccionSeccionID).
 		First(&result).Error; err != nil {
 		return nil, err
 	}
+	result.SeccionID = result.LeccionSeccionID
 	return &result, nil
 }
 
@@ -368,5 +396,10 @@ func (r *Repository) ListProgresoSeccionesByLeccion(ctx context.Context, userID,
 		Joins("JOIN internal.leccion_seccion ls ON ls.id = \"internal\".\"progreso_seccion\".leccion_seccion_id").
 		Where("\"internal\".\"progreso_seccion\".user_id = ? AND ls.leccion_id = ?", userID, leccionID).
 		Find(&items).Error
+	if err == nil {
+		for i := range items {
+			items[i].SeccionID = items[i].LeccionSeccionID
+		}
+	}
 	return items, err
 }

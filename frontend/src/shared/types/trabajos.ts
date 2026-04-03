@@ -8,6 +8,8 @@ export interface Trabajo {
   descripcion: string | null;
   instrucciones: string | null;
   fecha_vencimiento: string | null;
+  nota_maxima: number;
+  peso_calificacion: number;
   estado: EstadoTrabajo;
   extraido_de_libro?: boolean;
   id_extraccion?: string | null;
@@ -50,6 +52,7 @@ export interface TrabajoPregunta {
   texto: string;
   tipo: "opcion_multiple" | "verdadero_falso" | "respuesta_corta" | "completar";
   opciones: string[];
+  puntaje_maximo: number;
   pagina_libro: number | null;
   confianza_ia: number | null;
   imagen_base64?: string | null;
@@ -97,6 +100,7 @@ export interface LibroPreguntaInput {
   texto: string;
   tipo: "opcion_multiple" | "verdadero_falso" | "respuesta_corta" | "completar";
   opciones?: string[];
+  puntaje_maximo?: number;
   pagina_libro?: number;
   confianza_ia?: number;
   imagen_base64?: string;
@@ -190,6 +194,23 @@ export interface TrabajoCalificacion {
   updated_at: string;
 }
 
+export interface TrabajoCalificacionHistorial {
+  id: string;
+  entrega_id: string;
+  calificacion_id?: string | null;
+  actor_id: string;
+  actor_role: "teacher" | "admin" | "super_admin";
+  tipo_cambio: "manual" | "manual_override" | "auto_objetiva" | "auto_heuristica";
+  motivo?: string | null;
+  puntaje_anterior?: number | null;
+  puntaje_nuevo: number;
+  feedback_anterior?: string | null;
+  feedback_nuevo?: string | null;
+  detalle_anterior?: unknown;
+  detalle_nuevo?: unknown;
+  created_at: string;
+}
+
 export interface TrabajoCalificacionPregunta {
   id: string;
   calificacion_id: string;
@@ -255,6 +276,8 @@ export interface TrabajoAnalyticsSummary {
   total_entregas: number;
   total_calificadas: number;
   promedio_puntaje: number | null;
+  promedio_final_10: number | null;
+  total_contribuciones: number;
   estudiantes_activos: number;
 }
 
@@ -280,6 +303,28 @@ export interface LeccionAnalyticsItem {
   estudiantes_activos: number;
 }
 
+export interface UnidadAnalyticsItem {
+  unidad_id: string;
+  unidad_nombre: string;
+  curso_id: string;
+  curso_nombre: string;
+  total_contribuciones: number;
+  estudiantes_activos: number;
+  promedio_final_10: number | null;
+}
+
+export interface TemaAnalyticsItem {
+  tema_id: string;
+  tema_nombre: string;
+  unidad_id: string;
+  unidad_nombre: string;
+  curso_id: string;
+  curso_nombre: string;
+  total_contribuciones: number;
+  estudiantes_activos: number;
+  promedio_final_10: number | null;
+}
+
 export interface EstudianteAnalyticsItem {
   estudiante_id: string;
   estudiante_nombre: string | null;
@@ -294,9 +339,29 @@ export interface EstudianteAnalyticsItem {
   ultima_entrega_at: string | null;
 }
 
+export interface EstudianteFinalAnalyticsItem {
+  estudiante_id: string;
+  estudiante_nombre: string | null;
+  estudiante_email: string | null;
+  curso_id: string;
+  curso_nombre: string;
+  total_contribuciones: number;
+  peso_total: number;
+  promedio_final_10: number | null;
+}
+
+export interface ContribucionTipoRecursoItem {
+  tipo_recurso: "trabajo" | "prueba" | "otro_recurso";
+  total_contribuciones: number;
+  peso_total: number;
+  promedio_final_10: number | null;
+}
+
 export interface TrabajoAnalyticsV2Response {
   scope: {
     curso_id?: string;
+    unidad_id?: string;
+    tema_id?: string;
     leccion_id?: string;
     estudiante_id?: string;
     from?: string;
@@ -305,8 +370,12 @@ export interface TrabajoAnalyticsV2Response {
   };
   summary: TrabajoAnalyticsSummary;
   cursos: CursoAnalyticsItem[];
+  unidades: UnidadAnalyticsItem[];
+  temas: TemaAnalyticsItem[];
   lecciones: LeccionAnalyticsItem[];
   estudiantes: EstudianteAnalyticsItem[];
+  estudiantes_finales: EstudianteFinalAnalyticsItem[];
+  contribuciones: ContribucionTipoRecursoItem[];
   generated_at: string;
 }
 
@@ -316,6 +385,8 @@ export interface CreateTrabajoRequest {
   descripcion?: string;
   instrucciones?: string;
   fecha_vencimiento?: string;
+  nota_maxima?: number;
+  peso_calificacion?: number;
 }
 
 export type UpdateTrabajoRequest = Omit<CreateTrabajoRequest, "leccion_id">;
@@ -337,6 +408,8 @@ export interface CalificarEntregaRequest {
   puntaje: number;
   feedback?: string;
   sugerencia_ia?: Record<string, unknown>;
+  tipo_cambio?: "manual" | "manual_override" | "auto_objetiva" | "auto_heuristica";
+  motivo?: string;
 }
 
 export interface CalificarEntregaPreguntaItem {
@@ -349,6 +422,8 @@ export interface CalificarEntregaPorPreguntaRequest {
   items: CalificarEntregaPreguntaItem[];
   feedback?: string;
   sugerencia_ia?: Record<string, unknown>;
+  tipo_cambio?: "manual" | "manual_override" | "auto_objetiva" | "auto_heuristica";
+  motivo?: string;
 }
 
 export interface TrabajoFormularioResponse {

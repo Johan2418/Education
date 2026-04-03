@@ -45,10 +45,12 @@ export interface Leccion {
   id: string;
   tema_id: string;
   titulo: string;
-  descripcion: string;
-  nivel: string;
+  descripcion: string | null;
+  nivel?: string | null;
   thumbnail_url: string | null;
   orden: number;
+  activo?: boolean;
+  created_by?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -57,11 +59,19 @@ export interface LeccionSeccion {
   id: string;
   leccion_id: string;
   tipo: string;
-  contenido: string;
+  recurso_id?: string | null;
+  prueba_id?: string | null;
+  modelo_id?: string | null;
+  nota_maxima?: number;
+  peso_calificacion?: number;
+  calificable?: boolean;
   orden: number;
-  bloqueado: boolean;
+  es_obligatorio?: boolean;
+  requisitos?: string[];
+  contenido?: string;
+  bloqueado?: boolean;
   created_at: string;
-  updated_at: string;
+  updated_at?: string;
 }
 
 export interface MateriaSeguimiento {

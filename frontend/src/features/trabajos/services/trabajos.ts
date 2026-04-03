@@ -22,6 +22,7 @@ import type {
   Trabajo,
   TrabajoFormularioResponse,
   TrabajoCalificacion,
+  TrabajoCalificacionHistorial,
   TrabajoEntrega,
   UpdateTrabajoRequest,
 } from "@/shared/types/trabajos";
@@ -120,6 +121,11 @@ export async function getEntregaDetalle(entregaId: string): Promise<EntregaDetal
   return res.data;
 }
 
+export async function getCalificacionHistorial(entregaId: string): Promise<TrabajoCalificacionHistorial[]> {
+  const res = await api.get<ApiData<TrabajoCalificacionHistorial[]>>(`/entregas/${entregaId}/calificacion-historial`);
+  return res.data || [];
+}
+
 export async function listEntregasByTrabajo(
   trabajoId: string,
   pagination?: { limit?: number; offset?: number }
@@ -196,6 +202,8 @@ export async function getLibroObservabilidad(trabajoId: string): Promise<LibroOb
 
 export async function getTrabajoAnalyticsV2(filters?: {
   curso_id?: string;
+  unidad_id?: string;
+  tema_id?: string;
   leccion_id?: string;
   estudiante_id?: string;
   from?: string;
@@ -203,6 +211,8 @@ export async function getTrabajoAnalyticsV2(filters?: {
 }): Promise<TrabajoAnalyticsV2Response> {
   const params = new URLSearchParams();
   if (filters?.curso_id) params.set("curso_id", filters.curso_id);
+  if (filters?.unidad_id) params.set("unidad_id", filters.unidad_id);
+  if (filters?.tema_id) params.set("tema_id", filters.tema_id);
   if (filters?.leccion_id) params.set("leccion_id", filters.leccion_id);
   if (filters?.estudiante_id) params.set("estudiante_id", filters.estudiante_id);
   if (filters?.from) params.set("from", filters.from);

@@ -2,9 +2,11 @@ import { api } from "@/shared/lib/api";
 import type { ProgresoSeccion } from "@/shared/types";
 
 export async function upsertProgresoSeccion(data: {
-  leccion_id: string;
-  seccion_id: string;
-  completado: boolean;
+  leccion_seccion_id: string;
+  completado?: boolean;
+  puntuacion?: number;
+  tiempo_dedicado?: number;
+  intentos?: number;
 }): Promise<ProgresoSeccion> {
   const res = await api.put<{ data: ProgresoSeccion }>("/progreso-secciones", data);
   return res.data;

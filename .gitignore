@@ -27,3 +27,7 @@ tmp_libro_recursos_phase3_test.ps1
 tmp_libro_recursos_phase4_test.ps1
 tmp_libro_recursos_phase5_test.ps1
 tmp_libro_recursos_phase6_test.ps1
+tmp_trabajos_sprint3_calificaciones_results.csv
+tmp_trabajos_sprint3_calificaciones_results.json
+tmp_trabajos_sprint3_calificaciones_test.ps1
+tmp_backend_runtime.log

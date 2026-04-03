@@ -92,6 +92,9 @@ func (r *Repository) ReplacePreguntas(ctx context.Context, trabajoID string, pre
 			if preguntas[i].Orden <= 0 {
 				preguntas[i].Orden = i + 1
 			}
+			if preguntas[i].PuntajeMaximo <= 0 {
+				preguntas[i].PuntajeMaximo = 1
+			}
 			if len(preguntas[i].Opciones) == 0 {
 				preguntas[i].Opciones = []byte("[]")
 			}

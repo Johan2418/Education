@@ -2,7 +2,11 @@ package evaluations
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
+	"math"
+	"strings"
 )
 
 type Service struct {
@@ -33,10 +37,28 @@ func (s *Service) CreatePrueba(ctx context.Context, req PruebaRequest, createdBy
 	if req.LeccionID == nil || req.Titulo == "" {
 		return nil, errors.New("leccion_id y titulo son requeridos")
 	}
+	if req.NotaMaxima != nil && *req.NotaMaxima <= 0 {
+		return nil, errors.New("nota_maxima debe ser > 0")
+	}
+	if req.PesoCalif != nil && *req.PesoCalif < 0 {
+		return nil, errors.New("peso_calificacion debe ser >= 0")
+	}
+	if req.PuntajeMinimo != nil && (*req.PuntajeMinimo < 0 || *req.PuntajeMinimo > 100) {
+		return nil, errors.New("puntaje_minimo debe estar entre 0 y 100")
+	}
 	return s.repo.CreatePrueba(ctx, req, createdBy)
 }
 
 func (s *Service) UpdatePrueba(ctx context.Context, id string, req PruebaRequest) (*Prueba, error) {
+	if req.NotaMaxima != nil && *req.NotaMaxima <= 0 {
+		return nil, errors.New("nota_maxima debe ser > 0")
+	}
+	if req.PesoCalif != nil && *req.PesoCalif < 0 {
+		return nil, errors.New("peso_calificacion debe ser >= 0")
+	}
+	if req.PuntajeMinimo != nil && (*req.PuntajeMinimo < 0 || *req.PuntajeMinimo > 100) {
+		return nil, errors.New("puntaje_minimo debe estar entre 0 y 100")
+	}
 	return s.repo.UpdatePrueba(ctx, id, req)
 }
 
@@ -56,10 +78,16 @@ func (s *Service) CreatePregunta(ctx context.Context, req PreguntaRequest) (*Pre
 	if req.PruebaID == "" || req.Texto == "" || req.Tipo == "" {
 		return nil, errors.New("prueba_id, texto y tipo son requeridos")
 	}
+	if req.PuntajeMaximo != nil && *req.PuntajeMaximo <= 0 {
+		return nil, errors.New("puntaje_maximo debe ser > 0")
+	}
 	return s.repo.CreatePregunta(ctx, req)
 }
 
 func (s *Service) UpdatePregunta(ctx context.Context, id string, req PreguntaRequest) (*Pregunta, error) {
+	if req.PuntajeMaximo != nil && *req.PuntajeMaximo <= 0 {
+		return nil, errors.New("puntaje_maximo debe ser > 0")
+	}
 	return s.repo.UpdatePregunta(ctx, id, req)
 }
 
@@ -94,7 +122,35 @@ func (s *Service) SubmitResultado(ctx context.Context, req ResultadoPruebaReques
 	if req.PruebaID == "" {
 		return nil, errors.New("prueba_id es requerido")
 	}
-	return s.repo.CreateResultado(ctx, req, usuarioID)
+
+	canonical := req
+	if canonical.LegacyPuntaje != nil {
+		canonical.PuntajeObtenido = *canonical.LegacyPuntaje
+	}
+	if len(canonical.Respuestas) == 0 && len(canonical.LegacyRespuestas) > 0 {
+		canonical.Respuestas = canonical.LegacyRespuestas
+	}
+	if canonical.PuntajeObtenido < 0 || canonical.PuntajeObtenido > 100 {
+		return nil, errors.New("puntaje_obtenido debe estar entre 0 y 100")
+	}
+	if len(canonical.Respuestas) == 0 {
+		canonical.Respuestas = json.RawMessage("{}")
+	}
+
+	pruebaCompleta, err := s.repo.GetPruebaCompleta(ctx, canonical.PruebaID)
+	if err != nil {
+		return nil, err
+	}
+
+	if autoPuntaje, calculado, err := calcularPuntajeObjetivo(pruebaCompleta.Preguntas, canonical.Respuestas); err != nil {
+		return nil, err
+	} else if calculado {
+		canonical.PuntajeObtenido = autoPuntaje
+	}
+
+	canonical.Aprobado = canonical.PuntajeObtenido >= pruebaCompleta.PuntajeMinimo
+
+	return s.repo.CreateResultado(ctx, canonical, usuarioID)
 }
 
 func (s *Service) ListResultadosByPrueba(ctx context.Context, pruebaID string) ([]ResultadoPrueba, error) {
@@ -133,6 +189,9 @@ func (s *Service) GetProgreso(ctx context.Context, usuarioID, leccionID string) 
 // ═══════════════════════════════════════════════════════════════
 
 func (s *Service) UpsertProgresoSeccion(ctx context.Context, userID string, req ProgresoSeccionRequest) (*ProgresoSeccion, error) {
+	if req.LeccionSeccionID == "" && req.SeccionID != "" {
+		req.LeccionSeccionID = req.SeccionID
+	}
 	if req.LeccionSeccionID == "" {
 		return nil, errors.New("leccion_seccion_id es requerido")
 	}
@@ -141,4 +200,86 @@ func (s *Service) UpsertProgresoSeccion(ctx context.Context, userID string, req 
 
 func (s *Service) ListProgresoSeccionesByLeccion(ctx context.Context, userID, leccionID string) ([]ProgresoSeccion, error) {
 	return s.repo.ListProgresoSeccionesByLeccion(ctx, userID, leccionID)
+}
+
+func calcularPuntajeObjetivo(preguntas []PreguntaConRespuestas, respuestasJSON json.RawMessage) (float64, bool, error) {
+	respuestas := map[string]any{}
+	if len(respuestasJSON) > 0 {
+		if err := json.Unmarshal(respuestasJSON, &respuestas); err != nil {
+			return 0, false, errors.New("respuestas inválidas")
+		}
+	}
+
+	totalMaximo := 0.0
+	totalObtenido := 0.0
+
+	for _, pregunta := range preguntas {
+		if !esPreguntaObjetiva(pregunta.Tipo) {
+			continue
+		}
+
+		maximoPregunta := puntajePreguntaMaximo(pregunta.PuntajeMaximo)
+		totalMaximo += maximoPregunta
+
+		answerRaw, ok := respuestas[pregunta.ID]
+		if !ok {
+			continue
+		}
+		if esRespuestaCorrecta(answerRaw, pregunta.Respuestas) {
+			totalObtenido += maximoPregunta
+		}
+	}
+
+	if totalMaximo <= 0 {
+		return 0, false, nil
+	}
+
+	porcentaje := (totalObtenido / totalMaximo) * 100
+	return math.Round(porcentaje*100) / 100, true, nil
+}
+
+func esPreguntaObjetiva(tipo string) bool {
+	return tipo == "opcion_multiple" || tipo == "verdadero_falso"
+}
+
+func puntajePreguntaMaximo(v float64) float64 {
+	if v > 0 {
+		return v
+	}
+	return 1
+}
+
+func esRespuestaCorrecta(answerRaw any, respuestas []Respuesta) bool {
+	if len(respuestas) == 0 {
+		return false
+	}
+
+	correctIDs := map[string]struct{}{}
+	correctTextos := map[string]struct{}{}
+	for _, respuesta := range respuestas {
+		if !respuesta.EsCorrecta {
+			continue
+		}
+		if respuesta.ID != "" {
+			correctIDs[respuesta.ID] = struct{}{}
+		}
+		texto := normalizeEvaluationAnswer(respuesta.Texto)
+		if texto != "" {
+			correctTextos[texto] = struct{}{}
+		}
+	}
+
+	answer := normalizeEvaluationAnswer(fmt.Sprint(answerRaw))
+	if answer == "" {
+		return false
+	}
+	if _, ok := correctIDs[answer]; ok {
+		return true
+	}
+	_, ok := correctTextos[answer]
+	return ok
+}
+
+func normalizeEvaluationAnswer(value string) string {
+	return strings.TrimSpace(strings.ToLower(value))
 }

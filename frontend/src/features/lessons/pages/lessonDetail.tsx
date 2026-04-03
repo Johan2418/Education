@@ -35,7 +35,7 @@ export default function LessonDetailPage() {
         try {
           const ps: ProgresoSeccion[] = await api.get(`/lecciones/${lessonId}/progreso-secciones`);
           const map: Record<string, ProgresoSeccion> = {};
-          (ps || []).forEach((p) => { map[p.seccion_id] = p; });
+          (ps || []).forEach((p) => { map[p.leccion_seccion_id] = p; });
           setProgSecciones(map);
         } catch { /* no progress yet */ }
       } catch (err) {
@@ -49,10 +49,10 @@ export default function LessonDetailPage() {
 
   const markSectionComplete = async (seccionId: string) => {
     try {
-      await api.put("/progreso-secciones", { seccion_id: seccionId, completado: true });
+      await api.put("/progreso-secciones", { leccion_seccion_id: seccionId, completado: true });
       setProgSecciones((prev) => ({
         ...prev,
-        [seccionId]: { ...prev[seccionId], seccion_id: seccionId, completado: true } as ProgresoSeccion,
+        [seccionId]: { ...prev[seccionId], leccion_seccion_id: seccionId, completado: true } as ProgresoSeccion,
       }));
     } catch {
       toast.error(t("lessons.progressError", { defaultValue: "Error al guardar progreso" }));

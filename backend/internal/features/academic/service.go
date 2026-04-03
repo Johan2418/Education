@@ -1,6 +1,9 @@
 package academic
 
-import "context"
+import (
+	"context"
+	"errors"
+)
 
 type Service struct {
 	repo *Repository
@@ -185,10 +188,16 @@ func (s *Service) ListSecciones(ctx context.Context, leccionID string) ([]Leccio
 }
 
 func (s *Service) CreateSeccion(ctx context.Context, req LeccionSeccionRequest) (*LeccionSeccion, error) {
+	if err := validateCalificacionSeccion(req); err != nil {
+		return nil, err
+	}
 	return s.repo.CreateSeccion(ctx, req)
 }
 
 func (s *Service) UpdateSeccion(ctx context.Context, id string, req LeccionSeccionRequest) (*LeccionSeccion, error) {
+	if err := validateCalificacionSeccion(req); err != nil {
+		return nil, err
+	}
 	return s.repo.UpdateSeccion(ctx, id, req)
 }
 
@@ -220,4 +229,14 @@ type validationError struct{ field string }
 
 func (e *validationError) Error() string {
 	return "El campo '" + e.field + "' es obligatorio"
+}
+
+func validateCalificacionSeccion(req LeccionSeccionRequest) error {
+	if req.NotaMaxima != nil && *req.NotaMaxima <= 0 {
+		return errors.New("nota_maxima debe ser > 0")
+	}
+	if req.PesoCalif != nil && *req.PesoCalif < 0 {
+		return errors.New("peso_calificacion debe ser >= 0")
+	}
+	return nil
 }

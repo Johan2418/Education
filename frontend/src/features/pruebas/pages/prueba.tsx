@@ -57,8 +57,8 @@ export default function PruebaPage() {
 
       await api.post("/resultados", {
         prueba_id: pruebaId,
-        puntaje: pct,
-        respuestas_json: answers,
+        puntaje_obtenido: pct,
+        respuestas: answers,
       });
 
       setScore(pct);
