@@ -5,7 +5,7 @@ import { getMe } from "@/shared/lib/auth";
 import api from "@/shared/lib/api";
 import toast from "react-hot-toast";
 import type { Leccion, Tema, Curso, Materia, Unidad } from "@/shared/types";
-import { Plus, Pencil, Trash2, Search, Loader2 } from "lucide-react";
+import { SlidersHorizontal, Eye, Trash2, Search, Loader2 } from "lucide-react";
 
 export default function TeacherLessons() {
   const { t } = useTranslation();
@@ -18,7 +18,7 @@ export default function TeacherLessons() {
     (async () => {
       try {
         const me = await getMe();
-        if (!me || !["teacher", "admin", "super_admin"].includes(me.role || "")) {
+        if (!me || !["teacher", "admin", "super_admin", "resource_manager"].includes(me.role || "")) {
           navigate("/login");
           return;
         }
@@ -102,8 +102,19 @@ export default function TeacherLessons() {
               {l.nivel && <span className="text-xs text-blue-600 mb-1">{l.nivel}</span>}
               {l.descripcion && <p className="text-sm text-gray-500 line-clamp-2 mb-2">{l.descripcion}</p>}
               <div className="mt-auto flex items-center gap-2 pt-3">
-                <button onClick={() => navigate(`/lesson/${l.id}`)} className="p-2 text-blue-600 hover:bg-blue-50 rounded">
-                  <Pencil size={16} />
+                <button
+                  onClick={() => navigate(`/teacher/lessons/${l.id}/sections`)}
+                  className="p-2 text-indigo-700 hover:bg-indigo-50 rounded"
+                  title={t("teacher.lessons.configureSections", { defaultValue: "Configurar secciones" })}
+                >
+                  <SlidersHorizontal size={16} />
+                </button>
+                <button
+                  onClick={() => navigate(`/lesson/${l.id}`)}
+                  className="p-2 text-blue-600 hover:bg-blue-50 rounded"
+                  title={t("teacher.lessons.studentView", { defaultValue: "Ver vista estudiante" })}
+                >
+                  <Eye size={16} />
                 </button>
                 <button onClick={() => handleDelete(l.id)} className="p-2 text-red-600 hover:bg-red-50 rounded">
                   <Trash2 size={16} />

@@ -7,6 +7,8 @@ import { api } from "@/shared/lib/api";
 import type { Leccion } from "@/shared/types";
 import heroImage from "@/img/HeroImage.png";
 
+type RecentLessonsResponse = Leccion[] | { data?: Leccion[] | null };
+
 export default function MainContent({
   textSizeLarge,
   highContrast,
@@ -31,8 +33,15 @@ export default function MainContent({
       return;
     }
     api
-      .get<Leccion[]>("/lecciones/recent?limit=6")
-      .then((data) => setRecentLessons(data || []))
+      .get<RecentLessonsResponse>("/lecciones/recent?limit=6")
+      .then((response) => {
+        const lessons = Array.isArray(response)
+          ? response
+          : Array.isArray(response?.data)
+            ? response.data
+            : [];
+        setRecentLessons(lessons);
+      })
       .catch(() => {})
       .finally(() => setLoadingLessons(false));
   }, []);

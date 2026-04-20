@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { getMe } from "@/shared/lib/auth";
 import api from "@/shared/lib/api";
+import { listMisProgresos } from "@/shared/services/progresos";
 import toast from "react-hot-toast";
 import type { Leccion, Progreso, Curso, Materia, Unidad, Tema } from "@/shared/types";
 import { BookOpen, GraduationCap } from "lucide-react";
@@ -41,9 +42,9 @@ export default function LessonsPage({ highContrast = false }: { highContrast?: b
 
         // Fetch progress
         try {
-          const prog: Progreso[] = await api.get("/progreso");
+          const prog = await listMisProgresos();
           const map: Record<string, Progreso> = {};
-          (prog || []).forEach((p) => { map[p.leccion_id] = p; });
+          prog.forEach((p) => { map[p.leccion_id] = p; });
           setProgresos(map);
         } catch { /* no progress yet */ }
       } catch (err) {

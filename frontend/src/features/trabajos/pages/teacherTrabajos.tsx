@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { Loader2, Plus, Search, SendHorizontal, XCircle, CheckCircle2, ClipboardList, BarChart3, Trash2, Pencil } from "lucide-react";
+import { Loader2, Plus, Search, SendHorizontal, XCircle, CheckCircle2, ClipboardList, BarChart3, Trash2, Pencil, Library } from "lucide-react";
 import toast from "react-hot-toast";
 import * as pdfjsLib from "pdfjs-dist";
 import pdfWorkerSrc from "pdfjs-dist/build/pdf.worker.min.mjs?url";
@@ -1492,6 +1492,14 @@ export default function TeacherTrabajos() {
                 >
                   <BarChart3 size={14} />
                   {t("teacher.trabajos.reports", { defaultValue: "Reportes" })}
+                </button>
+
+                <button
+                  onClick={() => navigate(`/teacher/recursos-personales?trabajoId=${trabajo.id}`)}
+                  className="inline-flex items-center gap-1 px-3 py-1.5 text-sm rounded bg-emerald-600 text-white hover:bg-emerald-700"
+                >
+                  <Library size={14} />
+                  Recursos personales
                 </button>
 
                 <button

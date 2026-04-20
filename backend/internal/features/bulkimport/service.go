@@ -211,8 +211,22 @@ func (s *Service) AdminBulkImport(ctx context.Context, req AdminBulkImportReques
 	}, nil
 }
 
-// TeacherBulkImport enrolls students in the teacher's course.
-func (s *Service) TeacherBulkImport(ctx context.Context, req TeacherBulkImportRequest, cursoID string) (*TeacherBulkImportResponse, error) {
+// TeacherBulkImport enrolls students in a course where the caller has permission.
+func (s *Service) TeacherBulkImport(ctx context.Context, req TeacherBulkImportRequest, cursoID, actorRole, actorID string) (*TeacherBulkImportResponse, error) {
+	if strings.TrimSpace(cursoID) == "" {
+		return nil, fmt.Errorf("curso inválido")
+	}
+
+	if actorRole == "teacher" {
+		ok, err := s.acadRepo.IsTeacherAssignedToCurso(ctx, strings.TrimSpace(actorID), strings.TrimSpace(cursoID))
+		if err != nil {
+			return nil, fmt.Errorf("error validando permisos del curso: %w", err)
+		}
+		if !ok {
+			return nil, fmt.Errorf("no autorizado para importar en este curso")
+		}
+	}
+
 	fieldMap := buildFieldLookup(req.Mappings)
 
 	// Get currently enrolled students

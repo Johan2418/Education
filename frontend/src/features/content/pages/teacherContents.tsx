@@ -4,7 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { getMe } from "@/shared/lib/auth";
 import api from "@/shared/lib/api";
 import toast from "react-hot-toast";
-import { Pencil, Trash2, Search, Plus, Loader2 } from "lucide-react";
+import { Pencil, Trash2, Search, Plus, Loader2, Library } from "lucide-react";
 import type { Materia } from "@/shared/types";
 
 export default function TeacherContents() {
@@ -96,6 +96,13 @@ export default function TeacherContents() {
               <div className="mt-auto flex items-center gap-2 pt-3">
                 <button onClick={() => navigate(`/add-content?materiaId=${m.id}`)} className="p-2 text-blue-600 hover:bg-blue-50 rounded">
                   <Pencil size={16} />
+                </button>
+                <button
+                  onClick={() => navigate(`/teacher/recursos-personales?materiaId=${m.id}`)}
+                  className="p-2 text-emerald-700 hover:bg-emerald-50 rounded"
+                  title="Gestionar recursos personales"
+                >
+                  <Library size={16} />
                 </button>
                 <button onClick={() => handleDelete(m.id)} className="p-2 text-red-600 hover:bg-red-50 rounded">
                   <Trash2 size={16} />

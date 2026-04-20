@@ -25,7 +25,9 @@ export default function TeacherEstudiantes() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
-  const [curso, setCurso] = useState<Curso | null>(null);
+  const [loadingEnrolled, setLoadingEnrolled] = useState(false);
+  const [cursos, setCursos] = useState<Curso[]>([]);
+  const [selectedCursoId, setSelectedCursoId] = useState("");
   const [enrolled, setEnrolled] = useState<EstudianteCursoDetail[]>([]);
   const [search, setSearch] = useState("");
 
@@ -35,7 +37,12 @@ export default function TeacherEstudiantes() {
   const [enrollSearch, setEnrollSearch] = useState("");
   const [enrolling, setEnrolling] = useState<string | null>(null);
 
-  /* ── Load data ─────────────────────────────────────────── */
+  const selectedCurso = useMemo(
+    () => cursos.find((c) => c.id === selectedCursoId) || null,
+    [cursos, selectedCursoId]
+  );
+
+  /* ── Load available courses ───────────────────────────── */
   useEffect(() => {
     (async () => {
       try {
@@ -44,22 +51,18 @@ export default function TeacherEstudiantes() {
           navigate("/login");
           return;
         }
-        // Fetch teacher's courses (backend filters by teacher_id for teacher role)
+        // Backend now filters by assigned materias for teacher role.
         const cursosRes = await api.get<{ data: Curso[] }>("/cursos");
         const cursos = cursosRes.data || [];
+        setCursos(cursos);
+
         if (cursos.length === 0) {
-          setCurso(null);
-          setLoading(false);
+          setSelectedCursoId("");
+          setEnrolled([]);
           return;
         }
-        const myCurso = cursos[0]; // teacher has at most 1 course (UNIQUE constraint)
-        if (!myCurso) {
-          setLoading(false);
-          return;
-        }
-        setCurso(myCurso);
-        const enrolledRes = await api.get<{ data: EstudianteCursoDetail[] }>(`/cursos/${myCurso.id}/estudiantes`);
-        setEnrolled(enrolledRes.data || []);
+
+        setSelectedCursoId(cursos[0]?.id || "");
       } catch {
         toast.error(t("teacher.estudiantes.errors.loadError", { defaultValue: "Error al cargar datos" }));
       } finally {
@@ -67,6 +70,22 @@ export default function TeacherEstudiantes() {
       }
     })();
   }, [navigate, t]);
+
+  useEffect(() => {
+    if (!selectedCursoId) return;
+
+    (async () => {
+      setLoadingEnrolled(true);
+      try {
+        const enrolledRes = await api.get<{ data: EstudianteCursoDetail[] }>(`/cursos/${selectedCursoId}/estudiantes`);
+        setEnrolled(enrolledRes.data || []);
+      } catch {
+        toast.error(t("teacher.estudiantes.errors.loadError", { defaultValue: "Error al cargar datos" }));
+      } finally {
+        setLoadingEnrolled(false);
+      }
+    })();
+  }, [selectedCursoId, t]);
 
   /* ── Open enroll modal ──────────────────────────────────── */
   const openEnrollModal = async () => {
@@ -95,12 +114,12 @@ export default function TeacherEstudiantes() {
 
   /* ── Enroll ─────────────────────────────────────────────── */
   const handleEnroll = async (studentId: string) => {
-    if (!curso) return;
+    if (!selectedCurso) return;
     setEnrolling(studentId);
     try {
-      await api.post(`/cursos/${curso.id}/estudiantes`, { estudiante_id: studentId, curso_id: curso.id });
+      await api.post(`/cursos/${selectedCurso.id}/estudiantes`, { estudiante_id: studentId, curso_id: selectedCurso.id });
       // Refresh enrolled list
-      const res = await api.get<{ data: EstudianteCursoDetail[] }>(`/cursos/${curso.id}/estudiantes`);
+      const res = await api.get<{ data: EstudianteCursoDetail[] }>(`/cursos/${selectedCurso.id}/estudiantes`);
       setEnrolled(res.data || []);
       toast.success(t("teacher.estudiantes.success.enrolled", { defaultValue: "Estudiante inscrito" }));
     } catch {
@@ -112,10 +131,10 @@ export default function TeacherEstudiantes() {
 
   /* ── Unenroll ───────────────────────────────────────────── */
   const handleUnenroll = async (enrollmentId: string, name: string) => {
-    if (!curso) return;
+    if (!selectedCurso) return;
     if (!confirm(t("teacher.estudiantes.confirmUnenroll", { nombre: name, defaultValue: `¿Desinscribir a "${name}"?` }))) return;
     try {
-      await api.delete(`/cursos/${curso.id}/estudiantes/${enrollmentId}`);
+      await api.delete(`/cursos/${selectedCurso.id}/estudiantes/${enrollmentId}`);
       setEnrolled((prev) => prev.filter((e) => e.id !== enrollmentId));
       toast.success(t("teacher.estudiantes.success.unenrolled", { defaultValue: "Estudiante desinscrito" }));
     } catch {
@@ -141,7 +160,7 @@ export default function TeacherEstudiantes() {
     );
   }
 
-  if (!curso) {
+  if (cursos.length === 0) {
     return (
       <div className="max-w-4xl mx-auto p-4">
         <div className="text-center text-gray-500 p-12 bg-white rounded-lg shadow">
@@ -159,9 +178,22 @@ export default function TeacherEstudiantes() {
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold">{t("teacher.estudiantes.title", { defaultValue: "Mis Estudiantes" })}</h1>
-          <p className="text-sm text-gray-500">{curso.nombre} — {enrolled.length} {t("teacher.estudiantes.enrolled", { defaultValue: "inscritos" })}</p>
+          <p className="text-sm text-gray-500">
+            {selectedCurso?.nombre || "-"} — {enrolled.length} {t("teacher.estudiantes.enrolled", { defaultValue: "inscritos" })}
+          </p>
         </div>
         <div className="flex items-center gap-3">
+          {cursos.length > 1 && (
+            <select
+              className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
+              value={selectedCursoId}
+              onChange={(e) => setSelectedCursoId(e.target.value)}
+            >
+              {cursos.map((curso) => (
+                <option key={curso.id} value={curso.id}>{curso.nombre}</option>
+              ))}
+            </select>
+          )}
           <button onClick={() => navigate("/teacher/bulk-import")} className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition">
             <FileSpreadsheet size={16} /> Importar Excel
           </button>
@@ -183,6 +215,12 @@ export default function TeacherEstudiantes() {
       </div>
 
       {/* Table */}
+      {loadingEnrolled && (
+        <div className="flex items-center justify-center py-8">
+          <Loader2 size={24} className="animate-spin text-blue-600" />
+        </div>
+      )}
+
       {filteredEnrolled.length === 0 ? (
         <div className="text-center text-gray-500 p-8 bg-white rounded-lg shadow">
           <Users size={40} className="mx-auto mb-2 text-gray-300" />

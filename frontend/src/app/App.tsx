@@ -21,6 +21,7 @@ import TeacherPruebas from "@/features/pruebas/pages/teacherPruebas";
 import TeacherPerformance from "@/features/performance/pages/teacherPerformance";
 import LessonsPage from "@/features/lessons/pages/lessons";
 import LessonDetailPage from "@/features/lessons/pages/lessonDetail";
+import TeacherLessonSectionsPage from "@/features/lessons/pages/teacherLessonSections";
 import PruebaPage from "@/features/pruebas/pages/prueba";
 import AdminUsers from "@/features/admin/pages/adminUsers";
 import AdminDashboard from "@/features/admin/pages/adminDashboard";
@@ -30,6 +31,8 @@ import AdminBulkImport from "@/features/admin/pages/adminBulkImport";
 import AdminBulkEnroll from "@/features/admin/pages/adminBulkEnroll";
 import TeacherEstudiantes from "@/features/teacher/pages/teacherEstudiantes";
 import TeacherBulkImport from "@/features/teacher/pages/teacherBulkImport";
+import TeacherMisCursos from "@/features/teacher/pages/teacherMisCursos";
+import TeacherHorario from "@/features/teacher/pages/teacherHorario";
 import TeacherTrabajos from "@/features/trabajos/pages/teacherTrabajos";
 import TeacherTrabajoCalificar from "@/features/trabajos/pages/teacherTrabajoCalificar";
 import TeacherTrabajoLibroWizard from "@/features/trabajos/pages/teacherTrabajoLibroWizard";
@@ -37,6 +40,7 @@ import TeacherTrabajoReportes from "@/features/trabajos/pages/teacherTrabajoRepo
 import TeacherTrabajosAnalytics from "@/features/trabajos/pages/teacherTrabajosAnalytics";
 import TeacherRecursos from "@/features/resources/pages/teacherRecursos";
 import TeacherRecursoViewer from "@/features/resources/pages/teacherRecursoViewer";
+import TeacherRecursosPersonales from "@/features/resources/pages/teacherRecursosPersonales";
 import StudentDashboard from "@/features/student/pages/studentDashboard";
 import StudentTrabajos from "@/features/trabajos/pages/studentTrabajos";
 import StudentTrabajoDetail from "@/features/trabajos/pages/studentTrabajoDetail";
@@ -149,6 +153,7 @@ function App() {
               <Route path="/settings" element={<SettingsPage />} />
               <Route path="/teacher" element={<TeacherDashboard highContrast={highContrast} />} />
               <Route path="/teacher/lessons" element={<TeacherLessons />} />
+              <Route path="/teacher/lessons/:lessonId/sections" element={<TeacherLessonSectionsPage />} />
               <Route path="/teacher/contents" element={<TeacherContents />} />
               <Route path="/teacher/pruebas" element={<TeacherPruebas />} />
               <Route path="/teacher/trabajos" element={<TeacherTrabajos />} />
@@ -157,8 +162,11 @@ function App() {
               <Route path="/teacher/trabajos/:trabajoId/reportes" element={<TeacherTrabajoReportes />} />
               <Route path="/teacher/trabajos/analytics" element={<TeacherTrabajosAnalytics />} />
               <Route path="/teacher/recursos" element={<TeacherRecursos />} />
+              <Route path="/teacher/recursos-personales" element={<TeacherRecursosPersonales />} />
               <Route path="/teacher/recursos/:recursoId" element={<TeacherRecursoViewer />} />
               <Route path="/teacher/performance" element={<TeacherPerformance />} />
+              <Route path="/teacher/cursos" element={<TeacherMisCursos />} />
+              <Route path="/teacher/horario" element={<TeacherHorario />} />
               <Route path="/teacher/estudiantes" element={<TeacherEstudiantes />} />
               <Route path="/admin/users" element={<AdminUsers />} />
               <Route path="/admin/dashboard" element={<AdminDashboard highContrast={highContrast} />} />

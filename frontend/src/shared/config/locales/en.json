@@ -688,6 +688,60 @@
       "averageScore": "Average",
       "followedContents": "Followed Contents"
     },
+    "cursos": {
+      "title": "My courses",
+      "subtitle": "Subjects assigned by school year",
+      "search": "Search by subject, course or year...",
+      "empty": "No assigned subjects",
+      "emptyHint": "Ask administration to assign subjects.",
+      "metrics": {
+        "students": "Students",
+        "lessons": "Lessons",
+        "tasks": "Assignments"
+      },
+      "actions": {
+        "schedule": "Manage schedule",
+        "students": "Students"
+      }
+    },
+    "horario": {
+      "title": "My schedule",
+      "subtitle": "Weekly planning by assigned subject",
+      "add": "Add block",
+      "edit": "Edit block",
+      "created": "Schedule block added",
+      "updated": "Schedule block updated",
+      "deleted": "Schedule block deleted",
+      "confirmDelete": "Delete schedule block?",
+      "validation": {
+        "assignment": "Select a subject",
+        "hours": "Complete start and end time"
+      },
+      "fields": {
+        "subject": "Subject",
+        "select": "Select",
+        "day": "Day",
+        "start": "Start",
+        "end": "End",
+        "classroom": "Classroom (optional)",
+        "classroomPlaceholder": "Example: Lab 2"
+      },
+      "actions": {
+        "create": "Add",
+        "update": "Update",
+        "cancel": "Cancel",
+        "edit": "Edit",
+        "delete": "Delete"
+      },
+      "table": {
+        "title": "Registered blocks",
+        "empty": "No schedule blocks for this subject.",
+        "day": "Day",
+        "time": "Time",
+        "classroom": "Classroom",
+        "actions": "Actions"
+      }
+    },
     "estudiantes": {
       "title": "My Students",
       "enrolled": "enrolled",
@@ -1256,8 +1310,8 @@
     },
     "cursos": {
       "title": "Course Management",
-      "description": "Manage courses and assign teachers",
-      "search": "Search by name, description or teacher...",
+      "description": "Manage courses, subjects, and teacher assignments",
+      "search": "Search by course or subject...",
       "create": {
         "title": "Create New Course",
         "button": "New Course"

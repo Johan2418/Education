@@ -6,8 +6,23 @@ export type {
   Tema,
   Leccion,
   LeccionSeccion,
+  Foro,
+  ForoHilo,
+  ForoMensaje,
+  LeccionVideoProgreso,
+  LeccionSeccionGatingPDF,
+  ActividadInteractiva,
+  ActividadInteractivaIntento,
   MateriaSeguimiento,
   EstudianteCursoDetail,
+  DocenteMateriaAsignacion,
+  MisCursoDocente,
+  DocenteMateriaHorario,
+  DocenteMateriaHorarioRequest,
+  CursoAnioMateriaDocenteInput,
+  CursoAnioAsignarMaestrosRequest,
+  CursoAnioAsignarMaestrosDetalle,
+  CursoAnioAsignarMaestrosResult,
 } from "./academic";
 export type { Recurso, ModeloRA } from "./resources";
 export type {

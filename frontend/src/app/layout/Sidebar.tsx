@@ -17,6 +17,7 @@ import {
   X,
   LayoutDashboard,
   Library,
+  CalendarDays,
 } from "lucide-react";
 import HelpModal from "./HelpModal";
 import { useSidebar } from "@/app/layout/hooks/useSidebar";
@@ -215,7 +216,10 @@ const Sidebar: FC<SidebarProps> = ({
               <SidebarItem onClick={() => hook.navigate("/teacher/trabajos")} icon={BookOpenText} label={hook.t("teacher.trabajos.title", { defaultValue: "Trabajos" })} iconSize={16} />
               <SidebarItem onClick={() => hook.navigate("/teacher/trabajos/analytics")} icon={LayoutDashboard} label={hook.t("teacher.trabajos.analytics.nav", { defaultValue: "Analytics v2" })} iconSize={16} />
               <SidebarItem onClick={() => hook.navigate("/teacher/recursos")} icon={Library} label={hook.t("teacher.recursos.title", { defaultValue: "Recursos" })} iconSize={16} />
+              <SidebarItem onClick={() => hook.navigate("/teacher/recursos-personales")} icon={Library} label={hook.t("teacher.recursos.personal.title", { defaultValue: "Recursos personales" })} iconSize={16} />
               <SidebarItem onClick={() => hook.navigate("/teacher/performance")} icon={BookOpenText} label={isAdmin ? hook.t("teacher.performance.titleAll") : hook.t("teacher.performance.title")} iconSize={16} />
+              <SidebarItem onClick={() => hook.navigate("/teacher/cursos")} icon={BookOpenText} label={hook.t("teacher.cursos.title", { defaultValue: "Mis cursos" })} iconSize={16} />
+              <SidebarItem onClick={() => hook.navigate("/teacher/horario")} icon={CalendarDays} label={hook.t("teacher.horario.title", { defaultValue: "Mi horario" })} iconSize={16} />
               <SidebarItem onClick={() => hook.navigate("/teacher/estudiantes")} icon={BookOpenText} label={hook.t("teacher.estudiantes.title", { defaultValue: "Mis Estudiantes" })} iconSize={16} />
               {!isAdmin && (
                 <SidebarItem onClick={() => hook.navigate("/teacher/bulk-import")} icon={FileSpreadsheet} label="Importar Estudiantes" iconSize={16} />

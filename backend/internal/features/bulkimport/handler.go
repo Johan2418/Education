@@ -94,8 +94,13 @@ func (h *Handler) TeacherBulkImport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resp, err := h.svc.TeacherBulkImport(r.Context(), req, cursoID)
+	resp, err := h.svc.TeacherBulkImport(r.Context(), req, cursoID, claims.UserRole, claims.Subject)
 	if err != nil {
+		errMsg := strings.ToLower(err.Error())
+		if strings.Contains(errMsg, "no autorizado") {
+			shared.Error(w, http.StatusForbidden, "Error en importación: "+err.Error())
+			return
+		}
 		shared.Error(w, http.StatusInternalServerError, "Error en importación: "+err.Error())
 		return
 	}

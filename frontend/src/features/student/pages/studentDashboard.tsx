@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { getMe } from "@/shared/lib/auth";
-import api from "@/shared/lib/api";
+import { listMisProgresos } from "@/shared/services/progresos";
 import toast from "react-hot-toast";
 import { BookOpen, Award, Clock, TrendingUp, ArrowRight, Sparkles } from "lucide-react";
 import type { Progreso, Leccion } from "@/shared/types";
@@ -27,8 +27,8 @@ export default function StudentDashboard({ highContrast = false }: { highContras
         if (!me) { navigate("/login"); return; }
         setProfile(me);
 
-        const prog: Progreso[] = await api.get("/progreso");
-        setProgresos(prog || []);
+        const prog = await listMisProgresos();
+        setProgresos(prog);
         setTotalLessons(0);
       } catch (err) {
         console.error("Error loading dashboard", err);

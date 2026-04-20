@@ -34,6 +34,42 @@ type RecursoRequest struct {
 	EsPublico   *bool    `json:"es_publico"`
 }
 
+// ─── Recurso Personal ───────────────────────────────────────
+
+type RecursoPersonal struct {
+	ID             string         `json:"id" gorm:"column:id;primaryKey;default:gen_random_uuid()"`
+	OwnerTeacherID string         `json:"owner_teacher_id" gorm:"column:owner_teacher_id"`
+	Titulo         string         `json:"titulo" gorm:"column:titulo"`
+	Descripcion    *string        `json:"descripcion" gorm:"column:descripcion"`
+	Tipo           string         `json:"tipo" gorm:"column:tipo;type:internal.tipo_recurso_personal"`
+	URL            *string        `json:"url" gorm:"column:url"`
+	HTMLContenido  *string        `json:"html_contenido" gorm:"column:html_contenido"`
+	TextoContenido *string        `json:"texto_contenido" gorm:"column:texto_contenido"`
+	Tags           pq.StringArray `json:"tags" gorm:"column:tags;type:text[]"`
+	Activo         bool           `json:"activo" gorm:"column:activo;default:true"`
+	CreatedAt      time.Time      `json:"created_at" gorm:"column:created_at;autoCreateTime"`
+	UpdatedAt      time.Time      `json:"updated_at" gorm:"column:updated_at;autoUpdateTime"`
+}
+
+func (RecursoPersonal) TableName() string { return "internal.recurso_personal" }
+
+type RecursoPersonalRequest struct {
+	Titulo         string   `json:"titulo"`
+	Descripcion    *string  `json:"descripcion"`
+	Tipo           string   `json:"tipo"`
+	URL            *string  `json:"url"`
+	HTMLContenido  *string  `json:"html_contenido"`
+	TextoContenido *string  `json:"texto_contenido"`
+	Tags           []string `json:"tags"`
+	Activo         *bool    `json:"activo"`
+}
+
+type ListRecursosPersonalesQuery struct {
+	Q      string
+	Tipo   string
+	Activo *bool
+}
+
 // ─── Modelo RA ──────────────────────────────────────────────
 
 type ModeloRA struct {

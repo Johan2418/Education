@@ -23,6 +23,7 @@ import (
 	"github.com/arcanea/backend/internal/features/auth"
 	"github.com/arcanea/backend/internal/features/bulkimport"
 	"github.com/arcanea/backend/internal/features/evaluations"
+	"github.com/arcanea/backend/internal/features/interactive"
 	"github.com/arcanea/backend/internal/features/libro"
 	"github.com/arcanea/backend/internal/features/resources"
 	"github.com/arcanea/backend/internal/features/trabajos"
@@ -66,6 +67,10 @@ func main() {
 	evalRepo := evaluations.NewRepository(db)
 	evalSvc := evaluations.NewService(evalRepo)
 	evalH := evaluations.NewHandler(evalSvc)
+
+	interactiveRepo := interactive.NewRepository(db)
+	interactiveSvc := interactive.NewService(interactiveRepo)
+	interactiveH := interactive.NewHandler(interactiveSvc)
 
 	trabRepo := trabajos.NewRepository(db)
 	trabSvc := trabajos.NewService(trabRepo, notifSvc)
@@ -140,6 +145,19 @@ func main() {
 		r.Put("/materias/{materiaId}", acadH.UpdateMateria)
 		r.Delete("/materias/{materiaId}", acadH.DeleteMateria)
 
+		// Docente por materia + horarios
+		r.Get("/teacher/mis-cursos", acadH.ListMisCursosDocente)
+		r.Get("/teacher/horarios", acadH.ListHorariosDocente)
+		r.Get("/asignaciones-docente", acadH.ListDocenteMateriaAsignaciones)
+		r.Post("/asignaciones-docente", acadH.CreateDocenteMateriaAsignacion)
+		r.Post("/admin/cursos/{cursoId}/asignar-maestros-anio", acadH.AsignarMaestrosCursoAnio)
+		r.Put("/asignaciones-docente/{asignacionId}", acadH.UpdateDocenteMateriaAsignacion)
+		r.Delete("/asignaciones-docente/{asignacionId}", acadH.DeleteDocenteMateriaAsignacion)
+		r.Get("/asignaciones-docente/{asignacionId}/horarios", acadH.ListHorariosByAsignacion)
+		r.Post("/asignaciones-docente/{asignacionId}/horarios", acadH.CreateHorarioAsignacion)
+		r.Put("/horarios-docente/{horarioId}", acadH.UpdateHorarioAsignacion)
+		r.Delete("/horarios-docente/{horarioId}", acadH.DeleteHorarioAsignacion)
+
 		// Seguimiento de materias
 		r.Get("/materias/{materiaId}/seguimientos", acadH.ListSeguimientos)
 		r.Post("/materias/{materiaId}/seguir", acadH.SeguirMateria)
@@ -171,7 +189,34 @@ func main() {
 		r.Get("/lecciones/{leccionId}/secciones", acadH.ListSecciones)
 		r.Post("/secciones", acadH.CreateSeccion)
 		r.Put("/secciones/{seccionId}", acadH.UpdateSeccion)
+		r.Patch("/secciones/{seccionId}/lifecycle", acadH.PatchSeccionLifecycle)
 		r.Delete("/secciones/{seccionId}", acadH.DeleteSeccion)
+		r.Put("/secciones/{seccionId}/gating-pdf", acadH.UpsertSeccionGatingPDF)
+		r.Get("/secciones/{seccionId}/gating-pdf", acadH.GetSeccionGatingPDF)
+
+		// Actividades interactivas
+		r.Get("/lecciones/{leccionId}/actividades-interactivas", interactiveH.ListActividadesByLeccion)
+		r.Get("/actividades-interactivas/{actividadId}", interactiveH.GetActividad)
+		r.Post("/actividades-interactivas", interactiveH.CreateActividad)
+		r.Put("/actividades-interactivas/{actividadId}", interactiveH.UpdateActividad)
+		r.Delete("/actividades-interactivas/{actividadId}", interactiveH.DeleteActividad)
+		r.Get("/actividades-interactivas/{actividadId}/intento", interactiveH.GetMiIntento)
+		r.Put("/actividades-interactivas/{actividadId}/intento", interactiveH.UpsertIntento)
+		r.Get("/actividades-interactivas/{actividadId}/intentos", interactiveH.ListIntentosByActividad)
+
+		// Foros
+		r.Get("/lecciones/{leccionId}/foros", acadH.ListForosByLeccion)
+		r.Post("/foros", acadH.CreateForo)
+		r.Put("/foros/{foroId}", acadH.UpdateForo)
+		r.Delete("/foros/{foroId}", acadH.DeleteForo)
+		r.Get("/foros/{foroId}/hilos", acadH.ListForoHilos)
+		r.Post("/foros/{foroId}/hilos", acadH.CreateForoHilo)
+		r.Get("/hilos/{hiloId}/mensajes", acadH.ListForoMensajes)
+		r.Post("/hilos/{hiloId}/mensajes", acadH.CreateForoMensaje)
+
+		// Progreso de video YouTube
+		r.Put("/video-progreso", acadH.UpsertVideoProgreso)
+		r.Get("/lecciones/{leccionId}/video-progreso", acadH.ListVideoProgresoByLeccion)
 
 		// ── Resources ───────────────────────────────────────
 		r.Get("/recursos", resH.ListRecursos)
@@ -179,6 +224,24 @@ func main() {
 		r.Post("/recursos", resH.CreateRecurso)
 		r.Put("/recursos/{recursoId}", resH.UpdateRecurso)
 		r.Delete("/recursos/{recursoId}", resH.DeleteRecurso)
+
+		r.Get("/recursos-personales", resH.ListRecursosPersonales)
+		r.Get("/recursos-personales/{recursoPersonalId}", resH.GetRecursoPersonal)
+		r.Post("/recursos-personales", resH.CreateRecursoPersonal)
+		r.Put("/recursos-personales/{recursoPersonalId}", resH.UpdateRecursoPersonal)
+		r.Delete("/recursos-personales/{recursoPersonalId}", resH.DeleteRecursoPersonal)
+
+		r.Get("/materias/{materiaId}/recursos-personales", resH.ListMateriaRecursosPersonales)
+		r.Post("/materias/{materiaId}/recursos-personales/{recursoPersonalId}", resH.AttachRecursoPersonalToMateria)
+		r.Delete("/materias/{materiaId}/recursos-personales/{recursoPersonalId}", resH.DetachRecursoPersonalFromMateria)
+
+		r.Get("/secciones/{seccionId}/recursos-personales", resH.ListSeccionRecursosPersonales)
+		r.Post("/secciones/{seccionId}/recursos-personales/{recursoPersonalId}", resH.AttachRecursoPersonalToSeccion)
+		r.Delete("/secciones/{seccionId}/recursos-personales/{recursoPersonalId}", resH.DetachRecursoPersonalFromSeccion)
+
+		r.Get("/trabajos/{trabajoId}/recursos-personales", resH.ListTrabajoRecursosPersonales)
+		r.Post("/trabajos/{trabajoId}/recursos-personales/{recursoPersonalId}", resH.AttachRecursoPersonalToTrabajo)
+		r.Delete("/trabajos/{trabajoId}/recursos-personales/{recursoPersonalId}", resH.DetachRecursoPersonalFromTrabajo)
 
 		r.Get("/modelos", resH.ListModelos)
 		r.Get("/modelos/{modeloId}", resH.GetModelo)

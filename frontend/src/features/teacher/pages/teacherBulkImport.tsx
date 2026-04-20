@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { getMe } from "@/shared/lib/auth";
@@ -44,7 +44,8 @@ export default function TeacherBulkImport() {
     const { t } = useTranslation();
     const navigate = useNavigate();
     const [step, setStep] = useState<Step>("upload");
-    const [curso, setCurso] = useState<Curso | null>(null);
+    const [cursos, setCursos] = useState<Curso[]>([]);
+    const [selectedCursoId, setSelectedCursoId] = useState("");
     const [loading, setLoading] = useState(true);
 
     // Upload
@@ -61,6 +62,8 @@ export default function TeacherBulkImport() {
     const [results, setResults] = useState<TeacherBulkImportResponse | null>(null);
     const [importing, setImporting] = useState(false);
 
+    const curso = useMemo(() => cursos.find((c) => c.id === selectedCursoId) || null, [cursos, selectedCursoId]);
+
     useEffect(() => {
         (async () => {
             try {
@@ -74,11 +77,9 @@ export default function TeacherBulkImport() {
                     return;
                 }
                 const cursosRes = await api.get<{ data: Curso[] }>("/cursos");
-                const cursos = cursosRes.data || [];
-                const firstCurso = cursos.length > 0 ? cursos[0] : null;
-                if (firstCurso) {
-                    setCurso(firstCurso);
-                }
+                const availableCursos = cursosRes.data || [];
+                setCursos(availableCursos);
+                setSelectedCursoId(availableCursos[0]?.id || "");
             } catch {
                 toast.error("Error al cargar datos");
             } finally {
@@ -201,7 +202,7 @@ export default function TeacherBulkImport() {
         );
     }
 
-    if (!curso) {
+    if (cursos.length === 0) {
         return (
             <div className="max-w-4xl mx-auto p-4">
                 <div className="text-center text-gray-500 p-12 bg-white rounded-lg shadow">
@@ -209,6 +210,14 @@ export default function TeacherBulkImport() {
                     <p className="text-lg font-medium">No tienes un curso asignado</p>
                     <p className="text-sm mt-1">Contacta a un administrador para que te asigne un curso.</p>
                 </div>
+            </div>
+        );
+    }
+
+    if (!curso) {
+        return (
+            <div className="flex items-center justify-center min-h-[40vh]">
+                <Loader2 size={32} className="animate-spin text-blue-600" />
             </div>
         );
     }
@@ -221,12 +230,25 @@ export default function TeacherBulkImport() {
                 <div>
                     <h1 className="text-2xl font-bold text-gray-900">Importar Estudiantes al Curso</h1>
                     <p className="text-sm text-gray-500 mt-1">
-                        Curso: <span className="font-medium text-gray-700">{curso.nombre}</span> — Sube un Excel para inscribir estudiantes
+                        Curso: <span className="font-medium text-gray-700">{curso?.nombre || "-"}</span> — Sube un Excel para inscribir estudiantes
                     </p>
                 </div>
-                <button onClick={() => navigate("/teacher/estudiantes")} className="text-sm text-gray-500 hover:text-gray-700 transition">
-                    ← Volver a estudiantes
-                </button>
+                <div className="flex items-center gap-3">
+                    {cursos.length > 1 && (
+                        <select
+                            className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                            value={selectedCursoId}
+                            onChange={(e) => setSelectedCursoId(e.target.value)}
+                        >
+                            {cursos.map((item) => (
+                                <option key={item.id} value={item.id}>{item.nombre}</option>
+                            ))}
+                        </select>
+                    )}
+                    <button onClick={() => navigate("/teacher/estudiantes")} className="text-sm text-gray-500 hover:text-gray-700 transition">
+                        ← Volver a estudiantes
+                    </button>
+                </div>
             </div>
 
             {/* Progress bar */}

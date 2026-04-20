@@ -683,6 +683,60 @@
       "averageScore": "Promedio",
       "followedContents": "Contenidos que sigue"
     },
+    "cursos": {
+      "title": "Mis cursos",
+      "subtitle": "Materias asignadas por ano escolar",
+      "search": "Buscar por materia, curso o ano...",
+      "empty": "No hay materias asignadas",
+      "emptyHint": "Solicita a administracion la asignacion por materia.",
+      "metrics": {
+        "students": "Estudiantes",
+        "lessons": "Lecciones",
+        "tasks": "Trabajos"
+      },
+      "actions": {
+        "schedule": "Gestionar horario",
+        "students": "Estudiantes"
+      }
+    },
+    "horario": {
+      "title": "Mi horario",
+      "subtitle": "Gestion semanal por materia asignada",
+      "add": "Agregar bloque",
+      "edit": "Editar bloque",
+      "created": "Horario agregado",
+      "updated": "Horario actualizado",
+      "deleted": "Horario eliminado",
+      "confirmDelete": "Eliminar horario?",
+      "validation": {
+        "assignment": "Selecciona una materia",
+        "hours": "Completa hora inicio y fin"
+      },
+      "fields": {
+        "subject": "Materia",
+        "select": "Seleccionar",
+        "day": "Dia",
+        "start": "Inicio",
+        "end": "Fin",
+        "classroom": "Aula (opcional)",
+        "classroomPlaceholder": "Ej: Laboratorio 2"
+      },
+      "actions": {
+        "create": "Agregar",
+        "update": "Actualizar",
+        "cancel": "Cancelar",
+        "edit": "Editar",
+        "delete": "Eliminar"
+      },
+      "table": {
+        "title": "Bloques cargados",
+        "empty": "No hay horarios para esta materia.",
+        "day": "Dia",
+        "time": "Horario",
+        "classroom": "Aula",
+        "actions": "Acciones"
+      }
+    },
     "estudiantes": {
       "title": "Mis Estudiantes",
       "enrolled": "inscritos",
@@ -1255,8 +1309,8 @@
     },
     "cursos": {
       "title": "Gestión de Cursos",
-      "description": "Administra cursos y asigna profesores",
-      "search": "Buscar por nombre, descripción o profesor...",
+      "description": "Administra cursos, materias y asignaciones docentes",
+      "search": "Buscar por curso o materia...",
       "create": {
         "title": "Crear Nuevo Curso",
         "button": "Nuevo Curso"
