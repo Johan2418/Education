@@ -55,7 +55,7 @@ export default function AddContentPage() {
         descripcion: descripcion.trim() || undefined,
       });
       toast.success(t("addcontent.saveSuccess", { defaultValue: "Contenido creado exitosamente" }));
-      navigate("/teacher/contents");
+      navigate("/teacher/materias");
     } catch (err) {
       console.error("Error saving content", err);
       toast.error(t("addcontent.saveError", { defaultValue: "Error al guardar" }));

@@ -7,6 +7,14 @@ import api from "@/shared/lib/api";
 import { Heart, ArrowRight, BookOpenText } from "lucide-react";
 import type { Materia } from "@/shared/types";
 
+function toArray<T>(value: T[] | { data?: T[] } | null | undefined): T[] {
+  if (Array.isArray(value)) return value;
+  if (value && typeof value === "object" && Array.isArray((value as { data?: T[] }).data)) {
+    return (value as { data?: T[] }).data ?? [];
+  }
+  return [];
+}
+
 export default function ContentsPage({ highContrast = false }: { highContrast?: boolean }) {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
@@ -28,6 +36,10 @@ export default function ContentsPage({ highContrast = false }: { highContrast?: 
       try {
         const me = await getMe();
         if (me) {
+          if (["teacher", "admin", "super_admin"].includes(me.role || "")) {
+            navigate("/teacher/materias", { replace: true });
+            return;
+          }
           setUserId(me.id);
           setUserRole(me.role);
           // Load followed materias
@@ -40,12 +52,13 @@ export default function ContentsPage({ highContrast = false }: { highContrast?: 
       }
 
       // Load all cursos then all materias
-      const cursos: any[] = await api.get("/cursos");
+      const cursosRes = await api.get<any[] | { data?: any[] }>("/cursos");
+      const cursos = toArray(cursosRes);
       const allMaterias: Materia[] = [];
-      for (const c of cursos || []) {
+      for (const c of cursos) {
         try {
-          const mats: Materia[] = await api.get(`/cursos/${c.id}/materias`);
-          allMaterias.push(...(mats || []));
+          const matsRes = await api.get<Materia[] | { data?: Materia[] }>(`/cursos/${c.id}/materias`);
+          allMaterias.push(...toArray(matsRes));
         } catch {
           // skip
         }

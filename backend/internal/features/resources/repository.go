@@ -2,6 +2,10 @@ package resources
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"strings"
+	"time"
 
 	"github.com/lib/pq"
 	"gorm.io/gorm"
@@ -173,13 +177,13 @@ func (r *Repository) DeleteRecursoPersonal(ctx context.Context, id string) error
 
 func (r *Repository) ListMateriaRecursosPersonales(ctx context.Context, materiaID, ownerID string, isAdmin bool) ([]RecursoPersonal, error) {
 	query := r.db.WithContext(ctx).
-		Table("internal.recurso_personal rp").
-		Select("rp.*").
-		Joins("JOIN internal.materia_recurso_personal mrp ON mrp.recurso_personal_id = rp.id").
+		Table("internal.recurso_personal").
+		Select("internal.recurso_personal.*").
+		Joins("JOIN internal.materia_recurso_personal mrp ON mrp.recurso_personal_id = internal.recurso_personal.id").
 		Where("mrp.materia_id = ?", materiaID).
-		Order("rp.created_at DESC")
+		Order("internal.recurso_personal.created_at DESC")
 	if !isAdmin {
-		query = query.Where("rp.owner_teacher_id = ?", ownerID)
+		query = query.Where("internal.recurso_personal.owner_teacher_id = ?", ownerID)
 	}
 
 	var items []RecursoPersonal
@@ -189,13 +193,13 @@ func (r *Repository) ListMateriaRecursosPersonales(ctx context.Context, materiaI
 
 func (r *Repository) ListSeccionRecursosPersonales(ctx context.Context, seccionID, ownerID string, isAdmin bool) ([]RecursoPersonal, error) {
 	query := r.db.WithContext(ctx).
-		Table("internal.recurso_personal rp").
-		Select("rp.*").
-		Joins("JOIN internal.seccion_recurso_personal srp ON srp.recurso_personal_id = rp.id").
+		Table("internal.recurso_personal").
+		Select("internal.recurso_personal.*").
+		Joins("JOIN internal.seccion_recurso_personal srp ON srp.recurso_personal_id = internal.recurso_personal.id").
 		Where("srp.seccion_id = ?", seccionID).
-		Order("rp.created_at DESC")
+		Order("internal.recurso_personal.created_at DESC")
 	if !isAdmin {
-		query = query.Where("rp.owner_teacher_id = ?", ownerID)
+		query = query.Where("internal.recurso_personal.owner_teacher_id = ?", ownerID)
 	}
 
 	var items []RecursoPersonal
@@ -205,13 +209,13 @@ func (r *Repository) ListSeccionRecursosPersonales(ctx context.Context, seccionI
 
 func (r *Repository) ListTrabajoRecursosPersonales(ctx context.Context, trabajoID, ownerID string, isAdmin bool) ([]RecursoPersonal, error) {
 	query := r.db.WithContext(ctx).
-		Table("internal.recurso_personal rp").
-		Select("rp.*").
-		Joins("JOIN internal.trabajo_recurso_personal trp ON trp.recurso_personal_id = rp.id").
+		Table("internal.recurso_personal").
+		Select("internal.recurso_personal.*").
+		Joins("JOIN internal.trabajo_recurso_personal trp ON trp.recurso_personal_id = internal.recurso_personal.id").
 		Where("trp.trabajo_id = ?", trabajoID).
-		Order("rp.created_at DESC")
+		Order("internal.recurso_personal.created_at DESC")
 	if !isAdmin {
-		query = query.Where("rp.owner_teacher_id = ?", ownerID)
+		query = query.Where("internal.recurso_personal.owner_teacher_id = ?", ownerID)
 	}
 
 	var items []RecursoPersonal
@@ -286,8 +290,26 @@ func (r *Repository) DetachRecursoPersonalFromTrabajo(ctx context.Context, traba
 }
 
 func (r *Repository) IsTeacherOfMateria(ctx context.Context, teacherID, materiaID string) (bool, error) {
+	anioActivo, err := r.getActiveAcademicYear(ctx)
+	if err != nil {
+		return false, err
+	}
+
 	var count int64
-	err := r.db.WithContext(ctx).
+	err = r.db.WithContext(ctx).
+		Table("internal.docente_materia_asignacion dma").
+		Where("dma.docente_id = ? AND dma.materia_id = ? AND dma.anio_escolar = ? AND dma.activo = TRUE", teacherID, materiaID, anioActivo).
+		Count(&count).Error
+	if err != nil && !isMissingRelationError(err, "internal.docente_materia_asignacion") {
+		return false, err
+	}
+	if count > 0 {
+		return true, nil
+	}
+
+	// Legacy fallback while all environments migrate to subject-level assignments.
+	count = 0
+	err = r.db.WithContext(ctx).
 		Table("internal.materia m").
 		Joins("JOIN internal.curso c ON c.id = m.curso_id").
 		Where("m.id = ? AND c.teacher_id = ?", materiaID, teacherID).
@@ -296,8 +318,31 @@ func (r *Repository) IsTeacherOfMateria(ctx context.Context, teacherID, materiaI
 }
 
 func (r *Repository) IsTeacherOfSeccion(ctx context.Context, teacherID, seccionID string) (bool, error) {
+	anioActivo, err := r.getActiveAcademicYear(ctx)
+	if err != nil {
+		return false, err
+	}
+
 	var count int64
-	err := r.db.WithContext(ctx).
+	err = r.db.WithContext(ctx).
+		Table("internal.leccion_seccion ls").
+		Joins("JOIN internal.leccion l ON l.id = ls.leccion_id").
+		Joins("JOIN internal.tema t ON t.id = l.tema_id").
+		Joins("JOIN internal.unidad u ON u.id = t.unidad_id").
+		Joins("JOIN internal.materia m ON m.id = u.materia_id").
+		Joins("JOIN internal.docente_materia_asignacion dma ON dma.materia_id = m.id").
+		Where("ls.id = ? AND dma.docente_id = ? AND dma.anio_escolar = ? AND dma.activo = TRUE", seccionID, teacherID, anioActivo).
+		Count(&count).Error
+	if err != nil && !isMissingRelationError(err, "internal.docente_materia_asignacion") {
+		return false, err
+	}
+	if count > 0 {
+		return true, nil
+	}
+
+	// Legacy fallback while all environments migrate to subject-level assignments.
+	count = 0
+	err = r.db.WithContext(ctx).
 		Table("internal.leccion_seccion ls").
 		Joins("JOIN internal.leccion l ON l.id = ls.leccion_id").
 		Joins("JOIN internal.tema t ON t.id = l.tema_id").
@@ -310,8 +355,31 @@ func (r *Repository) IsTeacherOfSeccion(ctx context.Context, teacherID, seccionI
 }
 
 func (r *Repository) IsTeacherOfTrabajo(ctx context.Context, teacherID, trabajoID string) (bool, error) {
+	anioActivo, err := r.getActiveAcademicYear(ctx)
+	if err != nil {
+		return false, err
+	}
+
 	var count int64
-	err := r.db.WithContext(ctx).
+	err = r.db.WithContext(ctx).
+		Table("internal.trabajo tr").
+		Joins("JOIN internal.leccion l ON l.id = tr.leccion_id").
+		Joins("JOIN internal.tema t ON t.id = l.tema_id").
+		Joins("JOIN internal.unidad u ON u.id = t.unidad_id").
+		Joins("JOIN internal.materia m ON m.id = u.materia_id").
+		Joins("JOIN internal.docente_materia_asignacion dma ON dma.materia_id = m.id").
+		Where("tr.id = ? AND dma.docente_id = ? AND dma.anio_escolar = ? AND dma.activo = TRUE", trabajoID, teacherID, anioActivo).
+		Count(&count).Error
+	if err != nil && !isMissingRelationError(err, "internal.docente_materia_asignacion") {
+		return false, err
+	}
+	if count > 0 {
+		return true, nil
+	}
+
+	// Legacy fallback while all environments migrate to subject-level assignments.
+	count = 0
+	err = r.db.WithContext(ctx).
 		Table("internal.trabajo tr").
 		Joins("JOIN internal.leccion l ON l.id = tr.leccion_id").
 		Joins("JOIN internal.tema t ON t.id = l.tema_id").
@@ -321,6 +389,53 @@ func (r *Repository) IsTeacherOfTrabajo(ctx context.Context, teacherID, trabajoI
 		Where("tr.id = ? AND c.teacher_id = ?", trabajoID, teacherID).
 		Count(&count).Error
 	return count > 0, err
+}
+
+func (r *Repository) getActiveAcademicYear(ctx context.Context) (string, error) {
+	type configRow struct {
+		AnioEscolarActivo string `gorm:"column:anio_escolar_activo"`
+	}
+
+	var row configRow
+	err := r.db.WithContext(ctx).
+		Table("internal.configuracion_academica").
+		Select("anio_escolar_activo").
+		Where("id = 1").
+		Take(&row).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) || isMissingRelationError(err, "internal.configuracion_academica") {
+			return defaultAcademicYear(), nil
+		}
+		return "", err
+	}
+
+	anio := strings.TrimSpace(row.AnioEscolarActivo)
+	if anio == "" {
+		return defaultAcademicYear(), nil
+	}
+	return anio, nil
+}
+
+func defaultAcademicYear() string {
+	year := time.Now().Year()
+	return fmt.Sprintf("%d-%d", year, year+1)
+}
+
+func isMissingRelationError(err error, relation string) bool {
+	if err == nil {
+		return false
+	}
+	errLower := strings.ToLower(err.Error())
+	if strings.Contains(errLower, "sqlstate 42p01") {
+		if strings.TrimSpace(relation) == "" {
+			return true
+		}
+		return strings.Contains(errLower, strings.ToLower(relation))
+	}
+	if strings.TrimSpace(relation) == "" {
+		return strings.Contains(errLower, "does not exist")
+	}
+	return strings.Contains(errLower, fmt.Sprintf("relation \"%s\" does not exist", strings.ToLower(relation)))
 }
 
 // ═══════════════════════════════════════════════════════════════

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { BookOpen, CalendarDays, Loader2, Search, Users } from "lucide-react";
 import toast from "react-hot-toast";
@@ -19,9 +19,12 @@ function normalizeError(err: unknown): string {
 export default function TeacherMisCursos() {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [items, setItems] = useState<MisCursoDocente[]>([]);
+
+  const selectedAsignacionId = (searchParams.get("asignacion") || "").trim();
 
   useEffect(() => {
     (async () => {
@@ -45,15 +48,31 @@ export default function TeacherMisCursos() {
 
   const filtered = useMemo(() => {
     const source = Array.isArray(items) ? items : [];
+    const scoped = selectedAsignacionId
+      ? source.filter((item) => item.asignacion_id === selectedAsignacionId)
+      : source;
+
     const query = search.trim().toLowerCase();
-    if (!query) return source;
-    return source.filter((item) => {
+    if (!query) return scoped;
+
+    return scoped.filter((item) => {
       const materia = item.materia_nombre.toLowerCase();
       const curso = item.curso_nombre.toLowerCase();
       const anio = item.anio_escolar.toLowerCase();
       return materia.includes(query) || curso.includes(query) || anio.includes(query);
     });
-  }, [items, search]);
+  }, [items, search, selectedAsignacionId]);
+
+  const selectedFromQuery = useMemo(() => {
+    if (!selectedAsignacionId) return null;
+    return items.find((item) => item.asignacion_id === selectedAsignacionId) || null;
+  }, [items, selectedAsignacionId]);
+
+  const clearSelection = () => {
+    const next = new URLSearchParams(searchParams);
+    next.delete("asignacion");
+    setSearchParams(next, { replace: true });
+  };
 
   if (loading) {
     return (
@@ -71,6 +90,27 @@ export default function TeacherMisCursos() {
           {t("teacher.cursos.subtitle", { defaultValue: "Materias asignadas por ano escolar" })}
         </p>
       </div>
+
+      {selectedAsignacionId && (
+        <div className="mb-4 rounded-lg border border-blue-200 bg-blue-50 p-3 flex flex-wrap gap-2 items-center justify-between">
+          <p className="text-sm text-blue-800">
+            {selectedFromQuery
+              ? t("teacher.cursos.selected", {
+                defaultValue: "Mostrando {{materia}} - {{curso}} ({{anio}})",
+                materia: selectedFromQuery.materia_nombre,
+                curso: selectedFromQuery.curso_nombre,
+                anio: selectedFromQuery.anio_escolar,
+              })
+              : t("teacher.cursos.selectedMissing", { defaultValue: "La materia seleccionada no está disponible en este ciclo." })}
+          </p>
+          <button
+            onClick={clearSelection}
+            className="text-sm font-medium px-3 py-1.5 rounded-md border border-blue-300 text-blue-700 hover:bg-blue-100"
+          >
+            {t("teacher.cursos.clearSelection", { defaultValue: "Ver todas" })}
+          </button>
+        </div>
+      )}
 
       <div className="relative mb-4">
         <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
@@ -95,7 +135,10 @@ export default function TeacherMisCursos() {
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
           {filtered.map((item) => (
-            <article key={item.asignacion_id} className="bg-white rounded-xl shadow p-4 border border-gray-100">
+            <article
+              key={item.asignacion_id}
+              className={`bg-white rounded-xl shadow p-4 border ${item.asignacion_id === selectedAsignacionId ? "border-blue-400 ring-2 ring-blue-100" : "border-gray-100"}`}
+            >
               <div className="flex items-start justify-between gap-3 mb-3">
                 <div>
                   <h2 className="font-semibold text-gray-900">{item.materia_nombre}</h2>

@@ -12,7 +12,6 @@ import {
   Volume2,
   Type,
   Contrast,
-  Plus,
   FileSpreadsheet,
   X,
   LayoutDashboard,
@@ -94,6 +93,11 @@ const Sidebar: FC<SidebarProps> = ({
 
   const isAdmin = hook.profile?.role === "admin" || hook.profile?.role === "super_admin";
   const isTeacher = hook.profile?.role === "teacher";
+  const isTeacherOrAdmin = isTeacher || isAdmin;
+  const contentRoute = (type?: string) => {
+    if (isTeacherOrAdmin) return "/teacher/materias";
+    return type ? `/contents?type=${type}` : "/contents";
+  };
 
   const ToggleRow = ({
     icon: Icon,
@@ -170,17 +174,21 @@ const Sidebar: FC<SidebarProps> = ({
 
           {hook.openMenus.aprende && (
             <div className="ml-3 mt-0.5 flex flex-col space-y-0.5 animate-fade-in">
-              <SidebarItem onClick={() => hook.navigate("/contents?type=molecule")} icon={Atom} label={hook.t("molecules")} iconSize={16} />
-              <SidebarItem onClick={() => hook.navigate("/contents?type=atom")} icon={FlaskRound} label={hook.t("atoms")} iconSize={16} />
-              <SidebarItem onClick={() => hook.navigate("/contents?type=periodic-table")} icon={FlaskConical} label={hook.t("periodicTable")} iconSize={16} />
+              <SidebarItem onClick={() => hook.navigate(contentRoute("molecule"))} icon={Atom} label={hook.t("molecules")} iconSize={16} />
+              <SidebarItem onClick={() => hook.navigate(contentRoute("atom"))} icon={FlaskRound} label={hook.t("atoms")} iconSize={16} />
+              <SidebarItem onClick={() => hook.navigate(contentRoute("periodic-table"))} icon={FlaskConical} label={hook.t("periodicTable")} iconSize={16} />
               <SidebarItem onClick={() => hook.navigate("/lessons")} icon={BookOpenText} label={hook.t("lessons.title")} iconSize={16} />
-              <SidebarItem onClick={() => hook.navigate("/contents?type=chemical-reaction")} icon={FlaskConical} label={hook.t("chemicalReactions")} iconSize={16} />
-              <SidebarItem onClick={() => hook.navigate("/contents?type=article")} icon={BookOpenText} label={hook.t("article")} iconSize={16} />
+              <SidebarItem onClick={() => hook.navigate(contentRoute("chemical-reaction"))} icon={FlaskConical} label={hook.t("chemicalReactions")} iconSize={16} />
+              <SidebarItem onClick={() => hook.navigate(contentRoute("article"))} icon={BookOpenText} label={hook.t("article")} iconSize={16} />
             </div>
           )}
 
-          <SidebarItem onClick={() => hook.navigate("/contents")} icon={BookOpenText} label={hook.t("contents.title")} />
-          <SidebarItem onClick={() => hook.navigate("/contents?type=experiment")} icon={FlaskConical} label={hook.t("experiments")} iconSize={16} />
+          <SidebarItem
+            onClick={() => hook.navigate(contentRoute())}
+            icon={BookOpenText}
+            label={isTeacherOrAdmin ? hook.t("teacher.subjects.navTitle", { defaultValue: "Mis materias" }) : hook.t("contents.title")}
+          />
+          <SidebarItem onClick={() => hook.navigate(contentRoute("experiment"))} icon={FlaskConical} label={hook.t("experiments")} iconSize={16} />
 
           {/* Accessibility */}
           <SectionLabel label={hook.t("accessibility")} />
@@ -210,8 +218,12 @@ const Sidebar: FC<SidebarProps> = ({
           {hook.profile && (isTeacher || isAdmin) && (
             <>
               <SectionLabel label={isAdmin ? "Admin / Docente" : "Docente"} />
-              <SidebarItem onClick={() => hook.navigate("/add-content")} icon={Plus} label={hook.t("addContent")} iconSize={16} />
-              <SidebarItem onClick={() => hook.navigate("/teacher/contents")} icon={BookOpenText} label={isAdmin ? hook.t("teacher.contents.titleAll") : hook.t("teacher.myContents")} iconSize={16} />
+              <SidebarItem
+                onClick={() => hook.navigate("/teacher/materias")}
+                icon={BookOpenText}
+                label={hook.t("teacher.subjects.navTitle", { defaultValue: "Mis materias" })}
+                iconSize={16}
+              />
               <SidebarItem onClick={() => hook.navigate("/teacher/pruebas")} icon={BookOpenText} label={isAdmin ? hook.t("teacher.pruebas.titleAll") : hook.t("teacher.pruebas.title")} iconSize={16} />
               <SidebarItem onClick={() => hook.navigate("/teacher/trabajos")} icon={BookOpenText} label={hook.t("teacher.trabajos.title", { defaultValue: "Trabajos" })} iconSize={16} />
               <SidebarItem onClick={() => hook.navigate("/teacher/trabajos/analytics")} icon={LayoutDashboard} label={hook.t("teacher.trabajos.analytics.nav", { defaultValue: "Analytics v2" })} iconSize={16} />

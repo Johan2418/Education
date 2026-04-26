@@ -239,7 +239,7 @@
     "registerOrLogin": "Regístrate o inicia sesión"
   },
   "contents": {
-    "title": "Contenido General",
+    "title": "Mis materias",
     "noRecords": "No hay registros",
     "follow": "Seguir",
     "unfollow": "Dejar de seguir",
@@ -486,14 +486,88 @@
     }
   },
   "teacher": {
-    "myContents": "Mis contenidos",
+    "myContents": "Mis materias",
     "newContent": "Nuevo contenido",
     "edit": "Editar",
     "newLesson": "Nueva lección",
     "lessons": "Lecciones",
+    "subjects": {
+      "navTitle": "Mis materias",
+      "title": "Mis materias",
+      "subtitle": "Gestiona recursos por materia para construir la vista de temas de clase para estudiantes.",
+      "search": "Buscar por materia, curso o año...",
+      "empty": "No hay materias asignadas",
+      "emptyHint": "Solicita a administración la asignación por materia.",
+      "resourceHubHint": "Define recursos para preparar temas de clase y experiencia del estudiante.",
+      "actions": {
+        "personalResources": "Recursos personales",
+        "globalResources": "Recursos",
+        "viewTopics": "Vista temas",
+        "createContent": "Crear contenido"
+      },
+      "createSection": {
+        "badge": "Nuevo flujo",
+        "title": "Crear contenido para esta materia",
+        "description": "Sección inicial lista para la próxima fase: aquí construiremos la creación de unidades, temas y lecciones por materia.",
+        "comingSoon": "Próximamente: creación completa de contenido por materia.",
+        "hint": "Después de crear una lección, configúrala en detalle para agregar recursos, preguntas, actividades y reglas de avance.",
+        "items": {
+          "unit": "Unidad",
+          "topic": "Tema",
+          "lesson": "Lección"
+        },
+        "placeholders": {
+          "unitName": "Nombre de la unidad",
+          "unitDescription": "Descripción (opcional)",
+          "selectUnit": "Selecciona unidad",
+          "topicName": "Nombre del tema",
+          "topicDescription": "Descripción (opcional)",
+          "selectTopic": "Selecciona tema",
+          "lessonTitle": "Título de la lección",
+          "lessonLevel": "Nivel (opcional)",
+          "lessonDescription": "Descripción (opcional)"
+        },
+        "actions": {
+          "createUnit": "Crear unidad",
+          "createTopic": "Crear tema",
+          "createLesson": "Crear lección",
+          "configureLesson": "Configurar lección"
+        },
+        "validation": {
+          "unitName": "El nombre de la unidad es obligatorio.",
+          "selectUnit": "Selecciona una unidad.",
+          "topicName": "El nombre del tema es obligatorio.",
+          "selectTopic": "Selecciona un tema.",
+          "lessonTitle": "El título de la lección es obligatorio."
+        },
+        "created": {
+          "unit": "Unidad creada",
+          "topic": "Tema creado",
+          "lesson": "Lección creada"
+        },
+        "errors": {
+          "unit": "No se pudo crear la unidad",
+          "topic": "No se pudo crear el tema",
+          "lesson": "No se pudo crear la lección"
+        }
+      },
+      "deleteSection": {
+        "confirmUnit": "¿Eliminar unidad \"{nombre}\" y todo su contenido? Esta acción no se puede deshacer.",
+        "confirmTopic": "¿Eliminar tema \"{nombre}\" y todas sus lecciones? Esta acción no se puede deshacer.",
+        "confirmLesson": "¿Eliminar lección \"{titulo}\"? Esta acción no se puede deshacer.",
+        "deletedUnit": "Unidad eliminada",
+        "deletedTopic": "Tema eliminado",
+        "deletedLesson": "Lección eliminada",
+        "errorUnit": "No se pudo eliminar la unidad",
+        "errorTopic": "No se pudo eliminar el tema",
+        "errorLesson": "No se pudo eliminar la lección"
+      },
+      "cardTitle": "Mis materias",
+      "cardDescription": "Gestiona recursos y vista de temas por materia"
+    },
     "contents": {
-      "title": "Mis Contenidos",
-      "titleAll": "Todos los Contenidos",
+      "title": "Mis materias",
+      "titleAll": "Todas las materias",
       "viewingAll": "Vista de administrador: viendo todos los contenidos del sistema",
       "description": "Gestiona todos tus contenidos y lecciones",
       "searchPlaceholder": "Buscar contenidos...",
@@ -685,10 +759,13 @@
     },
     "cursos": {
       "title": "Mis cursos",
-      "subtitle": "Materias asignadas por ano escolar",
-      "search": "Buscar por materia, curso o ano...",
+      "subtitle": "Materias asignadas por año escolar",
+      "search": "Buscar por materia, curso o año...",
+      "selected": "Mostrando {{materia}} - {{curso}} ({{anio}})",
+      "selectedMissing": "La materia seleccionada no está disponible en este ciclo.",
+      "clearSelection": "Ver todas",
       "empty": "No hay materias asignadas",
-      "emptyHint": "Solicita a administracion la asignacion por materia.",
+      "emptyHint": "Solicita a administración la asignación por materia.",
       "metrics": {
         "students": "Estudiantes",
         "lessons": "Lecciones",

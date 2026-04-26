@@ -68,7 +68,7 @@ export default function TeacherContents() {
     <div className="max-w-6xl mx-auto p-4">
       <div className="flex items-center justify-between mb-4">
         <h1 className="text-2xl font-bold">{t("teacher.contents.title", { defaultValue: "Gestión de Contenidos" })}</h1>
-        <button onClick={() => navigate("/add-content")} className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+        <button onClick={() => navigate("/teacher/materias")} className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
           <Plus size={16} /> {t("teacher.contents.add", { defaultValue: "Nuevo" })}
         </button>
       </div>
@@ -94,7 +94,7 @@ export default function TeacherContents() {
               <h3 className="font-semibold mb-1">{m.nombre}</h3>
               {m.descripcion && <p className="text-sm text-gray-500 mb-2 line-clamp-2">{m.descripcion}</p>}
               <div className="mt-auto flex items-center gap-2 pt-3">
-                <button onClick={() => navigate(`/add-content?materiaId=${m.id}`)} className="p-2 text-blue-600 hover:bg-blue-50 rounded">
+                <button onClick={() => navigate(`/contents/${m.id}?openCreate=1`)} className="p-2 text-blue-600 hover:bg-blue-50 rounded">
                   <Pencil size={16} />
                 </button>
                 <button

@@ -60,7 +60,6 @@ export default function Navbar({
             {hook.location.pathname === "/" && t("nav.home")}
             {hook.location.pathname === "/login" && t("nav.login")}
             {hook.location.pathname === "/register" && t("nav.register")}
-            {hook.location.pathname === "/add-content" && t("nav.addContent")}
           </div>
         </div>
 
@@ -127,11 +126,6 @@ export default function Navbar({
             <a href="#" className={`text-sm font-medium transition-colors hover:text-indigo-600 ${hook.location.pathname === "/" ? "text-indigo-600 font-semibold" : "text-gray-600"}`} onClick={() => hook.navigate("/")}>
               {t("nav.home")}
             </a>
-            {hook.isTeacher && (
-              <a href="#" className={`text-sm font-medium transition-colors hover:text-indigo-600 ${hook.location.pathname === "/add-content" ? "text-indigo-600 font-semibold" : "text-gray-600"}`} onClick={() => hook.navigate("/add-content")}>
-                {t("addContent")}
-              </a>
-            )}
           </div>
 
           <button
@@ -162,18 +156,6 @@ export default function Navbar({
               <span className={`hidden sm:inline-block px-3 py-1 rounded-lg text-sm font-medium ${highContrast ? "text-yellow-300" : "text-gray-700"}`}>
                 {hook.displayName}
               </span>
-              {(hook.isTeacher || hook.isAdmin) && (
-                <button
-                  className={`hidden sm:inline-flex px-4 py-2 text-sm font-semibold rounded-xl transition-all duration-200 ${
-                    highContrast
-                      ? "bg-yellow-300 text-black hover:bg-yellow-400"
-                      : "bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 text-white shadow-md hover:shadow-lg active:scale-[0.98]"
-                  }`}
-                  onClick={() => hook.navigate("/add-content")}
-                >
-                  {t("addContent")}
-                </button>
-              )}
               <button
                 className={`px-3.5 py-2 text-sm font-semibold rounded-xl transition-all duration-200 ${
                   highContrast

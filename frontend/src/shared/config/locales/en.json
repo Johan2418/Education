@@ -240,7 +240,7 @@
     "registerOrLogin": "Register or log in"
   },
   "contents": {
-    "title": "General Content",
+    "title": "My subjects",
     "noRecords": "No records found",
     "follow": "Follow",
     "unfollow": "Unfollow",
@@ -491,14 +491,88 @@
     }
   },
   "teacher": {
-    "myContents": "My contents",
+    "myContents": "My subjects",
     "newContent": "New content",
     "edit": "Edit",
     "newLesson": "New Lesson",
     "lessons": "Lessons",
+    "subjects": {
+      "navTitle": "My subjects",
+      "title": "My subjects",
+      "subtitle": "Manage resources by subject to build the class topics view for students.",
+      "search": "Search by subject, course or year...",
+      "empty": "No assigned subjects",
+      "emptyHint": "Ask administration to assign subjects.",
+      "resourceHubHint": "Define resources to shape class topics and student experience.",
+      "actions": {
+        "personalResources": "Personal resources",
+        "globalResources": "Resources",
+        "viewTopics": "Topics view",
+        "createContent": "Create content"
+      },
+      "createSection": {
+        "badge": "New flow",
+        "title": "Create content for this subject",
+        "description": "Initial section ready for the next phase: here we will build unit, topic and lesson creation by subject.",
+        "comingSoon": "Coming soon: full content creation by subject.",
+        "hint": "After creating a lesson, configure it in detail to add resources, questions, activities and progression rules.",
+        "items": {
+          "unit": "Unit",
+          "topic": "Topic",
+          "lesson": "Lesson"
+        },
+        "placeholders": {
+          "unitName": "Unit name",
+          "unitDescription": "Description (optional)",
+          "selectUnit": "Select unit",
+          "topicName": "Topic name",
+          "topicDescription": "Description (optional)",
+          "selectTopic": "Select topic",
+          "lessonTitle": "Lesson title",
+          "lessonLevel": "Level (optional)",
+          "lessonDescription": "Description (optional)"
+        },
+        "actions": {
+          "createUnit": "Create unit",
+          "createTopic": "Create topic",
+          "createLesson": "Create lesson",
+          "configureLesson": "Configure lesson"
+        },
+        "validation": {
+          "unitName": "Unit name is required.",
+          "selectUnit": "Select a unit.",
+          "topicName": "Topic name is required.",
+          "selectTopic": "Select a topic.",
+          "lessonTitle": "Lesson title is required."
+        },
+        "created": {
+          "unit": "Unit created",
+          "topic": "Topic created",
+          "lesson": "Lesson created"
+        },
+        "errors": {
+          "unit": "Could not create the unit",
+          "topic": "Could not create the topic",
+          "lesson": "Could not create the lesson"
+        }
+      },
+      "deleteSection": {
+        "confirmUnit": "Delete unit \"{nombre}\" and all its content? This action cannot be undone.",
+        "confirmTopic": "Delete topic \"{nombre}\" and all its lessons? This action cannot be undone.",
+        "confirmLesson": "Delete lesson \"{titulo}\"? This action cannot be undone.",
+        "deletedUnit": "Unit deleted",
+        "deletedTopic": "Topic deleted",
+        "deletedLesson": "Lesson deleted",
+        "errorUnit": "Could not delete the unit",
+        "errorTopic": "Could not delete the topic",
+        "errorLesson": "Could not delete the lesson"
+      },
+      "cardTitle": "My subjects",
+      "cardDescription": "Manage resources and topics view per subject"
+    },
     "contents": {
-      "title": "My Contents",
-      "titleAll": "All Contents",
+      "title": "My subjects",
+      "titleAll": "All subjects",
       "viewingAll": "Admin view: viewing all contents in the system",
       "description": "Manage all your contents and lessons",
       "searchPlaceholder": "Search contents...",
@@ -692,6 +766,9 @@
       "title": "My courses",
       "subtitle": "Subjects assigned by school year",
       "search": "Search by subject, course or year...",
+      "selected": "Showing {{materia}} - {{curso}} ({{anio}})",
+      "selectedMissing": "The selected subject is not available in this school cycle.",
+      "clearSelection": "View all",
       "empty": "No assigned subjects",
       "emptyHint": "Ask administration to assign subjects.",
       "metrics": {

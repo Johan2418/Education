@@ -4,19 +4,18 @@ import Sidebar from "@/app/layout/Sidebar";
 import { useEffect, useState } from "react";
 import MainContent from "@/app/layout/MainContent";
 import "@/shared/config/i18n";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import Login from "@/features/auth/pages/login";
 // import Register from "@/features/auth/pages/register"; // Registration disabled
 import ResetPassword from "@/features/auth/pages/resetPassword";
 import VerifyEmail from "@/features/auth/pages/verifyEmail";
-import AddContentPage from "@/features/content/pages/addContent";
 import VisualAlert from "@/shared/components/VisualAlert";
 import { Toaster } from "react-hot-toast";
 import SettingsPage from "@/features/settings/pages/settings";
 import ContentsPage from "@/features/content/pages/contents";
+import ContenidoPage from "@/features/content/pages/contenido";
 import TeacherDashboard from "@/features/teacher/pages/teacherDashboard";
 import TeacherLessons from "@/features/lessons/pages/teacherLessons";
-import TeacherContents from "@/features/content/pages/teacherContents";
 import TeacherPruebas from "@/features/pruebas/pages/teacherPruebas";
 import TeacherPerformance from "@/features/performance/pages/teacherPerformance";
 import LessonsPage from "@/features/lessons/pages/lessons";
@@ -33,6 +32,7 @@ import TeacherEstudiantes from "@/features/teacher/pages/teacherEstudiantes";
 import TeacherBulkImport from "@/features/teacher/pages/teacherBulkImport";
 import TeacherMisCursos from "@/features/teacher/pages/teacherMisCursos";
 import TeacherHorario from "@/features/teacher/pages/teacherHorario";
+import TeacherMaterias from "@/features/teacher/pages/teacherMaterias";
 import TeacherTrabajos from "@/features/trabajos/pages/teacherTrabajos";
 import TeacherTrabajoCalificar from "@/features/trabajos/pages/teacherTrabajoCalificar";
 import TeacherTrabajoLibroWizard from "@/features/trabajos/pages/teacherTrabajoLibroWizard";
@@ -145,8 +145,9 @@ function App() {
               <Route path="/register" element={<Login textSizeLarge={textSizeLarge} highContrast={highContrast} />} />
               <Route path="/verify" element={<VerifyEmail textSizeLarge={textSizeLarge} highContrast={highContrast} />} />
               <Route path="/reset-password" element={<ResetPassword textSizeLarge={textSizeLarge} highContrast={highContrast} />} />
-              <Route path="/add-content" element={<AddContentPage />} />
+              <Route path="/add-content" element={<Navigate to="/teacher/materias" replace />} />
               <Route path="/contents" element={<ContentsPage highContrast={highContrast} />} />
+              <Route path="/contents/:materiaId" element={<ContenidoPage />} />
               <Route path="/lessons" element={<LessonsPage highContrast={highContrast} />} />
               <Route path="/lesson/:lessonId" element={<LessonDetailPage />} />
               <Route path="/lesson/:lessonId/prueba/:pruebaId" element={<PruebaPage />} />
@@ -154,7 +155,8 @@ function App() {
               <Route path="/teacher" element={<TeacherDashboard highContrast={highContrast} />} />
               <Route path="/teacher/lessons" element={<TeacherLessons />} />
               <Route path="/teacher/lessons/:lessonId/sections" element={<TeacherLessonSectionsPage />} />
-              <Route path="/teacher/contents" element={<TeacherContents />} />
+              <Route path="/teacher/materias" element={<TeacherMaterias />} />
+              <Route path="/teacher/contents" element={<Navigate to="/teacher/materias" replace />} />
               <Route path="/teacher/pruebas" element={<TeacherPruebas />} />
               <Route path="/teacher/trabajos" element={<TeacherTrabajos />} />
               <Route path="/teacher/trabajos/:trabajoId/calificar" element={<TeacherTrabajoCalificar />} />

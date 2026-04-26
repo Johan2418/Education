@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { getMe } from "@/shared/lib/auth";
 import { useTranslation } from "react-i18next";
-import { BookOpen, FileText, HelpCircle, BarChart3, ArrowRight, CalendarDays, Layers3 } from "lucide-react";
+import { BookMarked, BookOpen, HelpCircle, BarChart3, ArrowRight, CalendarDays, Layers3 } from "lucide-react";
 
 const cardColors = [
   { from: "from-indigo-500", to: "to-violet-500", light: "bg-indigo-50", text: "text-indigo-600" },
@@ -43,7 +43,12 @@ export default function TeacherDashboard({ highContrast = false }: { highContras
 
   const cards = [
     { title: t("teacher.lessons", { defaultValue: "Gestión de Lecciones" }), desc: "Crear y administrar lecciones para tus estudiantes", icon: BookOpen, path: "/teacher/lessons" },
-    { title: t("teacher.contents", { defaultValue: "Gestión de Contenidos" }), desc: "Organizar materias, unidades y temas", icon: FileText, path: "/teacher/contents" },
+    {
+      title: t("teacher.subjects.cardTitle", { defaultValue: "Mis materias" }),
+      desc: t("teacher.subjects.cardDescription", { defaultValue: "Gestiona recursos y vista de temas por materia" }),
+      icon: BookMarked,
+      path: "/teacher/materias",
+    },
     { title: t("teacher.questions", { defaultValue: "Preguntas y Respuestas" }), desc: "Crear evaluaciones y pruebas", icon: HelpCircle, path: "/teacher/pruebas" },
     { title: t("teacher.performance", { defaultValue: "Rendimiento Estudiantil" }), desc: "Analizar el progreso de tus estudiantes", icon: BarChart3, path: "/teacher/performance" },
     { title: t("teacher.cursos.title", { defaultValue: "Mis cursos" }), desc: "Ver materias asignadas con métricas clave", icon: Layers3, path: "/teacher/cursos" },

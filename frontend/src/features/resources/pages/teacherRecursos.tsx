@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { Search, BookOpenText, Globe2, Lock, Loader2, ArrowRight, Filter } from "lucide-react";
 import toast from "react-hot-toast";
 
@@ -48,8 +48,46 @@ function normalizeError(err: unknown): string {
   return "Error inesperado";
 }
 
+interface MateriaContext {
+  materiaId: string;
+  materiaNombre: string;
+  cursoNombre: string;
+  anioEscolar: string;
+}
+
+function resolveMateriaContext(searchParams: URLSearchParams): MateriaContext | null {
+  const materiaId = searchParams.get("materiaId")?.trim();
+  if (!materiaId) return null;
+
+  return {
+    materiaId,
+    materiaNombre: searchParams.get("materiaNombre")?.trim() || "Materia",
+    cursoNombre: searchParams.get("cursoNombre")?.trim() || "Curso",
+    anioEscolar: searchParams.get("anioEscolar")?.trim() || "",
+  };
+}
+
+function buildMateriaContextQuery(context: MateriaContext): string {
+  const params = new URLSearchParams();
+  params.set("materiaId", context.materiaId);
+  params.set("materiaNombre", context.materiaNombre);
+  params.set("cursoNombre", context.cursoNombre);
+  if (context.anioEscolar) {
+    params.set("anioEscolar", context.anioEscolar);
+  }
+  return params.toString();
+}
+
 export default function TeacherRecursos() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+
+  const materiaContext = useMemo(() => resolveMateriaContext(searchParams), [searchParams]);
+  const materiaContextLabel = useMemo(() => {
+    if (!materiaContext) return "";
+    const yearSuffix = materiaContext.anioEscolar ? ` (${materiaContext.anioEscolar})` : "";
+    return `${materiaContext.materiaNombre} - ${materiaContext.cursoNombre}${yearSuffix}`;
+  }, [materiaContext]);
 
   const [checkingAuth, setCheckingAuth] = useState(true);
   const [loading, setLoading] = useState(false);
@@ -205,6 +243,30 @@ export default function TeacherRecursos() {
         <section className="mb-5 rounded-2xl border border-amber-300 bg-amber-50 p-4 text-amber-900 text-sm">
           <p className="font-semibold">Compatibilidad backend detectada</p>
           <p className="mt-1">{compatWarning}</p>
+        </section>
+      )}
+
+      {materiaContext && (
+        <section className="mb-5 rounded-2xl border border-indigo-200 bg-indigo-50 p-4 text-indigo-900">
+          <p className="text-xs uppercase tracking-[0.2em]">Contexto de materia</p>
+          <p className="font-semibold mt-1">{materiaContextLabel}</p>
+          <p className="text-sm mt-1">Esta biblioteca sigue siendo global. Usa el acceso rápido para gestionar recursos personales de esta materia.</p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => navigate(`/teacher/recursos-personales?${buildMateriaContextQuery(materiaContext)}`)}
+              className="px-3 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700"
+            >
+              Ir a Recursos personales
+            </button>
+            <button
+              type="button"
+              onClick={() => navigate("/teacher/materias")}
+              className="px-3 py-2 rounded-lg border border-indigo-300 text-indigo-700 text-sm font-medium hover:bg-indigo-100"
+            >
+              Volver a Mis materias
+            </button>
+          </div>
         </section>
       )}
 

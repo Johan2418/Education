@@ -102,17 +102,35 @@ function toFormState(item: RecursoPersonal): RecursoPersonalFormState {
 function resolveScope(searchParams: URLSearchParams): ScopeContext | null {
   const materiaId = searchParams.get("materiaId")?.trim();
   if (materiaId) {
-    return { type: "materia", id: materiaId, label: `Materia ${materiaId.slice(0, 8)}...` };
+    const materiaNombre = searchParams.get("materiaNombre")?.trim();
+    const cursoNombre = searchParams.get("cursoNombre")?.trim();
+    const anioEscolar = searchParams.get("anioEscolar")?.trim();
+
+    const baseLabel = materiaNombre || `Materia ${materiaId.slice(0, 8)}...`;
+    const cursoLabel = cursoNombre ? ` - ${cursoNombre}` : "";
+    const yearLabel = anioEscolar ? ` (${anioEscolar})` : "";
+
+    return { type: "materia", id: materiaId, label: `${baseLabel}${cursoLabel}${yearLabel}` };
   }
 
   const seccionId = searchParams.get("seccionId")?.trim();
   if (seccionId) {
-    return { type: "seccion", id: seccionId, label: `Sección ${seccionId.slice(0, 8)}...` };
+    const seccionNombre = searchParams.get("seccionNombre")?.trim();
+    return {
+      type: "seccion",
+      id: seccionId,
+      label: seccionNombre || `Sección ${seccionId.slice(0, 8)}...`,
+    };
   }
 
   const trabajoId = searchParams.get("trabajoId")?.trim();
   if (trabajoId) {
-    return { type: "trabajo", id: trabajoId, label: `Trabajo ${trabajoId.slice(0, 8)}...` };
+    const trabajoTitulo = searchParams.get("trabajoTitulo")?.trim();
+    return {
+      type: "trabajo",
+      id: trabajoId,
+      label: trabajoTitulo || `Trabajo ${trabajoId.slice(0, 8)}...`,
+    };
   }
 
   return null;
