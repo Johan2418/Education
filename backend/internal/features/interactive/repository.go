@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -87,6 +88,8 @@ func (r *Repository) UpdateActividad(ctx context.Context, actividadID string, re
 	}
 	if req.EmbedURL != "" {
 		updates["embed_url"] = req.EmbedURL
+	} else if strings.EqualFold(strings.TrimSpace(req.Proveedor), "nativo") {
+		updates["embed_url"] = ""
 	}
 	if req.ReglaCompletitud != nil {
 		updates["regla_completitud"] = *req.ReglaCompletitud

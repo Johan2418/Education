@@ -16,10 +16,10 @@ import {
 import toast from "react-hot-toast";
 
 import api from "@/shared/lib/api";
-import type { Leccion, Tema } from "@/shared/types";
+import type { Leccion, LeccionSeccion, Tema } from "@/shared/types";
 
 type BlockType = "document" | "video" | "image" | "quiz" | "interactive";
-type InteractiveProvider = "h5p" | "genially" | "educaplay";
+type InteractiveProvider = "h5p" | "genially" | "educaplay" | "nativo";
 
 interface ApiEnvelope<T> {
   data: T;
@@ -49,6 +49,10 @@ interface ContentBlockDraft {
   questions: QuestionDraft[];
   interactiveProvider: InteractiveProvider;
   interactiveEmbedUrl: string;
+  videoCheckpointSeconds: string;
+  nativeQuickQuizEnabled: boolean;
+  nativeQuickTimeSeconds: string;
+  nativeQuickAutoSkipOnTimeout: boolean;
 }
 
 interface TopicConfigurationModalProps {
@@ -120,6 +124,10 @@ function createBlock(type: BlockType): ContentBlockDraft {
     questions: type === "video" || type === "image" || type === "quiz" ? [createQuestion()] : [],
     interactiveProvider: "h5p",
     interactiveEmbedUrl: "",
+    videoCheckpointSeconds: type === "video" ? "45" : "",
+    nativeQuickQuizEnabled: false,
+    nativeQuickTimeSeconds: "15",
+    nativeQuickAutoSkipOnTimeout: true,
   };
 }
 
@@ -386,15 +394,38 @@ export function TopicConfigurationModal({ open, topic, onClose, onSaved }: Topic
           return;
         }
       }
-      if (block.type === "interactive" && !block.interactiveEmbedUrl.trim()) {
-        toast.error(`La actividad "${block.title}" requiere URL de embed.`);
-        return;
-      }
       if (block.type === "video" || block.type === "image" || block.type === "quiz") {
         const questionsErr = validateQuestions(block.questions, block.title.trim() || blockLabel(block.type));
         if (questionsErr) {
           toast.error(questionsErr);
           return;
+        }
+      }
+      if (block.type === "video") {
+        const checkpoint = Number(block.videoCheckpointSeconds);
+        if (!Number.isFinite(checkpoint) || checkpoint <= 0) {
+          toast.error(`El bloque "${block.title}" requiere un checkpoint de video en segundos mayor a 0.`);
+          return;
+        }
+      }
+      if (block.type === "interactive") {
+        if (block.interactiveProvider !== "nativo" && !block.interactiveEmbedUrl.trim()) {
+          toast.error(`La actividad "${block.title}" requiere URL de embed.`);
+          return;
+        }
+        if (block.interactiveProvider === "nativo") {
+          const questionsErr = validateQuestions(block.questions, block.title.trim() || "Actividad nativa");
+          if (questionsErr) {
+            toast.error(questionsErr);
+            return;
+          }
+          if (block.nativeQuickQuizEnabled) {
+            const quickSeconds = Number(block.nativeQuickTimeSeconds);
+            if (!Number.isFinite(quickSeconds) || quickSeconds <= 0) {
+              toast.error(`La actividad "${block.title}" requiere un tiempo por pregunta mayor a 0 para Quiz veloz.`);
+              return;
+            }
+          }
         }
       }
     }
@@ -423,14 +454,15 @@ export function TopicConfigurationModal({ open, topic, onClose, onSaved }: Topic
             es_publico: false,
           });
           const resource = unwrapApiData(resourceRes);
-          await api.post("/secciones", {
+          const resourceSectionRes = await api.post<LeccionSeccion | ApiEnvelope<LeccionSeccion>>("/secciones", {
             leccion_id: lesson.id,
-            tipo: "recurso",
+            tipo: block.type === "video" ? "video" : "recurso",
             recurso_id: resource.id,
             orden: sectionOrder,
             visible: true,
             es_obligatorio: true,
           });
+          const resourceSection = unwrapApiData(resourceSectionRes);
           sectionOrder += 1;
 
           if (block.questions.length > 0) {
@@ -439,7 +471,7 @@ export function TopicConfigurationModal({ open, topic, onClose, onSaved }: Topic
               `${block.title.trim()} - Preguntas`,
               block.questions
             );
-            await api.post("/secciones", {
+            const quizSectionRes = await api.post<LeccionSeccion | ApiEnvelope<LeccionSeccion>>("/secciones", {
               leccion_id: lesson.id,
               tipo: "prueba",
               prueba_id: quizId,
@@ -450,7 +482,19 @@ export function TopicConfigurationModal({ open, topic, onClose, onSaved }: Topic
               nota_maxima: 100,
               peso_calificacion: 1,
             });
+            const quizSection = unwrapApiData(quizSectionRes);
             sectionOrder += 1;
+
+            if (block.type === "video") {
+              const checkpoint = Math.max(1, Math.round(Number(block.videoCheckpointSeconds)));
+              await api.put(`/secciones/${resourceSection.id}/gating-pdf`, {
+                habilitado: true,
+                seccion_preguntas_id: quizSection.id,
+                puntaje_minimo: 100,
+                requiere_responder_todas: true,
+                checkpoint_segundos: checkpoint,
+              });
+            }
           }
         }
 
@@ -471,16 +515,38 @@ export function TopicConfigurationModal({ open, topic, onClose, onSaved }: Topic
         }
 
         if (block.type === "interactive") {
+          const quickTimePerQuestion = Math.max(1, Math.round(Number(block.nativeQuickTimeSeconds) || 0));
+          const nativeConfig = block.interactiveProvider === "nativo"
+            ? {
+                native_activity_type: "quiz",
+                score_threshold: 70,
+                modo_quiz_veloz: block.nativeQuickQuizEnabled,
+                quick_quiz: block.nativeQuickQuizEnabled,
+                tiempo_por_pregunta_segundos: quickTimePerQuestion || 15,
+                time_per_question_seconds: quickTimePerQuestion || 15,
+                auto_saltar_timeout: block.nativeQuickAutoSkipOnTimeout,
+                auto_skip_on_timeout: block.nativeQuickAutoSkipOnTimeout,
+                preguntas: block.questions.map((question) => ({
+                  prompt: question.prompt.trim(),
+                  opciones: question.options
+                    .filter((option) => option.text.trim())
+                    .map((option) => ({
+                      text: option.text.trim(),
+                      isCorrect: option.isCorrect,
+                    })),
+                })),
+              }
+            : {};
           const activityRes = await api.post<{ id: string } | ApiEnvelope<{ id: string }>>("/actividades-interactivas", {
             leccion_id: lesson.id,
             titulo: block.title.trim(),
             descripcion: block.description.trim() || null,
             proveedor: block.interactiveProvider,
-            embed_url: block.interactiveEmbedUrl.trim(),
-            regla_completitud: "manual",
+            embed_url: block.interactiveProvider === "nativo" ? "" : block.interactiveEmbedUrl.trim(),
+            regla_completitud: block.interactiveProvider === "nativo" ? "puntaje" : "manual",
             puntaje_maximo: 100,
             intentos_maximos: null,
-            configuracion: {},
+            configuracion: nativeConfig,
             activo: true,
           });
           const activity = unwrapApiData(activityRes);
@@ -734,6 +800,10 @@ export function TopicConfigurationModal({ open, topic, onClose, onSaved }: Topic
                               updateBlock(block.id, (prev) => ({
                                 ...prev,
                                 interactiveProvider: e.target.value as InteractiveProvider,
+                                questions:
+                                  e.target.value === "nativo" && prev.questions.length === 0
+                                    ? [createQuestion()]
+                                    : prev.questions,
                               }))
                             }
                             className="mt-1 w-full rounded-md border border-slate-300 px-2 py-1.5"
@@ -741,25 +811,82 @@ export function TopicConfigurationModal({ open, topic, onClose, onSaved }: Topic
                             <option value="h5p">H5P</option>
                             <option value="genially">Genially</option>
                             <option value="educaplay">Educaplay</option>
+                            <option value="nativo">Nativa (quiz interno)</option>
                           </select>
                         </label>
-                        <label className="text-sm text-slate-800 md:col-span-2">
-                          URL de embed
-                          <input
-                            value={block.interactiveEmbedUrl}
-                            onChange={(e) =>
-                              updateBlock(block.id, (prev) => ({ ...prev, interactiveEmbedUrl: e.target.value }))
-                            }
-                            placeholder="https://..."
-                            className="mt-1 w-full rounded-md border border-slate-300 px-2 py-1.5"
-                          />
-                        </label>
+                        {block.interactiveProvider !== "nativo" ? (
+                          <label className="text-sm text-slate-800 md:col-span-2">
+                            URL de embed
+                            <input
+                              value={block.interactiveEmbedUrl}
+                              onChange={(e) =>
+                                updateBlock(block.id, (prev) => ({ ...prev, interactiveEmbedUrl: e.target.value }))
+                              }
+                              placeholder="https://..."
+                              className="mt-1 w-full rounded-md border border-slate-300 px-2 py-1.5"
+                            />
+                          </label>
+                        ) : (
+                          <>
+                            <div className="text-sm text-emerald-800 md:col-span-2 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2">
+                              Actividad nativa: se ejecuta dentro de la plataforma y no requiere URL de embed.
+                            </div>
+                            <label className="text-sm text-slate-800 inline-flex items-center gap-2 md:col-span-2">
+                              <input
+                                type="checkbox"
+                                checked={block.nativeQuickQuizEnabled}
+                                onChange={(e) =>
+                                  updateBlock(block.id, (prev) => ({ ...prev, nativeQuickQuizEnabled: e.target.checked }))
+                                }
+                              />
+                              Activar modo Quiz veloz (una pregunta por vez)
+                            </label>
+                            {block.nativeQuickQuizEnabled && (
+                              <>
+                                <label className="text-sm text-slate-800">
+                                  Tiempo por pregunta (segundos)
+                                  <input
+                                    type="number"
+                                    min={1}
+                                    value={block.nativeQuickTimeSeconds}
+                                    onChange={(e) =>
+                                      updateBlock(block.id, (prev) => ({ ...prev, nativeQuickTimeSeconds: e.target.value }))
+                                    }
+                                    className="mt-1 w-full rounded-md border border-slate-300 px-2 py-1.5"
+                                  />
+                                </label>
+                                <label className="text-sm text-slate-800 inline-flex items-center gap-2 pt-6">
+                                  <input
+                                    type="checkbox"
+                                    checked={block.nativeQuickAutoSkipOnTimeout}
+                                    onChange={(e) =>
+                                      updateBlock(block.id, (prev) => ({ ...prev, nativeQuickAutoSkipOnTimeout: e.target.checked }))
+                                    }
+                                  />
+                                  Auto-saltar cuando se agote el tiempo
+                                </label>
+                              </>
+                            )}
+                          </>
+                        )}
                       </div>
                     </div>
                   )}
 
-                  {(block.type === "video" || block.type === "image" || block.type === "quiz") && (
+                  {(block.type === "video" || block.type === "image" || block.type === "quiz" || (block.type === "interactive" && block.interactiveProvider === "nativo")) && (
                     <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3">
+                      {block.type === "video" && (
+                        <label className="mb-3 block text-sm text-slate-800">
+                          Checkpoint del video (segundos)
+                          <input
+                            type="number"
+                            min={1}
+                            value={block.videoCheckpointSeconds}
+                            onChange={(e) => updateBlock(block.id, (prev) => ({ ...prev, videoCheckpointSeconds: e.target.value }))}
+                            className="mt-1 w-full rounded-md border border-slate-300 px-2 py-1.5"
+                          />
+                        </label>
+                      )}
                       <div className="mb-2 flex items-center justify-between">
                         <p className="text-sm font-semibold text-slate-800">Preguntas configurables</p>
                         <button

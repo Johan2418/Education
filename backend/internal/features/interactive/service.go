@@ -299,26 +299,31 @@ func (s *Service) validateActividadRequest(req ActividadInteractivaRequest) erro
 		return errors.New("intentos_maximos debe ser > 0")
 	}
 	if len(req.Configuracion) > 0 && !json.Valid(req.Configuracion) {
-		return errors.New("configuracion debe ser JSON válido")
+		return errors.New("configuracion debe ser JSON valido")
+	}
+	if req.Proveedor == "nativo" {
+		if err := validateNativeConfig(req.Configuracion); err != nil {
+			return err
+		}
 	}
 	return nil
 }
 
 func (s *Service) validateActividadUpdate(req ActividadInteractivaRequest, currentProveedor string) error {
 	if req.Titulo != "" && strings.TrimSpace(req.Titulo) == "" {
-		return errors.New("titulo es inválido")
+		return errors.New("titulo es invalido")
 	}
+
+	finalProveedor := currentProveedor
 	if req.Proveedor != "" {
 		if err := validateProveedor(req.Proveedor); err != nil {
 			return err
 		}
+		finalProveedor = req.Proveedor
 	}
-	if req.EmbedURL != "" {
-		provider := req.Proveedor
-		if provider == "" {
-			provider = currentProveedor
-		}
-		if err := validateEmbedURL(provider, req.EmbedURL); err != nil {
+
+	if req.EmbedURL != "" || finalProveedor == "nativo" {
+		if err := validateEmbedURL(finalProveedor, req.EmbedURL); err != nil {
 			return err
 		}
 	}
@@ -334,14 +339,24 @@ func (s *Service) validateActividadUpdate(req ActividadInteractivaRequest, curre
 		return errors.New("intentos_maximos debe ser > 0")
 	}
 	if len(req.Configuracion) > 0 && !json.Valid(req.Configuracion) {
-		return errors.New("configuracion debe ser JSON válido")
+		return errors.New("configuracion debe ser JSON valido")
+	}
+	if finalProveedor == "nativo" {
+		if req.Proveedor == "nativo" && len(req.Configuracion) == 0 && currentProveedor != "nativo" {
+			return errors.New("configuracion es requerida para proveedor nativo")
+		}
+		if len(req.Configuracion) > 0 {
+			if err := validateNativeConfig(req.Configuracion); err != nil {
+				return err
+			}
+		}
 	}
 	return nil
 }
 
 func validateProveedor(proveedor string) error {
 	switch strings.TrimSpace(strings.ToLower(proveedor)) {
-	case "h5p", "genially", "educaplay":
+	case "h5p", "genially", "educaplay", "nativo":
 		return nil
 	default:
 		return errors.New("proveedor invalido")
@@ -358,7 +373,11 @@ func validateRegla(regla string) error {
 }
 
 func validateEmbedURL(proveedor, raw string) error {
+	provider := strings.ToLower(strings.TrimSpace(proveedor))
 	raw = strings.TrimSpace(raw)
+	if provider == "nativo" && raw == "" {
+		return nil
+	}
 	if raw == "" {
 		return errors.New("embed_url es requerido")
 	}
@@ -370,9 +389,12 @@ func validateEmbedURL(proveedor, raw string) error {
 	if !strings.EqualFold(u.Scheme, "https") {
 		return errors.New("embed_url debe usar https")
 	}
+	if provider == "nativo" {
+		return nil
+	}
 
 	host := strings.ToLower(u.Hostname())
-	allowed := allowedDomainsByProvider[strings.ToLower(strings.TrimSpace(proveedor))]
+	allowed := allowedDomainsByProvider[provider]
 	if len(allowed) == 0 {
 		return errors.New("proveedor invalido")
 	}
@@ -405,6 +427,98 @@ func normalizeActividadRequest(req ActividadInteractivaRequest, fallbackProveedo
 	}
 
 	return req
+}
+
+func validateNativeConfig(config json.RawMessage) error {
+	if len(config) == 0 || !json.Valid(config) {
+		return errors.New("configuracion es requerida y debe ser JSON valido para proveedor nativo")
+	}
+
+	var payload map[string]interface{}
+	if err := json.Unmarshal(config, &payload); err != nil {
+		return errors.New("configuracion invalida para proveedor nativo")
+	}
+
+	rawQuestions, ok := payload["preguntas"]
+	if !ok {
+		rawQuestions = payload["questions"]
+	}
+	questions, ok := rawQuestions.([]interface{})
+	if !ok || len(questions) == 0 {
+		return errors.New("configuracion nativa requiere al menos una pregunta")
+	}
+
+	for _, rawQuestion := range questions {
+		questionObj, ok := rawQuestion.(map[string]interface{})
+		if !ok {
+			return errors.New("configuracion nativa contiene preguntas invalidas")
+		}
+
+		prompt := asTrimmedString(questionObj["prompt"])
+		if prompt == "" {
+			prompt = asTrimmedString(questionObj["enunciado"])
+		}
+		if prompt == "" {
+			return errors.New("cada pregunta nativa debe tener prompt")
+		}
+
+		rawOptions := questionObj["opciones"]
+		if rawOptions == nil {
+			rawOptions = questionObj["options"]
+		}
+		options, ok := rawOptions.([]interface{})
+		if !ok || len(options) < 2 {
+			return errors.New("cada pregunta nativa requiere al menos 2 opciones")
+		}
+
+		filled := 0
+		hasCorrect := false
+		for _, rawOption := range options {
+			optionObj, ok := rawOption.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			text := asTrimmedString(optionObj["texto"])
+			if text == "" {
+				text = asTrimmedString(optionObj["text"])
+			}
+			if text == "" {
+				continue
+			}
+			filled++
+			if asBool(optionObj["correcta"]) || asBool(optionObj["isCorrect"]) {
+				hasCorrect = true
+			}
+		}
+
+		if filled < 2 {
+			return errors.New("cada pregunta nativa requiere al menos 2 opciones con texto")
+		}
+		if !hasCorrect {
+			return errors.New("cada pregunta nativa requiere al menos una opcion correcta")
+		}
+	}
+
+	return nil
+}
+
+func asTrimmedString(value interface{}) string {
+	str, ok := value.(string)
+	if !ok {
+		return ""
+	}
+	return strings.TrimSpace(str)
+}
+
+func asBool(value interface{}) bool {
+	switch v := value.(type) {
+	case bool:
+		return v
+	case string:
+		return strings.EqualFold(strings.TrimSpace(v), "true")
+	default:
+		return false
+	}
 }
 
 func extractMetadataString(metadata json.RawMessage, keys ...string) string {

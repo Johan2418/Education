@@ -51,7 +51,7 @@ function toISOOrNull(raw: string): string | null {
 interface ActividadFormState {
   titulo: string;
   descripcion: string;
-  proveedor: "h5p" | "genially" | "educaplay";
+  proveedor: "h5p" | "genially" | "educaplay" | "nativo";
   embed_url: string;
   regla_completitud: "manual" | "evento" | "puntaje";
   puntaje_maximo: string;
@@ -100,6 +100,31 @@ function parseConfigObject(rawConfig: string): Record<string, unknown> {
   return parsed as Record<string, unknown>;
 }
 
+function readConfigBoolean(config: Record<string, unknown>, keys: string[], fallback: boolean): boolean {
+  for (const key of keys) {
+    const raw = config[key];
+    if (typeof raw === "boolean") return raw;
+    if (typeof raw === "string") {
+      const normalized = raw.trim().toLowerCase();
+      if (normalized === "true") return true;
+      if (normalized === "false") return false;
+    }
+  }
+  return fallback;
+}
+
+function readConfigNumber(config: Record<string, unknown>, keys: string[], fallback: number): number {
+  for (const key of keys) {
+    const raw = config[key];
+    if (typeof raw === "number" && Number.isFinite(raw)) return raw;
+    if (typeof raw === "string" && raw.trim()) {
+      const parsed = Number(raw);
+      if (Number.isFinite(parsed)) return parsed;
+    }
+  }
+  return fallback;
+}
+
 export default function TeacherLessonSectionsPage() {
   const { lessonId } = useParams<{ lessonId: string }>();
   const navigate = useNavigate();
@@ -135,6 +160,7 @@ export default function TeacherLessonSectionsPage() {
     seccion_preguntas_id: "",
     puntaje_minimo: "0",
     requiere_responder_todas: true,
+    checkpoint_segundos: "",
   });
 
   useEffect(() => {
@@ -226,6 +252,7 @@ export default function TeacherLessonSectionsPage() {
       seccion_preguntas_id: currentGating?.seccion_preguntas_id || "",
       puntaje_minimo: String(currentGating?.puntaje_minimo ?? 0),
       requiere_responder_todas: currentGating?.requiere_responder_todas ?? true,
+      checkpoint_segundos: currentGating?.checkpoint_segundos != null ? String(currentGating.checkpoint_segundos) : "",
     });
   }, [currentGating]);
 
@@ -275,8 +302,52 @@ export default function TeacherLessonSectionsPage() {
     () => extractInteractiveAllowedOrigins(actividadForm.proveedor, null),
     [actividadForm.proveedor]
   );
+  const nativeActivityConfig = useMemo(() => {
+    try {
+      return parseConfigObject(actividadForm.configuracion);
+    } catch {
+      return {};
+    }
+  }, [actividadForm.configuracion]);
+  const nativeQuickQuizEnabled = readConfigBoolean(
+    nativeActivityConfig,
+    ["modo_quiz_veloz", "quick_quiz", "is_quick_quiz"],
+    false,
+  );
+  const nativeQuickTimeSeconds = Math.max(
+    1,
+    Math.round(
+      readConfigNumber(
+        nativeActivityConfig,
+        ["tiempo_por_pregunta_segundos", "time_per_question_seconds", "timePerQuestionSeconds"],
+        15,
+      ),
+    ),
+  );
+  const nativeAutoSkipOnTimeout = readConfigBoolean(
+    nativeActivityConfig,
+    ["auto_saltar_timeout", "auto_skip_on_timeout", "skip_on_timeout"],
+    true,
+  );
 
   const canManageInteractiveContent = canManageInteractive(currentRole);
+
+  const patchActividadConfig = (patch: Record<string, unknown>) => {
+    let base: Record<string, unknown> = {};
+    try {
+      base = parseConfigObject(actividadForm.configuracion);
+    } catch {
+      base = {};
+    }
+    const merged = {
+      ...base,
+      ...patch,
+    };
+    setActividadForm((prev) => ({
+      ...prev,
+      configuracion: JSON.stringify(merged, null, 2),
+    }));
+  };
 
   const refreshActividades = async () => {
     if (!lessonId || !canManageInteractiveContent) return;
@@ -347,11 +418,22 @@ export default function TeacherLessonSectionsPage() {
     if (!currentSection) return;
     const puntajeMinimo = Number(gatingForm.puntaje_minimo);
     if (!Number.isFinite(puntajeMinimo) || puntajeMinimo < 0 || puntajeMinimo > 100) {
-      toast.error("El puntaje mínimo debe estar entre 0 y 100");
+      toast.error("El puntaje minimo debe estar entre 0 y 100");
       return;
     }
+
+    const checkpointRaw = gatingForm.checkpoint_segundos.trim();
+    let checkpointSegundos: number | undefined;
+    if (checkpointRaw) {
+      checkpointSegundos = Number(checkpointRaw);
+      if (!Number.isFinite(checkpointSegundos) || checkpointSegundos <= 0) {
+        toast.error("El checkpoint de video debe ser mayor a 0");
+        return;
+      }
+    }
+
     if (gatingForm.habilitado && !gatingForm.seccion_preguntas_id) {
-      toast.error("Debes seleccionar una sección de preguntas para habilitar el gating");
+      toast.error("Debes seleccionar una seccion de preguntas para habilitar el gating");
       return;
     }
 
@@ -362,6 +444,7 @@ export default function TeacherLessonSectionsPage() {
         seccion_preguntas_id: gatingForm.habilitado ? gatingForm.seccion_preguntas_id : undefined,
         puntaje_minimo: puntajeMinimo,
         requiere_responder_todas: gatingForm.requiere_responder_todas,
+        checkpoint_segundos: checkpointSegundos,
       });
       setCurrentGating(updated);
       toast.success("Regla de gating guardada");
@@ -463,18 +546,19 @@ export default function TeacherLessonSectionsPage() {
 
     const titulo = actividadForm.titulo.trim();
     const embedURL = actividadForm.embed_url.trim();
+    const isNativeProvider = actividadForm.proveedor === "nativo";
     if (!titulo) {
-      toast.error("El título de la actividad es obligatorio");
+      toast.error("El titulo de la actividad es obligatorio");
       return;
     }
-    if (!embedURL) {
-      toast.error("La URL de embed es obligatoria");
+    if (!isNativeProvider && !embedURL) {
+      toast.error("La URL de embed es obligatoria para proveedores embebidos");
       return;
     }
 
     const puntajeMaximo = Number(actividadForm.puntaje_maximo);
     if (!Number.isFinite(puntajeMaximo) || puntajeMaximo <= 0) {
-      toast.error("El puntaje máximo debe ser mayor a 0");
+      toast.error("El puntaje maximo debe ser mayor a 0");
       return;
     }
 
@@ -483,7 +567,7 @@ export default function TeacherLessonSectionsPage() {
     if (intentosRaw) {
       const parsedIntentos = Number(intentosRaw);
       if (!Number.isFinite(parsedIntentos) || parsedIntentos <= 0) {
-        toast.error("Los intentos máximos deben ser un número mayor a 0");
+        toast.error("Los intentos maximos deben ser un numero mayor a 0");
         return;
       }
       intentosMaximos = Math.round(parsedIntentos);
@@ -495,13 +579,46 @@ export default function TeacherLessonSectionsPage() {
     try {
       const parsed = JSON.parse(actividadForm.configuracion || "{}");
       if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
-        toast.error("La configuración debe ser un objeto JSON válido");
+        toast.error("La configuracion debe ser un objeto JSON valido");
         return;
       }
       configuracionObj = parsed as Record<string, unknown>;
     } catch {
-      toast.error("La configuración no es JSON válido");
+      toast.error("La configuracion no es JSON valido");
       return;
+    }
+
+    if (isNativeProvider) {
+      const quickEnabled = readConfigBoolean(
+        configuracionObj,
+        ["modo_quiz_veloz", "quick_quiz", "is_quick_quiz"],
+        false,
+      );
+      const quickTime = Math.round(
+        readConfigNumber(
+          configuracionObj,
+          ["tiempo_por_pregunta_segundos", "time_per_question_seconds", "timePerQuestionSeconds"],
+          15,
+        ),
+      );
+      const autoSkip = readConfigBoolean(
+        configuracionObj,
+        ["auto_saltar_timeout", "auto_skip_on_timeout", "skip_on_timeout"],
+        true,
+      );
+      if (quickEnabled && (!Number.isFinite(quickTime) || quickTime <= 0)) {
+        toast.error("En modo Quiz veloz, el tiempo por pregunta debe ser mayor a 0");
+        return;
+      }
+      configuracionObj = {
+        ...configuracionObj,
+        modo_quiz_veloz: quickEnabled,
+        quick_quiz: quickEnabled,
+        tiempo_por_pregunta_segundos: Math.max(1, quickTime),
+        time_per_question_seconds: Math.max(1, quickTime),
+        auto_saltar_timeout: autoSkip,
+        auto_skip_on_timeout: autoSkip,
+      };
     }
 
     setSavingActividadForm(true);
@@ -510,7 +627,7 @@ export default function TeacherLessonSectionsPage() {
         titulo,
         descripcion: actividadForm.descripcion.trim() || null,
         proveedor: actividadForm.proveedor,
-        embed_url: embedURL,
+        embed_url: isNativeProvider ? "" : embedURL,
         regla_completitud: actividadForm.regla_completitud,
         puntaje_maximo: puntajeMaximo,
         intentos_maximos: intentosMaximos,
@@ -720,9 +837,8 @@ export default function TeacherLessonSectionsPage() {
                     </button>
                   </div>
                 </article>
-
                 <article className="rounded-2xl bg-white border border-slate-200 shadow-sm p-4">
-                  <h2 className="text-base font-semibold text-slate-900 mb-3">Gating PDF por sección de preguntas</h2>
+                  <h2 className="text-base font-semibold text-slate-900 mb-3">Gating por seccion de preguntas</h2>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     <label className="text-sm text-slate-800 inline-flex items-center gap-2 pt-2">
@@ -744,23 +860,23 @@ export default function TeacherLessonSectionsPage() {
                     </label>
 
                     <label className="text-sm text-slate-800">
-                      Sección de preguntas requerida
+                      Seccion de preguntas requerida
                       <select
                         value={gatingForm.seccion_preguntas_id}
                         onChange={(e) => setGatingForm((prev) => ({ ...prev, seccion_preguntas_id: e.target.value }))}
                         className="mt-1 w-full rounded-md border border-slate-300 px-2 py-1.5"
                       >
-                        <option value="">Selecciona una sección</option>
+                        <option value="">Selecciona una seccion</option>
                         {gatingSectionCandidates.map((candidate) => (
                           <option key={candidate.id} value={candidate.id}>
-                            {`Sección ${candidate.orden ?? 0} (${candidate.tipo})`}
+                            {`Seccion ${candidate.orden ?? 0} (${candidate.tipo})`}
                           </option>
                         ))}
                       </select>
                     </label>
 
                     <label className="text-sm text-slate-800">
-                      Puntaje mínimo (%)
+                      Puntaje minimo (%)
                       <input
                         type="number"
                         min={0}
@@ -770,6 +886,20 @@ export default function TeacherLessonSectionsPage() {
                         className="mt-1 w-full rounded-md border border-slate-300 px-2 py-1.5"
                       />
                     </label>
+
+                    {currentSection.tipo === "video" && (
+                      <label className="text-sm text-slate-800 md:col-span-2">
+                        Checkpoint de video (segundos)
+                        <input
+                          type="number"
+                          min={1}
+                          value={gatingForm.checkpoint_segundos}
+                          onChange={(e) => setGatingForm((prev) => ({ ...prev, checkpoint_segundos: e.target.value }))}
+                          placeholder="Ej: 45"
+                          className="mt-1 w-full rounded-md border border-slate-300 px-2 py-1.5"
+                        />
+                      </label>
+                    )}
                   </div>
 
                   <div className="mt-4 flex justify-end">
@@ -778,13 +908,13 @@ export default function TeacherLessonSectionsPage() {
                       disabled={savingGatingSettings}
                       className="px-3 py-2 rounded-md bg-slate-900 text-white hover:bg-slate-800 disabled:opacity-50"
                     >
-                      {savingGatingSettings ? "Guardando..." : "Guardar gating PDF"}
+                      {savingGatingSettings ? "Guardando..." : "Guardar gating"}
                     </button>
                   </div>
                 </article>
 
                 <article className="rounded-2xl bg-white border border-slate-200 shadow-sm p-4">
-                  <h2 className="text-base font-semibold text-slate-900 mb-3">Actividad interactiva (H5P, Genially, Educaplay)</h2>
+                  <h2 className="text-base font-semibold text-slate-900 mb-3">Actividad interactiva (H5P, Genially, Educaplay, Nativa)</h2>
 
                   {!canManageInteractiveContent ? (
                     <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
@@ -908,16 +1038,16 @@ export default function TeacherLessonSectionsPage() {
                             value={actividadForm.proveedor}
                             onChange={(e) => setActividadForm((prev) => ({
                               ...prev,
-                              proveedor: e.target.value as "h5p" | "genially" | "educaplay",
+                              proveedor: e.target.value as "h5p" | "genially" | "educaplay" | "nativo",
                             }))}
                             className="mt-1 w-full rounded-md border border-slate-300 px-2 py-1.5"
                           >
                             <option value="h5p">H5P</option>
                             <option value="genially">Genially</option>
                             <option value="educaplay">Educaplay</option>
+                            <option value="nativo">Nativa (quiz interno)</option>
                           </select>
                         </label>
-
                         <label className="text-sm text-slate-800 md:col-span-2">
                           Descripción
                           <textarea
@@ -927,6 +1057,7 @@ export default function TeacherLessonSectionsPage() {
                           />
                         </label>
 
+                        {actividadForm.proveedor !== "nativo" ? (
                         <label className="text-sm text-slate-800 md:col-span-2">
                           URL embed
                           <input
@@ -936,6 +1067,55 @@ export default function TeacherLessonSectionsPage() {
                             className="mt-1 w-full rounded-md border border-slate-300 px-2 py-1.5"
                           />
                         </label>
+                      ) : (
+                        <>
+                          <div className="text-sm text-emerald-800 md:col-span-2 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2">
+                            Proveedor nativo: esta actividad se renderiza dentro de la plataforma y no requiere URL de embed.
+                          </div>
+                          <label className="text-sm text-slate-800 inline-flex items-center gap-2 md:col-span-2">
+                            <input
+                              type="checkbox"
+                              checked={nativeQuickQuizEnabled}
+                              onChange={(e) => patchActividadConfig({
+                                modo_quiz_veloz: e.target.checked,
+                                quick_quiz: e.target.checked,
+                              })}
+                            />
+                            Activar modo Quiz veloz (tiempo por pregunta)
+                          </label>
+                          {nativeQuickQuizEnabled && (
+                            <>
+                              <label className="text-sm text-slate-800">
+                                Tiempo por pregunta (segundos)
+                                <input
+                                  type="number"
+                                  min={1}
+                                  value={nativeQuickTimeSeconds}
+                                  onChange={(e) => {
+                                    const parsed = Math.max(1, Math.round(Number(e.target.value) || 0));
+                                    patchActividadConfig({
+                                      tiempo_por_pregunta_segundos: parsed,
+                                      time_per_question_seconds: parsed,
+                                    });
+                                  }}
+                                  className="mt-1 w-full rounded-md border border-slate-300 px-2 py-1.5"
+                                />
+                              </label>
+                              <label className="text-sm text-slate-800 inline-flex items-center gap-2 pt-6">
+                                <input
+                                  type="checkbox"
+                                  checked={nativeAutoSkipOnTimeout}
+                                  onChange={(e) => patchActividadConfig({
+                                    auto_saltar_timeout: e.target.checked,
+                                    auto_skip_on_timeout: e.target.checked,
+                                  })}
+                                />
+                                Auto-saltar al terminar el tiempo
+                              </label>
+                            </>
+                          )}
+                        </>
+                      )}
 
                         <label className="text-sm text-slate-800">
                           Regla de completitud
@@ -1016,3 +1196,4 @@ export default function TeacherLessonSectionsPage() {
     </main>
   );
 }
+

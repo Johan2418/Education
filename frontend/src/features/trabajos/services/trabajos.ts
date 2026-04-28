@@ -23,7 +23,9 @@ import type {
   TrabajoFormularioResponse,
   TrabajoCalificacion,
   TrabajoCalificacionHistorial,
+  TrabajoPregunta,
   TrabajoEntrega,
+  UpdateTrabajoPreguntasRequest,
   UpdateTrabajoRequest,
 } from "@/shared/types/trabajos";
 
@@ -70,6 +72,11 @@ export async function updateTrabajo(trabajoId: string, payload: UpdateTrabajoReq
 
   const res = await api.put<ApiData<Trabajo>>(`/trabajos/${trabajoId}`, normalized);
   return res.data;
+}
+
+export async function updateTrabajoPreguntas(trabajoId: string, payload: UpdateTrabajoPreguntasRequest): Promise<TrabajoPregunta[]> {
+  const res = await api.put<ApiData<TrabajoPregunta[]>>(`/trabajos/${trabajoId}/preguntas`, payload);
+  return res.data || [];
 }
 
 export async function publicarTrabajo(trabajoId: string): Promise<Trabajo> {
@@ -230,6 +237,11 @@ export async function calificarEntrega(entregaId: string, payload: CalificarEntr
 
 export async function calificarEntregaPorPregunta(entregaId: string, payload: CalificarEntregaPorPreguntaRequest): Promise<EntregaDetalleResponse> {
   const res = await api.put<ApiData<EntregaDetalleResponse>>(`/entregas/${entregaId}/calificar-por-pregunta`, payload);
+  return res.data;
+}
+
+export async function autoCalificarEntregaCerradas(entregaId: string): Promise<EntregaDetalleResponse> {
+  const res = await api.put<ApiData<EntregaDetalleResponse>>(`/entregas/${entregaId}/autocalificar-cerradas`);
   return res.data;
 }
 

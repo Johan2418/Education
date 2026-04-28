@@ -94,6 +94,7 @@ const Sidebar: FC<SidebarProps> = ({
   const isAdmin = hook.profile?.role === "admin" || hook.profile?.role === "super_admin";
   const isTeacher = hook.profile?.role === "teacher";
   const isTeacherOrAdmin = isTeacher || isAdmin;
+  const isStudent = hook.profile?.role === "student";
   const contentRoute = (type?: string) => {
     if (isTeacherOrAdmin) return "/teacher/materias";
     return type ? `/contents?type=${type}` : "/contents";
@@ -174,21 +175,107 @@ const Sidebar: FC<SidebarProps> = ({
 
           {hook.openMenus.aprende && (
             <div className="ml-3 mt-0.5 flex flex-col space-y-0.5 animate-fade-in">
-              <SidebarItem onClick={() => hook.navigate(contentRoute("molecule"))} icon={Atom} label={hook.t("molecules")} iconSize={16} />
-              <SidebarItem onClick={() => hook.navigate(contentRoute("atom"))} icon={FlaskRound} label={hook.t("atoms")} iconSize={16} />
-              <SidebarItem onClick={() => hook.navigate(contentRoute("periodic-table"))} icon={FlaskConical} label={hook.t("periodicTable")} iconSize={16} />
-              <SidebarItem onClick={() => hook.navigate("/lessons")} icon={BookOpenText} label={hook.t("lessons.title")} iconSize={16} />
-              <SidebarItem onClick={() => hook.navigate(contentRoute("chemical-reaction"))} icon={FlaskConical} label={hook.t("chemicalReactions")} iconSize={16} />
-              <SidebarItem onClick={() => hook.navigate(contentRoute("article"))} icon={BookOpenText} label={hook.t("article")} iconSize={16} />
+              {!hook.profile ? (
+                <div className="px-3 py-2 text-xs text-white/50">Inicia sesión para visualizar tus cursos</div>
+              ) : isStudent ? (
+                hook.studentMaterias.length > 0 ? (
+                  hook.studentMaterias.map((materia) => (
+                    <SidebarItem
+                      key={materia.id}
+                      onClick={() => hook.navigate(`/contents/${materia.id}`)}
+                      icon={BookOpenText}
+                      label={materia.nombre}
+                      iconSize={16}
+                    />
+                  ))
+                ) : (
+                  <div className="px-3 py-2 text-xs text-white/50">Sin materias matriculadas</div>
+                )
+              ) : isTeacher ? (
+                hook.teacherMaterias.length > 0 ? (
+                  hook.teacherMaterias.map((materia) => (
+                    <SidebarItem
+                      key={materia.asignacion_id}
+                      onClick={() => hook.navigate(`/contents/${materia.materia_id}`)}
+                      icon={BookOpenText}
+                      label={`${materia.materia_nombre} (${materia.curso_nombre} - ${materia.anio_escolar})`}
+                      iconSize={16}
+                    />
+                  ))
+                ) : (
+                  <div className="px-3 py-2 text-xs text-white/50">Sin materias asignadas</div>
+                )
+              ) : isAdmin ? (
+                hook.adminCursos.length > 0 ? (
+                  hook.adminCursos.map((curso) => {
+                    const courseMenuKey = `aprende-admin-${curso.id}`;
+                    const courseOpen = !!hook.openMenus[courseMenuKey];
+                    return (
+                      <div key={curso.id} className="rounded-lg border border-white/10 bg-white/5">
+                        <div className="flex items-center">
+                          <button
+                            onClick={() => hook.navigate(`/admin/cursos?cursoId=${encodeURIComponent(curso.id)}`)}
+                            className="flex-1 flex items-center gap-2 px-3 py-2 text-left text-xs text-white/80 hover:text-white hover:bg-white/10 rounded-l-lg transition"
+                          >
+                            <BookOpenText size={14} className="text-indigo-300 shrink-0" />
+                            <span className="truncate">{curso.nombre}</span>
+                            <span className="ml-auto text-[10px] text-white/50">{curso.total_materias}</span>
+                          </button>
+                          <button
+                            onClick={() => hook.toggleMenu(courseMenuKey)}
+                            className="px-2 py-2 rounded-r-lg text-white/50 hover:text-white hover:bg-white/10 transition"
+                            aria-label={courseOpen ? "Ocultar materias" : "Mostrar materias"}
+                          >
+                            {courseOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                          </button>
+                        </div>
+
+                        {courseOpen && (
+                          <div className="ml-2 mr-1 mb-1 flex flex-col space-y-0.5">
+                            {curso.materias.length > 0 ? (
+                              curso.materias.map((materia) => (
+                                <SidebarItem
+                                  key={materia.id}
+                                  onClick={() => hook.navigate(`/contents/${materia.id}`)}
+                                  icon={BookOpenText}
+                                  label={`${materia.nombre}${materia.anio_escolar ? ` (${materia.anio_escolar})` : ""}`}
+                                  iconSize={14}
+                                />
+                              ))
+                            ) : (
+                              <div className="px-3 py-2 text-[11px] text-white/50">Sin materias en este curso</div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })
+                ) : (
+                  <div className="px-3 py-2 text-xs text-white/50">Sin cursos registrados</div>
+                )
+              ) : (
+                <>
+                  <SidebarItem onClick={() => hook.navigate(contentRoute("molecule"))} icon={Atom} label={hook.t("molecules")} iconSize={16} />
+                  <SidebarItem onClick={() => hook.navigate(contentRoute("atom"))} icon={FlaskRound} label={hook.t("atoms")} iconSize={16} />
+                  <SidebarItem onClick={() => hook.navigate(contentRoute("periodic-table"))} icon={FlaskConical} label={hook.t("periodicTable")} iconSize={16} />
+                  <SidebarItem onClick={() => hook.navigate("/lessons")} icon={BookOpenText} label={hook.t("lessons.title")} iconSize={16} />
+                  <SidebarItem onClick={() => hook.navigate(contentRoute("chemical-reaction"))} icon={FlaskConical} label={hook.t("chemicalReactions")} iconSize={16} />
+                  <SidebarItem onClick={() => hook.navigate(contentRoute("article"))} icon={BookOpenText} label={hook.t("article")} iconSize={16} />
+                </>
+              )}
             </div>
           )}
 
-          <SidebarItem
-            onClick={() => hook.navigate(contentRoute())}
-            icon={BookOpenText}
-            label={isTeacherOrAdmin ? hook.t("teacher.subjects.navTitle", { defaultValue: "Mis materias" }) : hook.t("contents.title")}
-          />
-          <SidebarItem onClick={() => hook.navigate(contentRoute("experiment"))} icon={FlaskConical} label={hook.t("experiments")} iconSize={16} />
+          {hook.profile && !isStudent && !isTeacherOrAdmin && (
+            <>
+              <SidebarItem
+                onClick={() => hook.navigate(contentRoute())}
+                icon={BookOpenText}
+                label={isTeacherOrAdmin ? hook.t("teacher.subjects.navTitle", { defaultValue: "Mis materias" }) : hook.t("contents.title")}
+              />
+              <SidebarItem onClick={() => hook.navigate(contentRoute("experiment"))} icon={FlaskConical} label={hook.t("experiments")} iconSize={16} />
+            </>
+          )}
 
           {/* Accessibility */}
           <SectionLabel label={hook.t("accessibility")} />

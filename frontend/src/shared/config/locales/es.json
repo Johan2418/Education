@@ -1,6 +1,6 @@
 {
   "addcontent": {
-    "formTitle" : "Formulario de contenido",
+    "formTitle": "Formulario de contenido",
     "title": "Añadir Contenido",
     "form": {
       "title": "Título",
@@ -158,57 +158,56 @@
   "smartFilterBtn": "Filtro inteligente",
   "clearBtn": "Limpiar",
   "savedToast": "Contenido guardado (simulación)",
-    "undo": "Deshacer",
-    "undoSuccess": "Acción deshecha",
-    "titleHelp": "Este título será el encabezado de la lección",
-    "typeHelp": "Selecciona el tipo de contenido (molécula, átomo, experimento, artículo)",
-    "addContentHelpTitle": "Ayuda - Añadir Contenido",
-    "shortcuts": "Atajos",
-    "shortcut": {
-      "save": "Guardar (Ctrl/Cmd + S)",
-      "close": "Cerrar modal (Esc)",
-      "navigateSuggestions": "Navegar sugerencias (↑/↓)",
-      "applySuggestion": "Aplicar sugerencia (Enter)",
-         "tabNavigate": "Navegar entre campos (Tab)",
-         "openSidebar": "Abrir / cerrar la barra lateral",
-         "toggleHighContrast": "Alternar modo alto contraste",
-         "adjustTextSize": "Aumentar / reducir tamaño de texto",
-         "reload": "Recargar",
-         "closeModal": "Cerrar modales / overlays"
+  "undo": "Deshacer",
+  "undoSuccess": "Acción deshecha",
+  "titleHelp": "Este título será el encabezado de la lección",
+  "typeHelp": "Selecciona el tipo de contenido (molécula, átomo, experimento, artículo)",
+  "addContentHelpTitle": "Ayuda - Añadir Contenido",
+  "shortcuts": "Atajos",
+  "shortcut": {
+    "save": "Guardar (Ctrl/Cmd + S)",
+    "close": "Cerrar modal (Esc)",
+    "navigateSuggestions": "Navegar sugerencias (↑/↓)",
+    "applySuggestion": "Aplicar sugerencia (Enter)",
+    "tabNavigate": "Navegar entre campos (Tab)",
+    "openSidebar": "Abrir / cerrar la barra lateral",
+    "toggleHighContrast": "Alternar modo alto contraste",
+    "adjustTextSize": "Aumentar / reducir tamaño de texto",
+    "reload": "Recargar",
+    "closeModal": "Cerrar modales / overlays"
+  },
+  "history": {
+    "title": "Historial de cambios",
+    "clear": "Limpiar historial",
+    "confirmClear": "¿Estás seguro que deseas limpiar el historial?",
+    "cleared": "Historial limpiado",
+    "filters": {
+      "title": "Filtros",
+      "actionAll": "Todas las acciones",
+      "authorAll": "Todos los autores",
+      "typeAll": "Todos los tipos",
+      "search": "Buscar por título o descripción..."
     },
-    "history": {
-      "title": "Historial de cambios",
-      "clear": "Limpiar historial",
-      "confirmClear": "¿Estás seguro que deseas limpiar el historial?",
-      "cleared": "Historial limpiado",
-      "filters": {
-        "title": "Filtros",
-        "actionAll": "Todas las acciones",
-        "authorAll": "Todos los autores",
-        "typeAll": "Todos los tipos",
-        "search": "Buscar por título o descripción..."
-      },
-      "table": {
-        "action": "Acción",
-        "title": "Título",
-        "author": "Autor",
-        "type": "Tipo",
-        "when": "Fecha"
-      }
-      ,
-      "subtitle": "Todos los cambios y acciones en tu contenido",
-      "items": "elementos",
-      "resetFilters": "Restablecer",
-      "noItems": "No se encontraron elementos de historial",
-      "noItemsHint": "Intenta ajustar los filtros",
-      "preview": "Vista previa",
-      "read": "Leer",
-      "reading": "Leyendo...",
-      "previewEmpty": "Selecciona un elemento para ver detalles",
-      "open": "Abrir",
-      "copy": "Copiar",
-      "copied": "Copiado al portapapeles"
+    "table": {
+      "action": "Acción",
+      "title": "Título",
+      "author": "Autor",
+      "type": "Tipo",
+      "when": "Fecha"
     },
+    "subtitle": "Todos los cambios y acciones en tu contenido",
+    "items": "elementos",
+    "resetFilters": "Restablecer",
+    "noItems": "No se encontraron elementos de historial",
+    "noItemsHint": "Intenta ajustar los filtros",
+    "preview": "Vista previa",
+    "read": "Leer",
+    "reading": "Leyendo...",
+    "previewEmpty": "Selecciona un elemento para ver detalles",
+    "open": "Abrir",
+    "copy": "Copiar",
+    "copied": "Copiado al portapapeles"
+  },
   "updatedToast": "Contenido actualizado (simulación)",
   "validationTitleRequired": "El título es requerido y debe tener al menos 3 caracteres.",
   "validationTypeRequired": "Por favor elija un tipo.",
@@ -226,7 +225,6 @@
   "updatedPeriodicTableDesc": "Accede a información detallada sobre todos los elementos químicos.",
   "virtualExperiments": "Experimentos virtuales disponibles",
   "virtualExperimentsDesc": "Realiza experimentos químicos sencillos directamente desde tu navegador.",
-
   "home": {
     "heroTitle": "Explora el mundo de la ciencia de forma interactiva",
     "heroSubtitle": "Descubre conceptos, experimentos virtuales y avances científicos en un entorno diseñado para el aprendizaje dinámico.",
@@ -234,6 +232,23 @@
     "recentLessons": "Lecciones Recientes",
     "recentLessonsHelp": "Las últimas lecciones añadidas a la plataforma",
     "noLessonsYet": "Aún no hay lecciones disponibles",
+    "recentContent": "Contenido reciente",
+    "recentContentHelp": "Contenido agregado recientemente en la plataforma",
+    "recentContentGuest": "Inicia sesión para ver los contenidos nuevos",
+    "recentContentStudent": "Contenidos añadidos recientemente",
+    "recentContentTeacher": "Recursos añadidos recientemente",
+    "recentContentAdmin": "Contenido general añadido",
+    "recentContentLoginPrompt": "Inicia sesión para ver los contenidos nuevos",
+    "noRecentContentYet": "Aún no hay contenido reciente disponible",
+    "notificationsButton": "Notificaciones",
+    "markNotificationsRead": "Marcar como vistas",
+    "loadingRecentContent": "Cargando...",
+    "noNotificationsYet": "Sin notificaciones por ahora",
+    "contentType": {
+      "leccion": "Lección",
+      "trabajo": "Tarea",
+      "recurso": "Recurso"
+    },
     "noDescription": "Sin descripción",
     "sessionStarted": "Sesión iniciada correctamente",
     "registerOrLogin": "Regístrate o inicia sesión"
@@ -263,8 +278,7 @@
       "noThumbnail": "Sin thumbnail",
       "continue": "Continuar",
       "complete": "Completada"
-    }
-    ,
+    },
     "status": {
       "completed": "Completada — revisa recursos y resultados",
       "inProgress": "En progreso — puntaje actual {{score}}%",
@@ -294,12 +308,11 @@
     "saving": "Guardando...",
     "delete": "Eliminar"
   },
-
   "register": {
     "title": "Crear cuenta",
     "firstName": "Nombre",
     "lastName": "Apellido",
-    "email": "Correo electrónico", 
+    "email": "Correo electrónico",
     "confirmEmail": "Confirmar correo",
     "password": "Contraseña",
     "confirmPassword": "Confirmar contraseña",
@@ -338,7 +351,7 @@
     "errors": {
       "required": {
         "firstName": "Nombre es requerido",
-        "lastName": "Apellido es requerido", 
+        "lastName": "Apellido es requerido",
         "email": "Email es requerido",
         "password": "Contraseña es requerida",
         "phone": "Teléfono es requerido",
@@ -352,8 +365,7 @@
       "mismatch": {
         "email": "Los emails no coinciden",
         "password": "Las contraseñas no coinciden"
-      }
-      ,
+      },
       "models": {
         "quickModel": {
           "title": "Crear Modelo RA",
@@ -392,8 +404,7 @@
             "modelCreated": "Modelo creado",
             "glbGenerated": "GLB generado correctamente",
             "modelAiCreated": "¡Modelo 3D generado con IA exitosamente!",
-            "glbReady": "GLB listo"
-            ,
+            "glbReady": "GLB listo",
             "apiKeySaved": "API Key guardada"
           },
           "attachedToLesson": "Se adjuntará a la lección #{{id}}",
@@ -552,9 +563,9 @@
         }
       },
       "deleteSection": {
-        "confirmUnit": "¿Eliminar unidad \"{nombre}\" y todo su contenido? Esta acción no se puede deshacer.",
-        "confirmTopic": "¿Eliminar tema \"{nombre}\" y todas sus lecciones? Esta acción no se puede deshacer.",
-        "confirmLesson": "¿Eliminar lección \"{titulo}\"? Esta acción no se puede deshacer.",
+        "confirmUnit": "¿Eliminar unidad \"{{nombre}}\" y todo su contenido? Esta acción no se puede deshacer.",
+        "confirmTopic": "¿Eliminar tema \"{{nombre}}\" y todas sus lecciones? Esta acción no se puede deshacer.",
+        "confirmLesson": "¿Eliminar lección \"{{titulo}}\"? Esta acción no se puede deshacer.",
         "deletedUnit": "Unidad eliminada",
         "deletedTopic": "Tema eliminado",
         "deletedLesson": "Lección eliminada",
@@ -1068,13 +1079,12 @@
     "back": "Volver a lecciones",
     "notFound": "Lección no encontrada"
   },
-
   "login": {
     "title": "Iniciar Sesión",
     "email": "Correo electrónico",
     "emailPlaceholder": "usuario@ejemplo.com",
     "password": "Contraseña",
-    "passwordPlaceholder": "••••••••",
+    "passwordPlaceholder": "⬢⬢⬢⬢⬢⬢⬢⬢",
     "rememberMe": "Recordarme",
     "forgotPassword": "¿Olvidaste tu contraseña?",
     "noAccount": "¿No tienes cuenta?",
@@ -1083,8 +1093,7 @@
     "success": "Inicio de sesión exitoso ✅",
     "errors": {
       "allFields": "Por favor, completa todos los campos.",
-      "invalid": "Correo o contraseña incorrectos ❌"
-      ,
+      "invalid": "Correo o contraseña incorrectos ❌",
       "blocked": "Demasiados intentos. Inténtalo de nuevo más tarde.",
       "blockedTimer": "Intenta de nuevo en {{count}} segundos.",
       "connection": "Error de conexión. Por favor verifica tu conexión a internet.",
@@ -1156,15 +1165,12 @@
     "success": {
       "created": "Lección creada",
       "modelUploadedAndLinked": "Modelo de RA subido y asociado a la lección",
-      "updated": "Lección actualizada"
-      ,
+      "updated": "Lección actualizada",
       "createdAndAssigned": "Lección creada y asignada"
     }
   },
   "previewUnavailable": "Previsualización no disponible.",
-  "openModel": "Abrir modelo"
-
-  ,
+  "openModel": "Abrir modelo",
   "resetPassword": {
     "title": "Recuperar contraseña",
     "checkingSession": "Verificando enlace...",
@@ -1188,7 +1194,6 @@
       "enterEmail": "Debes indicar un correo.",
       "resendFailed": "No se pudo reenviar el correo.",
       "updateFailed": "Error al actualizar la contraseña."
-
     }
   },
   "footer": {
@@ -1520,7 +1525,6 @@
       }
     }
   },
-
   "settingsPage": {
     "title": "Configuración",
     "subtitle": "Administra tu perfil, seguridad, preferencias e información de cuenta",
@@ -1616,5 +1620,4 @@
       "admin": "Administrador"
     }
   }
-
 }

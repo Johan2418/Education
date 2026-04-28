@@ -4,8 +4,18 @@ import { useTranslation } from "react-i18next";
 import { getMe } from "@/shared/lib/auth";
 import api from "@/shared/lib/api";
 import toast from "react-hot-toast";
-import type { Leccion, Tema, Curso, Materia, Unidad } from "@/shared/types";
-import { SlidersHorizontal, Eye, Trash2, Search, Loader2 } from "lucide-react";
+import type { Leccion, Tema, Curso, Materia, Unidad, Prueba } from "@/shared/types";
+import { Eye, Trash2, Search, Loader2 } from "lucide-react";
+
+interface ApiEnvelope<T> {
+  data: T;
+}
+
+function unwrapList<T>(payload: T[] | ApiEnvelope<T[]>): T[] {
+  if (Array.isArray(payload)) return payload;
+  if (payload && Array.isArray(payload.data)) return payload.data;
+  return [];
+}
 
 export default function TeacherLessons() {
   const { t } = useTranslation();
@@ -24,17 +34,17 @@ export default function TeacherLessons() {
         }
 
         // Fetch all lessons through hierarchy
-        const cursos: Curso[] = await api.get("/cursos");
+        const cursos = unwrapList(await api.get<Curso[] | ApiEnvelope<Curso[]>>("/cursos"));
         const all: Leccion[] = [];
-        for (const c of cursos || []) {
-          const materias: Materia[] = await api.get(`/cursos/${c.id}/materias`);
-          for (const m of materias || []) {
-            const unidades: Unidad[] = await api.get(`/materias/${m.id}/unidades`);
-            for (const u of unidades || []) {
-              const temas: Tema[] = await api.get(`/unidades/${u.id}/temas`);
-              for (const tema of temas || []) {
-                const lecciones: Leccion[] = await api.get(`/temas/${tema.id}/lecciones`);
-                all.push(...(lecciones || []));
+        for (const c of cursos) {
+          const materias = unwrapList(await api.get<Materia[] | ApiEnvelope<Materia[]>>(`/cursos/${c.id}/materias`));
+          for (const m of materias) {
+            const unidades = unwrapList(await api.get<Unidad[] | ApiEnvelope<Unidad[]>>(`/materias/${m.id}/unidades`));
+            for (const u of unidades) {
+              const temas = unwrapList(await api.get<Tema[] | ApiEnvelope<Tema[]>>(`/unidades/${u.id}/temas`));
+              for (const tema of temas) {
+                const lecciones = unwrapList(await api.get<Leccion[] | ApiEnvelope<Leccion[]>>(`/temas/${tema.id}/lecciones`));
+                all.push(...lecciones);
               }
             }
           }
@@ -56,6 +66,26 @@ export default function TeacherLessons() {
       toast.success(t("teacher.lessons.deleted", { defaultValue: "Lección eliminada" }));
     } catch {
       toast.error(t("teacher.lessons.deleteError", { defaultValue: "Error al eliminar" }));
+    }
+  };
+
+  const openLessonFinalQuiz = async (lessonId: string) => {
+    try {
+      const pruebas = unwrapList(await api.get<Prueba[] | ApiEnvelope<Prueba[]>>(`/lecciones/${lessonId}/pruebas`));
+      const ordered = [...pruebas].sort((a, b) => {
+        const byOrder = (a.orden ?? 0) - (b.orden ?? 0);
+        if (byOrder !== 0) return byOrder;
+        return (a.created_at || "").localeCompare(b.created_at || "");
+      });
+      const target = ordered[0];
+      if (!target) {
+        toast.error("Esta leccion no tiene prueba final configurada todavia.");
+        return;
+      }
+      navigate(`/lesson/${lessonId}/prueba/${target.id}`);
+    } catch (err) {
+      console.error("Error opening lesson final quiz", err);
+      toast.error(t("teacher.lessons.loadError", { defaultValue: "Error al cargar lecciones" }));
     }
   };
 
@@ -103,16 +133,9 @@ export default function TeacherLessons() {
               {l.descripcion && <p className="text-sm text-gray-500 line-clamp-2 mb-2">{l.descripcion}</p>}
               <div className="mt-auto flex items-center gap-2 pt-3">
                 <button
-                  onClick={() => navigate(`/teacher/lessons/${l.id}/sections`)}
-                  className="p-2 text-indigo-700 hover:bg-indigo-50 rounded"
-                  title={t("teacher.lessons.configureSections", { defaultValue: "Configurar secciones" })}
-                >
-                  <SlidersHorizontal size={16} />
-                </button>
-                <button
-                  onClick={() => navigate(`/lesson/${l.id}`)}
+                  onClick={() => void openLessonFinalQuiz(l.id)}
                   className="p-2 text-blue-600 hover:bg-blue-50 rounded"
-                  title={t("teacher.lessons.studentView", { defaultValue: "Ver vista estudiante" })}
+                  title={t("teacher.lessons.studentView", { defaultValue: "Abrir prueba final" })}
                 >
                   <Eye size={16} />
                 </button>

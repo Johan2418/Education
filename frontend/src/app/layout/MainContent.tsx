@@ -4,10 +4,10 @@ import { useTranslation } from "react-i18next";
 import { Newspaper, ArrowRight, Sparkles } from "lucide-react";
 import { getMe, isAuthenticated, type AuthUser } from "@/shared/lib/auth";
 import { api } from "@/shared/lib/api";
-import type { Leccion } from "@/shared/types";
+import type { RecentContentItem } from "@/shared/types";
 import heroImage from "@/img/HeroImage.png";
 
-type RecentLessonsResponse = Leccion[] | { data?: Leccion[] | null };
+type RecentContentResponse = RecentContentItem[] | { data?: RecentContentItem[] | null };
 
 export default function MainContent({
   textSizeLarge,
@@ -19,32 +19,76 @@ export default function MainContent({
   const { t } = useTranslation();
   const navigate = useNavigate();
   const [profile, setProfile] = useState<AuthUser | null>(null);
-  const [recentLessons, setRecentLessons] = useState<Leccion[]>([]);
-  const [loadingLessons, setLoadingLessons] = useState(true);
+  const [recentContent, setRecentContent] = useState<RecentContentItem[]>([]);
+  const [loadingContent, setLoadingContent] = useState(true);
 
   useEffect(() => {
     getMe().then(setProfile);
   }, []);
 
   useEffect(() => {
-    setLoadingLessons(true);
+    setLoadingContent(true);
     if (!isAuthenticated()) {
-      setLoadingLessons(false);
+      setLoadingContent(false);
+      setRecentContent([]);
       return;
     }
     api
-      .get<RecentLessonsResponse>("/lecciones/recent?limit=6")
+      .get<RecentContentResponse>("/contenido/recent?limit=6")
       .then((response) => {
-        const lessons = Array.isArray(response)
+        const contents = Array.isArray(response)
           ? response
           : Array.isArray(response?.data)
             ? response.data
             : [];
-        setRecentLessons(lessons);
+        setRecentContent(contents);
       })
-      .catch(() => {})
-      .finally(() => setLoadingLessons(false));
+      .catch(() => setRecentContent([]))
+      .finally(() => setLoadingContent(false));
   }, []);
+
+  const role = profile?.role ?? "";
+  const isStudent = role === "student";
+  const isTeacher = role === "teacher";
+  const isAdmin = role === "admin" || role === "super_admin";
+  const isLoggedIn = isAuthenticated() && !!profile;
+
+  const recentContentHelp = !isLoggedIn
+    ? t("home.recentContentGuest")
+    : isStudent
+      ? t("home.recentContentStudent")
+      : isTeacher
+        ? t("home.recentContentTeacher")
+        : isAdmin
+          ? t("home.recentContentAdmin")
+          : t("home.recentContentHelp");
+
+  const handleRecentContentClick = (item: RecentContentItem) => {
+    if (item.tipo === "leccion") {
+      const lessonId = item.leccion_id || item.id;
+      navigate(`/lesson/${lessonId}`);
+      return;
+    }
+
+    if (item.tipo === "trabajo") {
+      const trabajoId = item.trabajo_id || item.id;
+      if (isStudent) {
+        navigate(`/student/trabajos/${trabajoId}`);
+      } else {
+        navigate("/teacher/trabajos");
+      }
+      return;
+    }
+
+    if (item.tipo === "recurso") {
+      if (isStudent && item.leccion_id) {
+        navigate(`/lesson/${item.leccion_id}`);
+        return;
+      }
+      const recursoId = item.recurso_id || item.id;
+      navigate(`/teacher/recursos/${recursoId}`);
+    }
+  };
 
   return (
     <main
@@ -145,7 +189,7 @@ export default function MainContent({
         </div>
       </section>
 
-      {/* Recent Lessons */}
+      {/* Recent Content */}
       <section
         className={`rounded-2xl border p-6 transition-colors ${
           highContrast
@@ -158,13 +202,13 @@ export default function MainContent({
             <Newspaper className={highContrast ? "text-yellow-300" : "text-white"} size={24} />
           </div>
           <div className="flex flex-col">
-            <h2 className="text-xl font-bold">{t("home.recentLessons")}</h2>
-            <p className={`text-sm mt-1 ${highContrast ? "" : "text-gray-500"}`}>{t("home.recentLessonsHelp")}</p>
+            <h2 className="text-xl font-bold">{t("home.recentContent")}</h2>
+            <p className={`text-sm mt-1 ${highContrast ? "" : "text-gray-500"}`}>{recentContentHelp}</p>
           </div>
         </div>
 
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {loadingLessons ? (
+          {loadingContent ? (
             <>
               {[1, 2, 3].map((i) => (
                 <div key={i} className="p-5 border border-gray-100 rounded-2xl">
@@ -174,43 +218,51 @@ export default function MainContent({
                 </div>
               ))}
             </>
-          ) : recentLessons.length === 0 ? (
+          ) : !isLoggedIn ? (
+            <div className={`col-span-full text-center py-12 ${highContrast ? "" : "text-gray-500"}`}>
+              <Newspaper size={48} className="mx-auto mb-3 opacity-30" />
+              <p className="text-lg font-medium">{t("home.recentContentLoginPrompt")}</p>
+            </div>
+          ) : recentContent.length === 0 ? (
             <div className={`col-span-full text-center py-12 ${highContrast ? "" : "text-gray-400"}`}>
               <Newspaper size={48} className="mx-auto mb-3 opacity-30" />
-              <p className="text-lg font-medium">{t("home.noLessonsYet")}</p>
+              <p className="text-lg font-medium">{t("home.noRecentContentYet")}</p>
             </div>
           ) : (
-            recentLessons.map((lesson, index) => (
+            recentContent.map((item, index) => (
               <article
-                key={lesson.id}
+                key={`${item.tipo}-${item.id}`}
                 className={`relative p-5 border rounded-2xl transition-all duration-300 cursor-pointer group animate-fade-in-up ${
                   highContrast
                     ? "border-yellow-500 hover:bg-yellow-900/20"
                     : "border-gray-100 hover:border-indigo-200 hover:shadow-lg hover:-translate-y-1 bg-white"
                 }`}
                 style={{ animationDelay: `${index * 75}ms` }}
-                onClick={() => navigate(`/lesson/${lesson.id}`)}
+                onClick={() => handleRecentContentClick(item)}
               >
                 {/* Gradient top accent */}
                 {!highContrast && (
                   <div className="absolute top-0 left-0 right-0 h-[3px] bg-gradient-to-r from-indigo-500 via-violet-500 to-cyan-400 rounded-t-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
                 )}
-                <h3 className={`font-semibold mb-1 ${highContrast ? "" : "group-hover:text-indigo-700 transition-colors"}`}>{lesson.titulo}</h3>
+                <div className="flex items-center justify-between gap-3 mb-2">
+                  <span className={`text-[11px] px-2.5 py-1 rounded-full font-semibold uppercase tracking-wide ${
+                    highContrast ? "bg-yellow-800 text-yellow-200" : "bg-indigo-50 text-indigo-700 border border-indigo-100"
+                  }`}>
+                    {t(`home.contentType.${item.tipo}`)}
+                  </span>
+                </div>
+                <h3 className={`font-semibold mb-1 ${highContrast ? "" : "group-hover:text-indigo-700 transition-colors"}`}>{item.titulo}</h3>
                 <p className={`text-sm mt-1 line-clamp-2 ${highContrast ? "text-yellow-200" : "text-gray-500"}`}>
-                  {lesson.descripcion || t("home.noDescription")}
+                  {item.descripcion || t("home.noDescription")}
                 </p>
                 <div className="flex items-center justify-between mt-3">
-                  {lesson.nivel && (
-                    <span className={`text-xs px-3 py-1 rounded-full font-medium ${
-                      highContrast
-                        ? "bg-yellow-800 text-yellow-200"
-                        : "bg-gradient-to-r from-indigo-50 to-violet-50 text-indigo-700 border border-indigo-100"
-                    }`}>
-                      {lesson.nivel}
-                    </span>
+                  {(item.materia_nombre || item.curso_nombre) && (
+                    <p className={`text-xs truncate ${highContrast ? "text-yellow-200" : "text-gray-500"}`}>
+                      {item.materia_nombre || item.curso_nombre}
+                    </p>
                   )}
                   <p className={`text-xs ${highContrast ? "text-yellow-400" : "text-gray-400"}`}>
-                    {new Date(lesson.created_at).toLocaleDateString()}
+                    {new Date(item.created_at).toLocaleDateString()}
                   </p>
                 </div>
               </article>

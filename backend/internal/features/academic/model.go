@@ -220,31 +220,96 @@ type EstudianteCursoDetail struct {
 // ─── Materia ────────────────────────────────────────────────
 
 type Materia struct {
-	ID           string    `json:"id" gorm:"column:id;primaryKey;default:gen_random_uuid()"`
-	CursoID      string    `json:"curso_id" gorm:"column:curso_id"`
-	AnioEscolar  string    `json:"anio_escolar" gorm:"column:anio_escolar"`
-	Nombre       string    `json:"nombre" gorm:"column:nombre"`
-	Descripcion  *string   `json:"descripcion" gorm:"column:descripcion"`
-	ThumbnailURL *string   `json:"thumbnail_url" gorm:"column:thumbnail_url"`
-	Color        *string   `json:"color" gorm:"column:color"`
-	Orden        int       `json:"orden" gorm:"column:orden;default:0"`
-	Activo       bool      `json:"activo" gorm:"column:activo;default:true"`
-	CreatedBy    *string   `json:"created_by" gorm:"column:created_by"`
-	CreatedAt    time.Time `json:"created_at" gorm:"column:created_at;autoCreateTime"`
-	UpdatedAt    time.Time `json:"updated_at" gorm:"column:updated_at;autoUpdateTime"`
+	ID                      string    `json:"id" gorm:"column:id;primaryKey;default:gen_random_uuid()"`
+	CursoID                 string    `json:"curso_id" gorm:"column:curso_id"`
+	AnioEscolar             string    `json:"anio_escolar" gorm:"column:anio_escolar"`
+	Nombre                  string    `json:"nombre" gorm:"column:nombre"`
+	Descripcion             *string   `json:"descripcion" gorm:"column:descripcion"`
+	ThumbnailURL            *string   `json:"thumbnail_url" gorm:"column:thumbnail_url"`
+	Color                   *string   `json:"color" gorm:"column:color"`
+	PesoContenidosPct       float64   `json:"peso_contenidos_pct" gorm:"column:peso_contenidos_pct;default:35"`
+	PesoLeccionesPct        float64   `json:"peso_lecciones_pct" gorm:"column:peso_lecciones_pct;default:35"`
+	PesoTrabajosPct         float64   `json:"peso_trabajos_pct" gorm:"column:peso_trabajos_pct;default:30"`
+	PuntajeTotal            float64   `json:"puntaje_total" gorm:"column:puntaje_total;default:10"`
+	PuntajeMinimoAprobacion float64   `json:"puntaje_minimo_aprobacion" gorm:"column:puntaje_minimo_aprobacion;default:6"`
+	Orden                   int       `json:"orden" gorm:"column:orden;default:0"`
+	Activo                  bool      `json:"activo" gorm:"column:activo;default:true"`
+	CreatedBy               *string   `json:"created_by" gorm:"column:created_by"`
+	CreatedAt               time.Time `json:"created_at" gorm:"column:created_at;autoCreateTime"`
+	UpdatedAt               time.Time `json:"updated_at" gorm:"column:updated_at;autoUpdateTime"`
 }
 
 func (Materia) TableName() string { return "internal.materia" }
 
 type MateriaRequest struct {
-	CursoID      string  `json:"curso_id"`
-	AnioEscolar  *string `json:"anio_escolar"`
-	Nombre       string  `json:"nombre"`
-	Descripcion  *string `json:"descripcion"`
-	ThumbnailURL *string `json:"thumbnail_url"`
-	Color        *string `json:"color"`
-	Orden        *int    `json:"orden"`
-	Activo       *bool   `json:"activo"`
+	CursoID                 string   `json:"curso_id"`
+	AnioEscolar             *string  `json:"anio_escolar"`
+	Nombre                  string   `json:"nombre"`
+	Descripcion             *string  `json:"descripcion"`
+	ThumbnailURL            *string  `json:"thumbnail_url"`
+	Color                   *string  `json:"color"`
+	PesoContenidosPct       *float64 `json:"peso_contenidos_pct"`
+	PesoLeccionesPct        *float64 `json:"peso_lecciones_pct"`
+	PesoTrabajosPct         *float64 `json:"peso_trabajos_pct"`
+	PuntajeTotal            *float64 `json:"puntaje_total"`
+	PuntajeMinimoAprobacion *float64 `json:"puntaje_minimo_aprobacion"`
+	Orden                   *int     `json:"orden"`
+	Activo                  *bool    `json:"activo"`
+}
+
+type MateriaCalificacionAlumno struct {
+	EstudianteID           string   `json:"estudiante_id"`
+	EstudianteNombre       *string  `json:"estudiante_nombre,omitempty"`
+	EstudianteEmail        *string  `json:"estudiante_email,omitempty"`
+	PromedioContenidos10   *float64 `json:"promedio_contenidos_10,omitempty"`
+	PromedioLecciones10    *float64 `json:"promedio_lecciones_10,omitempty"`
+	PromedioTrabajos10     *float64 `json:"promedio_trabajos_10,omitempty"`
+	PuntosContenidos       float64  `json:"puntos_contenidos"`
+	PuntosLecciones        float64  `json:"puntos_lecciones"`
+	PuntosTrabajos         float64  `json:"puntos_trabajos"`
+	NotaFinal              float64  `json:"nota_final"`
+	EstadoFinal            string   `json:"estado_final"`
+	CumpleMinimo           bool     `json:"cumple_minimo"`
+	ComponentesCompletos   bool     `json:"componentes_completos"`
+	ComponentesCalificados int      `json:"componentes_calificados"`
+	ComponentesRequeridos  int      `json:"componentes_requeridos"`
+}
+
+type MateriaCalificacionesResponse struct {
+	MateriaID               string                      `json:"materia_id"`
+	MateriaNombre           string                      `json:"materia_nombre"`
+	CursoID                 string                      `json:"curso_id"`
+	AnioEscolar             string                      `json:"anio_escolar"`
+	PesoContenidosPct       float64                     `json:"peso_contenidos_pct"`
+	PesoLeccionesPct        float64                     `json:"peso_lecciones_pct"`
+	PesoTrabajosPct         float64                     `json:"peso_trabajos_pct"`
+	PuntajeTotal            float64                     `json:"puntaje_total"`
+	PuntajeMinimoAprobacion float64                     `json:"puntaje_minimo_aprobacion"`
+	Items                   []MateriaCalificacionAlumno `json:"items"`
+}
+
+type MateriaCalificacionEstudianteResponse struct {
+	MateriaID               string   `json:"materia_id"`
+	MateriaNombre           string   `json:"materia_nombre"`
+	CursoID                 string   `json:"curso_id"`
+	AnioEscolar             string   `json:"anio_escolar"`
+	PesoContenidosPct       float64  `json:"peso_contenidos_pct"`
+	PesoLeccionesPct        float64  `json:"peso_lecciones_pct"`
+	PesoTrabajosPct         float64  `json:"peso_trabajos_pct"`
+	PuntajeTotal            float64  `json:"puntaje_total"`
+	PuntajeMinimoAprobacion float64  `json:"puntaje_minimo_aprobacion"`
+	PromedioContenidos10    *float64 `json:"promedio_contenidos_10,omitempty"`
+	PromedioLecciones10     *float64 `json:"promedio_lecciones_10,omitempty"`
+	PromedioTrabajos10      *float64 `json:"promedio_trabajos_10,omitempty"`
+	PuntosContenidos        float64  `json:"puntos_contenidos"`
+	PuntosLecciones         float64  `json:"puntos_lecciones"`
+	PuntosTrabajos          float64  `json:"puntos_trabajos"`
+	NotaFinal               float64  `json:"nota_final"`
+	EstadoFinal             string   `json:"estado_final"`
+	CumpleMinimo            bool     `json:"cumple_minimo"`
+	ComponentesCompletos    bool     `json:"componentes_completos"`
+	ComponentesCalificados  int      `json:"componentes_calificados"`
+	ComponentesRequeridos   int      `json:"componentes_requeridos"`
 }
 
 // ─── Unidad ─────────────────────────────────────────────────
@@ -274,25 +339,33 @@ type UnidadRequest struct {
 // ─── Tema ───────────────────────────────────────────────────
 
 type Tema struct {
-	ID          string    `json:"id" gorm:"column:id;primaryKey;default:gen_random_uuid()"`
-	UnidadID    string    `json:"unidad_id" gorm:"column:unidad_id"`
-	Nombre      string    `json:"nombre" gorm:"column:nombre"`
-	Descripcion *string   `json:"descripcion" gorm:"column:descripcion"`
-	Orden       int       `json:"orden" gorm:"column:orden;default:0"`
-	Activo      bool      `json:"activo" gorm:"column:activo;default:true"`
-	CreatedBy   *string   `json:"created_by" gorm:"column:created_by"`
-	CreatedAt   time.Time `json:"created_at" gorm:"column:created_at;autoCreateTime"`
-	UpdatedAt   time.Time `json:"updated_at" gorm:"column:updated_at;autoUpdateTime"`
+	ID                          string    `json:"id" gorm:"column:id;primaryKey;default:gen_random_uuid()"`
+	UnidadID                    string    `json:"unidad_id" gorm:"column:unidad_id"`
+	Nombre                      string    `json:"nombre" gorm:"column:nombre"`
+	Descripcion                 *string   `json:"descripcion" gorm:"column:descripcion"`
+	UsarSoloCalificacionLeccion bool      `json:"usar_solo_calificacion_leccion" gorm:"column:usar_solo_calificacion_leccion;default:true"`
+	PesoCalificacionLeccion     float64   `json:"peso_calificacion_leccion" gorm:"column:peso_calificacion_leccion;default:100"`
+	PesoCalificacionContenido   float64   `json:"peso_calificacion_contenido" gorm:"column:peso_calificacion_contenido;default:0"`
+	PuntajeMinimoAprobacion     float64   `json:"puntaje_minimo_aprobacion" gorm:"column:puntaje_minimo_aprobacion;default:60"`
+	Orden                       int       `json:"orden" gorm:"column:orden;default:0"`
+	Activo                      bool      `json:"activo" gorm:"column:activo;default:true"`
+	CreatedBy                   *string   `json:"created_by" gorm:"column:created_by"`
+	CreatedAt                   time.Time `json:"created_at" gorm:"column:created_at;autoCreateTime"`
+	UpdatedAt                   time.Time `json:"updated_at" gorm:"column:updated_at;autoUpdateTime"`
 }
 
 func (Tema) TableName() string { return "internal.tema" }
 
 type TemaRequest struct {
-	UnidadID    string  `json:"unidad_id"`
-	Nombre      string  `json:"nombre"`
-	Descripcion *string `json:"descripcion"`
-	Orden       *int    `json:"orden"`
-	Activo      *bool   `json:"activo"`
+	UnidadID                    string   `json:"unidad_id"`
+	Nombre                      string   `json:"nombre"`
+	Descripcion                 *string  `json:"descripcion"`
+	UsarSoloCalificacionLeccion *bool    `json:"usar_solo_calificacion_leccion"`
+	PesoCalificacionLeccion     *float64 `json:"peso_calificacion_leccion"`
+	PesoCalificacionContenido   *float64 `json:"peso_calificacion_contenido"`
+	PuntajeMinimoAprobacion     *float64 `json:"puntaje_minimo_aprobacion"`
+	Orden                       *int     `json:"orden"`
+	Activo                      *bool    `json:"activo"`
 }
 
 // ─── Lección ────────────────────────────────────────────────
@@ -319,6 +392,21 @@ type LeccionRequest struct {
 	ThumbnailURL *string `json:"thumbnail_url"`
 	Orden        *int    `json:"orden"`
 	Activo       *bool   `json:"activo"`
+}
+
+type ContenidoReciente struct {
+	ID            string    `json:"id" gorm:"column:id"`
+	Tipo          string    `json:"tipo" gorm:"column:tipo"`
+	Titulo        string    `json:"titulo" gorm:"column:titulo"`
+	Descripcion   *string   `json:"descripcion,omitempty" gorm:"column:descripcion"`
+	CreatedAt     time.Time `json:"created_at" gorm:"column:created_at"`
+	LeccionID     *string   `json:"leccion_id,omitempty" gorm:"column:leccion_id"`
+	TrabajoID     *string   `json:"trabajo_id,omitempty" gorm:"column:trabajo_id"`
+	RecursoID     *string   `json:"recurso_id,omitempty" gorm:"column:recurso_id"`
+	MateriaID     *string   `json:"materia_id,omitempty" gorm:"column:materia_id"`
+	MateriaNombre *string   `json:"materia_nombre,omitempty" gorm:"column:materia_nombre"`
+	CursoID       *string   `json:"curso_id,omitempty" gorm:"column:curso_id"`
+	CursoNombre   *string   `json:"curso_nombre,omitempty" gorm:"column:curso_nombre"`
 }
 
 // ─── Lección Sección ────────────────────────────────────────
@@ -486,6 +574,7 @@ type LeccionSeccionGatingPDF struct {
 	SeccionPreguntasID     *string   `json:"seccion_preguntas_id" gorm:"column:seccion_preguntas_id"`
 	PuntajeMinimo          float64   `json:"puntaje_minimo" gorm:"column:puntaje_minimo"`
 	RequiereResponderTodas bool      `json:"requiere_responder_todas" gorm:"column:requiere_responder_todas"`
+	CheckpointSegundos     *int      `json:"checkpoint_segundos" gorm:"column:checkpoint_segundos"`
 	CreatedBy              *string   `json:"created_by" gorm:"column:created_by"`
 	CreatedAt              time.Time `json:"created_at" gorm:"column:created_at;autoCreateTime"`
 	UpdatedAt              time.Time `json:"updated_at" gorm:"column:updated_at;autoUpdateTime"`
@@ -498,6 +587,7 @@ type UpsertSeccionGatingPDFRequest struct {
 	SeccionPreguntasID     *string  `json:"seccion_preguntas_id"`
 	PuntajeMinimo          *float64 `json:"puntaje_minimo"`
 	RequiereResponderTodas *bool    `json:"requiere_responder_todas"`
+	CheckpointSegundos     *int     `json:"checkpoint_segundos"`
 }
 
 // ─── Materia Seguimiento ────────────────────────────────────

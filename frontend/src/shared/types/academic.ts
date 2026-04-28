@@ -17,9 +17,69 @@ export interface Materia {
   anio_escolar?: string;
   nombre: string;
   descripcion: string;
+  peso_contenidos_pct: number;
+  peso_lecciones_pct: number;
+  peso_trabajos_pct: number;
+  puntaje_total: number;
+  puntaje_minimo_aprobacion: number;
   orden: number;
   created_at: string;
   updated_at: string;
+}
+
+export interface MateriaCalificacionAlumno {
+  estudiante_id: string;
+  estudiante_nombre?: string | null;
+  estudiante_email?: string | null;
+  promedio_contenidos_10?: number | null;
+  promedio_lecciones_10?: number | null;
+  promedio_trabajos_10?: number | null;
+  puntos_contenidos: number;
+  puntos_lecciones: number;
+  puntos_trabajos: number;
+  nota_final: number;
+  estado_final: "sin_calificar" | "materia_no_completada" | "aprobada" | "reprobada";
+  cumple_minimo: boolean;
+  componentes_completos: boolean;
+  componentes_calificados: number;
+  componentes_requeridos: number;
+}
+
+export interface MateriaCalificacionesResponse {
+  materia_id: string;
+  materia_nombre: string;
+  curso_id: string;
+  anio_escolar: string;
+  peso_contenidos_pct: number;
+  peso_lecciones_pct: number;
+  peso_trabajos_pct: number;
+  puntaje_total: number;
+  puntaje_minimo_aprobacion: number;
+  items: MateriaCalificacionAlumno[];
+}
+
+export interface MateriaCalificacionEstudianteResponse {
+  materia_id: string;
+  materia_nombre: string;
+  curso_id: string;
+  anio_escolar: string;
+  peso_contenidos_pct: number;
+  peso_lecciones_pct: number;
+  peso_trabajos_pct: number;
+  puntaje_total: number;
+  puntaje_minimo_aprobacion: number;
+  promedio_contenidos_10?: number | null;
+  promedio_lecciones_10?: number | null;
+  promedio_trabajos_10?: number | null;
+  puntos_contenidos: number;
+  puntos_lecciones: number;
+  puntos_trabajos: number;
+  nota_final: number;
+  estado_final: "sin_calificar" | "materia_no_completada" | "aprobada" | "reprobada";
+  cumple_minimo: boolean;
+  componentes_completos: boolean;
+  componentes_calificados: number;
+  componentes_requeridos: number;
 }
 
 export interface Unidad {
@@ -37,6 +97,10 @@ export interface Tema {
   unidad_id: string;
   nombre: string;
   descripcion: string;
+  usar_solo_calificacion_leccion?: boolean;
+  peso_calificacion_leccion?: number;
+  peso_calificacion_contenido?: number;
+  puntaje_minimo_aprobacion?: number;
   orden: number;
   created_at: string;
   updated_at: string;
@@ -141,9 +205,25 @@ export interface LeccionSeccionGatingPDF {
   seccion_preguntas_id?: string | null;
   puntaje_minimo: number;
   requiere_responder_todas: boolean;
+  checkpoint_segundos?: number | null;
   created_by?: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface RecentContentItem {
+  id: string;
+  tipo: "leccion" | "trabajo" | "recurso";
+  titulo: string;
+  descripcion?: string | null;
+  created_at: string;
+  leccion_id?: string | null;
+  trabajo_id?: string | null;
+  recurso_id?: string | null;
+  materia_id?: string | null;
+  materia_nombre?: string | null;
+  curso_id?: string | null;
+  curso_nombre?: string | null;
 }
 
 export interface ActividadInteractiva {
@@ -151,7 +231,7 @@ export interface ActividadInteractiva {
   leccion_id: string;
   titulo: string;
   descripcion?: string | null;
-  proveedor: "h5p" | "genially" | "educaplay";
+  proveedor: "h5p" | "genially" | "educaplay" | "nativo";
   embed_url: string;
   regla_completitud: "manual" | "evento" | "puntaje";
   puntaje_maximo: number;

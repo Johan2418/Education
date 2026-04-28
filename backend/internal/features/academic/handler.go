@@ -263,6 +263,65 @@ func (h *Handler) ListMaterias(w http.ResponseWriter, r *http.Request) {
 	shared.Success(w, items)
 }
 
+func (h *Handler) ListMisMateriasEstudiante(w http.ResponseWriter, r *http.Request) {
+	claims := middleware.GetClaims(r.Context())
+	if claims == nil {
+		shared.Error(w, http.StatusUnauthorized, "No autenticado")
+		return
+	}
+	if claims.UserRole != "student" {
+		shared.Error(w, http.StatusForbidden, "No autorizado")
+		return
+	}
+
+	items, err := h.svc.ListMateriasByEstudiante(r.Context(), claims.Subject)
+	if err != nil {
+		shared.Error(w, mapAcademicStatus(err), err.Error())
+		return
+	}
+	shared.Success(w, items)
+}
+
+func (h *Handler) ListMisCalificacionesMateriasEstudiante(w http.ResponseWriter, r *http.Request) {
+	claims := middleware.GetClaims(r.Context())
+	if claims == nil {
+		shared.Error(w, http.StatusUnauthorized, "No autenticado")
+		return
+	}
+	if claims.UserRole != "student" {
+		shared.Error(w, http.StatusForbidden, "No autorizado")
+		return
+	}
+
+	items, err := h.svc.ListMisCalificacionesMateriasEstudiante(r.Context(), claims.Subject)
+	if err != nil {
+		shared.Error(w, mapAcademicStatus(err), err.Error())
+		return
+	}
+	shared.Success(w, items)
+}
+
+func (h *Handler) ListMateriaCalificaciones(w http.ResponseWriter, r *http.Request) {
+	claims := middleware.GetClaims(r.Context())
+	if claims == nil {
+		shared.Error(w, http.StatusUnauthorized, "No autenticado")
+		return
+	}
+
+	materiaID := getPathID(r, "materiaId", "id")
+	if materiaID == "" {
+		shared.Error(w, http.StatusBadRequest, "ID de materia inválido")
+		return
+	}
+
+	item, err := h.svc.GetMateriaCalificaciones(r.Context(), materiaID, claims.Subject, claims.UserRole)
+	if err != nil {
+		shared.Error(w, mapAcademicStatus(err), err.Error())
+		return
+	}
+	shared.Success(w, item)
+}
+
 func (h *Handler) GetMateria(w http.ResponseWriter, r *http.Request) {
 	materiaID := getPathID(r, "materiaId", "id")
 	if materiaID == "" {
@@ -521,6 +580,36 @@ func (h *Handler) ListRecentLecciones(w http.ResponseWriter, r *http.Request) {
 	items, err := h.svc.ListRecentLecciones(r.Context(), userID, limit)
 	if err != nil {
 		shared.Error(w, http.StatusInternalServerError, "Error listando lecciones recientes")
+		return
+	}
+
+	shared.Success(w, items)
+}
+
+func (h *Handler) ListRecentContenido(w http.ResponseWriter, r *http.Request) {
+	limit := 6
+	rawLimit := strings.TrimSpace(r.URL.Query().Get("limit"))
+	if rawLimit != "" {
+		parsed, err := strconv.Atoi(rawLimit)
+		if err != nil || parsed <= 0 {
+			shared.Error(w, http.StatusBadRequest, "limit inválido")
+			return
+		}
+		if parsed > 30 {
+			parsed = 30
+		}
+		limit = parsed
+	}
+
+	claims := middleware.GetClaims(r.Context())
+	if claims == nil {
+		shared.Error(w, http.StatusUnauthorized, "No autenticado")
+		return
+	}
+
+	items, err := h.svc.ListRecentContenido(r.Context(), claims.UserRole, claims.Subject, limit)
+	if err != nil {
+		shared.Error(w, http.StatusInternalServerError, "Error listando contenido reciente")
 		return
 	}
 

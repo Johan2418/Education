@@ -170,6 +170,26 @@ func (r *Repository) FindLibroRecursoByHashes(ctx context.Context, hashContenido
 	return &byContent, nil
 }
 
+func (r *Repository) FindLatestLibroRecursoByTitulo(ctx context.Context, titulo string) (*LibroRecurso, error) {
+	trimmed := strings.TrimSpace(titulo)
+	if trimmed == "" {
+		return nil, nil
+	}
+
+	var byTitle LibroRecurso
+	err := r.db.WithContext(ctx).
+		Where("LOWER(titulo) = LOWER(?)", trimmed).
+		Order("updated_at DESC, created_at DESC").
+		First(&byTitle).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &byTitle, nil
+}
+
 func (r *Repository) CreateLibroRecurso(ctx context.Context, recurso LibroRecurso) (*LibroRecurso, error) {
 	err := r.db.WithContext(ctx).Create(&recurso).Error
 	if err != nil {
@@ -180,6 +200,51 @@ func (r *Repository) CreateLibroRecurso(ctx context.Context, recurso LibroRecurs
 		return nil, err
 	}
 	return &recurso, nil
+}
+
+func (r *Repository) RefreshLibroRecursoForNewContenido(ctx context.Context, recurso LibroRecurso) (*LibroRecurso, error) {
+	if strings.TrimSpace(recurso.ID) == "" {
+		return nil, errors.New("libro_recurso_id es requerido")
+	}
+	if strings.TrimSpace(recurso.HashContenido) == "" {
+		return nil, errors.New("hash_contenido es requerido")
+	}
+	if strings.TrimSpace(recurso.HashVersion) == "" {
+		recurso.HashVersion = "v1"
+	}
+
+	updates := map[string]interface{}{
+		"titulo":         strings.TrimSpace(recurso.Titulo),
+		"archivo_url":    recurso.ArchivoURL,
+		"idioma":         strings.TrimSpace(recurso.Idioma),
+		"hash_contenido": strings.TrimSpace(recurso.HashContenido),
+		"hash_archivo":   recurso.HashArchivo,
+		"hash_version":   strings.TrimSpace(recurso.HashVersion),
+		"estado":         gorm.Expr("?::internal.estado_libro_recurso", string(recurso.Estado)),
+		"es_publico":     recurso.EsPublico,
+		"metadata":       recurso.Metadata,
+	}
+	if recurso.CreatedBy != nil && strings.TrimSpace(*recurso.CreatedBy) != "" {
+		updates["created_by"] = strings.TrimSpace(*recurso.CreatedBy)
+	}
+
+	err := r.db.WithContext(ctx).
+		Model(&LibroRecurso{}).
+		Where("id = ?", recurso.ID).
+		Updates(updates).Error
+	if err != nil {
+		found, findErr := r.FindLibroRecursoByHashes(ctx, recurso.HashContenido, recurso.HashArchivo, recurso.HashVersion)
+		if findErr == nil && found != nil {
+			return found, nil
+		}
+		return nil, err
+	}
+
+	var refreshed LibroRecurso
+	if err := r.db.WithContext(ctx).Where("id = ?", recurso.ID).First(&refreshed).Error; err != nil {
+		return nil, err
+	}
+	return &refreshed, nil
 }
 
 func (r *Repository) UpdateLibroRecursoAfterExtract(ctx context.Context, recursoID string, estado EstadoLibroRecurso, paginasTotales *int, archivoURL *string) error {
@@ -196,6 +261,16 @@ func (r *Repository) UpdateLibroRecursoAfterExtract(ctx context.Context, recurso
 		Model(&LibroRecurso{}).
 		Where("id = ?", recursoID).
 		Updates(updates).Error
+}
+
+func (r *Repository) EnsureLibroRecursoPublic(ctx context.Context, recursoID string) error {
+	if strings.TrimSpace(recursoID) == "" {
+		return errors.New("libro_recurso_id es requerido")
+	}
+	return r.db.WithContext(ctx).
+		Model(&LibroRecurso{}).
+		Where("id = ?", recursoID).
+		Update("es_publico", true).Error
 }
 
 func (r *Repository) UpsertLibroContenidoPaginas(ctx context.Context, recursoID string, paginas []LibroContenidoPagina) error {
@@ -330,6 +405,14 @@ func (r *Repository) SearchLibroContenidoPaginas(ctx context.Context, recursoID,
 }
 
 func isUndefinedLibroContenidoPaginaTableError(err error) bool {
+	return isUndefinedTableError(err, "libro_contenido_pagina")
+}
+
+func isUndefinedLibroRecursoViewTableError(err error) bool {
+	return isUndefinedTableError(err, "libro_recurso_view")
+}
+
+func isUndefinedTableError(err error, tableName string) bool {
 	if err == nil {
 		return false
 	}
@@ -340,7 +423,7 @@ func isUndefinedLibroContenidoPaginaTableError(err error) bool {
 	}
 
 	lower := strings.ToLower(err.Error())
-	return strings.Contains(lower, "libro_contenido_pagina") && strings.Contains(lower, "does not exist")
+	return strings.Contains(lower, strings.ToLower(tableName)) && strings.Contains(lower, "does not exist")
 }
 
 func (r *Repository) LinkTrabajoLibroRecurso(ctx context.Context, trabajoID, libroRecursoID, createdBy string) error {
@@ -361,7 +444,7 @@ func (r *Repository) ListPreguntasByLibroRecurso(ctx context.Context, libroRecur
 	var link TrabajoLibroRecurso
 	err := r.db.WithContext(ctx).
 		Where("libro_recurso_id = ?", libroRecursoID).
-		Order("created_at ASC").
+		Order("created_at DESC").
 		First(&link).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -661,6 +744,68 @@ func (r *Repository) CreateLibroChatTelemetria(ctx context.Context, row LibroCha
 	return r.db.WithContext(ctx).Create(&row).Error
 }
 
+func (r *Repository) CreateLibroRecursoView(ctx context.Context, recursoID string, pagina int, userID *string, metadata json.RawMessage) error {
+	if strings.TrimSpace(recursoID) == "" || pagina < 1 {
+		return nil
+	}
+
+	view := LibroRecursoView{
+		LibroRecursoID: strings.TrimSpace(recursoID),
+		UserID:         userID,
+		Pagina:         pagina,
+		Metadata:       metadata,
+	}
+	if len(view.Metadata) == 0 {
+		view.Metadata = []byte("{}")
+	}
+
+	err := r.db.WithContext(ctx).Create(&view).Error
+	if isUndefinedLibroRecursoViewTableError(err) {
+		return nil
+	}
+	return err
+}
+
+func (r *Repository) GetLibroRecursoViewsSummary(ctx context.Context, recursoID string) (*LibroRecursoViewsSummary, error) {
+	if strings.TrimSpace(recursoID) == "" {
+		return nil, errors.New("recurso_id es requerido")
+	}
+
+	type viewAggregate struct {
+		VistasTotal    int64      `gorm:"column:vistas_total"`
+		UsuariosUnicos int64      `gorm:"column:usuarios_unicos"`
+		UltimaVistaAt  *time.Time `gorm:"column:ultima_vista_at"`
+	}
+	var agg viewAggregate
+	err := r.db.WithContext(ctx).
+		Table("internal.libro_recurso_view").
+		Select(`
+			COUNT(*)::bigint AS vistas_total,
+			COUNT(DISTINCT user_id)::bigint AS usuarios_unicos,
+			MAX(viewed_at) AS ultima_vista_at
+		`).
+		Where("libro_recurso_id = ?", recursoID).
+		Scan(&agg).Error
+	if err != nil {
+		if isUndefinedLibroRecursoViewTableError(err) {
+			return &LibroRecursoViewsSummary{
+				RecursoID:      recursoID,
+				VistasTotal:    0,
+				UsuariosUnicos: 0,
+				UltimaVistaAt:  nil,
+			}, nil
+		}
+		return nil, err
+	}
+
+	return &LibroRecursoViewsSummary{
+		RecursoID:      recursoID,
+		VistasTotal:    agg.VistasTotal,
+		UsuariosUnicos: agg.UsuariosUnicos,
+		UltimaVistaAt:  agg.UltimaVistaAt,
+	}, nil
+}
+
 func (r *Repository) GetLibroChatReport(ctx context.Context, recursoID string, topToolsLimit int) (*LibroChatReportResponse, error) {
 	if strings.TrimSpace(recursoID) == "" {
 		return nil, errors.New("recurso_id es requerido")
@@ -680,6 +825,11 @@ func (r *Repository) GetLibroChatReport(ctx context.Context, recursoID string, t
 		return nil, err
 	}
 
+	vistasSummary, err := r.GetLibroRecursoViewsSummary(ctx, recursoID)
+	if err != nil {
+		return nil, err
+	}
+
 	type aggregateRow struct {
 		MensajesTotal      int64      `gorm:"column:mensajes_total"`
 		MensajesUsuario    int64      `gorm:"column:mensajes_usuario"`
@@ -690,7 +840,7 @@ func (r *Repository) GetLibroChatReport(ctx context.Context, recursoID string, t
 	}
 
 	var agg aggregateRow
-	err := r.db.WithContext(ctx).
+	err = r.db.WithContext(ctx).
 		Table("internal.libro_chat_message m").
 		Select(`
 			COUNT(*)::bigint AS mensajes_total,
@@ -740,6 +890,9 @@ func (r *Repository) GetLibroChatReport(ctx context.Context, recursoID string, t
 
 	return &LibroChatReportResponse{
 		RecursoID:          recursoID,
+		VistasRecursoTotal: vistasSummary.VistasTotal,
+		UsuariosVistas:     vistasSummary.UsuariosUnicos,
+		UltimaVistaAt:      vistasSummary.UltimaVistaAt,
 		SesionesTotal:      sesionesTotal,
 		MensajesTotal:      agg.MensajesTotal,
 		MensajesUsuario:    agg.MensajesUsuario,

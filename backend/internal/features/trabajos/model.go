@@ -37,6 +37,7 @@ type TrabajoPregunta struct {
 	Texto                 string          `json:"texto" gorm:"column:texto"`
 	Tipo                  string          `json:"tipo" gorm:"column:tipo;type:internal.tipo_pregunta"`
 	Opciones              json.RawMessage `json:"opciones" gorm:"column:opciones;type:jsonb"`
+	RespuestaCorrecta     *string         `json:"respuesta_correcta" gorm:"column:respuesta_correcta"`
 	PuntajeMaximo         float64         `json:"puntaje_maximo" gorm:"column:puntaje_maximo;default:1"`
 	PaginaLibro           *int            `json:"pagina_libro" gorm:"column:pagina_libro"`
 	ConfianzaIA           *float64        `json:"confianza_ia" gorm:"column:confianza_ia"`
@@ -178,6 +179,25 @@ type CalificarEntregaPorPreguntaRequest struct {
 	SugerenciaIA json.RawMessage                `json:"sugerencia_ia"`
 	TipoCambio   string                         `json:"tipo_cambio,omitempty"`
 	Motivo       *string                        `json:"motivo,omitempty"`
+}
+
+type TrabajoPreguntaInput struct {
+	Texto                 string   `json:"texto"`
+	Tipo                  string   `json:"tipo"`
+	Opciones              []string `json:"opciones"`
+	RespuestaCorrecta     *string  `json:"respuesta_correcta,omitempty"`
+	PuntajeMaximo         *float64 `json:"puntaje_maximo,omitempty"`
+	PaginaLibro           *int     `json:"pagina_libro,omitempty"`
+	ConfianzaIA           *float64 `json:"confianza_ia,omitempty"`
+	ImagenBase64          *string  `json:"imagen_base64,omitempty"`
+	ImagenFuente          *string  `json:"imagen_fuente,omitempty"`
+	RespuestaEsperadaTipo *string  `json:"respuesta_esperada_tipo,omitempty"`
+	Placeholder           *string  `json:"placeholder,omitempty"`
+	Orden                 *int     `json:"orden,omitempty"`
+}
+
+type UpdateTrabajoPreguntasRequest struct {
+	Preguntas []TrabajoPreguntaInput `json:"preguntas"`
 }
 
 type EntregaDetalleResponse struct {

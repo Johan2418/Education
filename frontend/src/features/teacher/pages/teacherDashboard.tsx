@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { getMe } from "@/shared/lib/auth";
 import { useTranslation } from "react-i18next";
 import { BookMarked, BookOpen, HelpCircle, BarChart3, ArrowRight, CalendarDays, Layers3 } from "lucide-react";
+import { getTeacherDashboardStats, type TeacherDashboardStats } from "@/features/teacher/services/dashboard";
 
 const cardColors = [
   { from: "from-indigo-500", to: "to-violet-500", light: "bg-indigo-50", text: "text-indigo-600" },
@@ -16,6 +17,17 @@ export default function TeacherDashboard({ highContrast = false }: { highContras
   const navigate = useNavigate();
   const [checkingAuth, setCheckingAuth] = useState(true);
   const [displayName, setDisplayName] = useState("");
+  const [stats, setStats] = useState<TeacherDashboardStats>({
+    totalCursos: 0,
+    totalMaterias: 0,
+    totalEstudiantes: 0,
+    totalLecciones: 0,
+    totalTrabajos: 0,
+    totalEntregas: 0,
+    totalCalificadas: 0,
+    promedioPuntaje: null,
+    promedioFinal10: null,
+  });
 
   useEffect(() => {
     (async () => {
@@ -29,6 +41,10 @@ export default function TeacherDashboard({ highContrast = false }: { highContras
           return;
         }
         setDisplayName(me.display_name || "Profesor");
+        if (role === "teacher") {
+          const nextStats = await getTeacherDashboardStats();
+          setStats(nextStats);
+        }
       } finally {
         setCheckingAuth(false);
       }
@@ -55,6 +71,48 @@ export default function TeacherDashboard({ highContrast = false }: { highContras
     { title: t("teacher.horario.title", { defaultValue: "Mi horario" }), desc: "Organizar bloques semanales sin solapamientos", icon: CalendarDays, path: "/teacher/horario" },
   ];
 
+  const summaryCards = [
+    {
+      label: t("teacher.dashboard.totalCourses", { defaultValue: "Cursos activos" }),
+      value: stats.totalCursos,
+    },
+    {
+      label: t("teacher.dashboard.totalSubjects", { defaultValue: "Materias asignadas" }),
+      value: stats.totalMaterias,
+    },
+    {
+      label: t("teacher.dashboard.totalStudents", { defaultValue: "Estudiantes" }),
+      value: stats.totalEstudiantes,
+    },
+    {
+      label: t("teacher.dashboard.averageScore", { defaultValue: "Puntaje promedio" }),
+      value: stats.promedioPuntaje != null ? `${stats.promedioPuntaje.toFixed(1)}%` : "N/A",
+    },
+  ];
+
+  const secondarySummary = [
+    {
+      label: t("teacher.dashboard.totalLessons", { defaultValue: "Lecciones" }),
+      value: stats.totalLecciones,
+    },
+    {
+      label: t("teacher.dashboard.totalTasks", { defaultValue: "Trabajos" }),
+      value: stats.totalTrabajos,
+    },
+    {
+      label: t("teacher.dashboard.totalSubmissions", { defaultValue: "Entregas" }),
+      value: stats.totalEntregas,
+    },
+    {
+      label: t("teacher.dashboard.gradedSubmissions", { defaultValue: "Calificadas" }),
+      value: stats.totalCalificadas,
+    },
+    {
+      label: t("teacher.dashboard.finalAverage", { defaultValue: "Promedio final /10" }),
+      value: stats.promedioFinal10 != null ? stats.promedioFinal10.toFixed(2) : "N/A",
+    },
+  ];
+
   return (
     <main className={`max-w-6xl mx-auto p-4 ${highContrast ? "text-yellow-300" : "text-gray-900"}`}>
       {/* Welcome Banner */}
@@ -66,6 +124,27 @@ export default function TeacherDashboard({ highContrast = false }: { highContras
           <h1 className="text-3xl font-bold mb-2">{displayName}</h1>
           <p className={`text-sm ${highContrast ? "text-yellow-200" : "text-white/60"}`}>{t("teacher.dashboardSubtitle", { defaultValue: "Gestiona tus clases y contenidos desde aquí" })}</p>
         </div>
+      </div>
+
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+        {summaryCards.map((item) => (
+          <article
+            key={item.label}
+            className={`rounded-xl border px-4 py-3 ${highContrast ? "bg-black border-yellow-500" : "bg-white border-gray-100 shadow-sm"}`}
+          >
+            <p className={`text-xs ${highContrast ? "text-yellow-300" : "text-gray-500"}`}>{item.label}</p>
+            <p className={`text-2xl font-bold mt-1 ${highContrast ? "text-yellow-200" : "text-gray-900"}`}>{item.value}</p>
+          </article>
+        ))}
+      </div>
+
+      <div className={`mb-8 rounded-xl border px-4 py-3 flex flex-wrap gap-4 ${highContrast ? "bg-black border-yellow-500" : "bg-white border-gray-100 shadow-sm"}`}>
+        {secondarySummary.map((item) => (
+          <div key={item.label} className="min-w-[140px]">
+            <p className={`text-xs ${highContrast ? "text-yellow-300" : "text-gray-500"}`}>{item.label}</p>
+            <p className={`text-lg font-semibold ${highContrast ? "text-yellow-200" : "text-gray-900"}`}>{item.value}</p>
+          </div>
+        ))}
       </div>
 
       {/* Cards Grid */}

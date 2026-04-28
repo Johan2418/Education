@@ -55,6 +55,17 @@ function optionsToText(opciones: string[] | undefined): string {
   return opciones.join(", ");
 }
 
+function bytesToHex(buffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(buffer);
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+async function computeFileHashSha256(file: File): Promise<string> {
+  const raw = await file.arrayBuffer();
+  const digest = await crypto.subtle.digest("SHA-256", raw);
+  return bytesToHex(digest);
+}
+
 function looksLikeCompositeQuestion(texto: string): boolean {
   const t = (texto || "").trim();
   if (!t) return false;
@@ -319,11 +330,19 @@ export default function TeacherTrabajoLibroWizard() {
         return;
       }
 
+      let hashArchivo: string | undefined;
+      try {
+        hashArchivo = await computeFileHashSha256(file);
+      } catch {
+        hashArchivo = undefined;
+      }
+
       setSelectedFileName(file.name);
       setExtractReq((prev) => ({
         ...prev,
         contenido: markedText,
         archivo_url: file.name,
+        hash_archivo: hashArchivo,
       }));
       toast.success(t("teacher.trabajos.libro.fileReady", { defaultValue: "Archivo procesado y listo para extracción" }));
     } catch (err) {

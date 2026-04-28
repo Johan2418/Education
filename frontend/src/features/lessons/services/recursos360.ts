@@ -37,6 +37,7 @@ export interface UpsertGatingPdfPayload {
   seccion_preguntas_id?: string;
   puntaje_minimo?: number;
   requiere_responder_todas?: boolean;
+  checkpoint_segundos?: number;
 }
 
 export interface UpdateLeccionSeccionPayload {

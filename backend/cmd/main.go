@@ -140,7 +140,10 @@ func main() {
 
 		// ── Academic: Materias ──────────────────────────────
 		r.Get("/cursos/{cursoId}/materias", acadH.ListMaterias)
+		r.Get("/student/materias", acadH.ListMisMateriasEstudiante)
+		r.Get("/student/materias/calificaciones", acadH.ListMisCalificacionesMateriasEstudiante)
 		r.Get("/materias/{materiaId}", acadH.GetMateria)
+		r.Get("/materias/{materiaId}/calificaciones", acadH.ListMateriaCalificaciones)
 		r.Post("/materias", acadH.CreateMateria)
 		r.Put("/materias/{materiaId}", acadH.UpdateMateria)
 		r.Delete("/materias/{materiaId}", acadH.DeleteMateria)
@@ -179,6 +182,7 @@ func main() {
 
 		// ── Academic: Lecciones ─────────────────────────────
 		r.Get("/lecciones/recent", acadH.ListRecentLecciones)
+		r.Get("/contenido/recent", acadH.ListRecentContenido)
 		r.Get("/temas/{temaId}/lecciones", acadH.ListLecciones)
 		r.Get("/lecciones/{leccionId}", acadH.GetLeccion)
 		r.Post("/lecciones", acadH.CreateLeccion)
@@ -287,6 +291,7 @@ func main() {
 		r.Get("/lecciones/{leccionId}/trabajos", trabH.ListTrabajosByLeccion)
 		r.Post("/trabajos", trabH.CreateTrabajo)
 		r.Put("/trabajos/{trabajoId}", trabH.UpdateTrabajo)
+		r.Put("/trabajos/{trabajoId}/preguntas", trabH.UpdateTrabajoPreguntas)
 		r.Put("/trabajos/{trabajoId}/publicar", trabH.PublicarTrabajo)
 		r.Put("/trabajos/{trabajoId}/cerrar", trabH.CerrarTrabajo)
 		r.Delete("/trabajos/{trabajoId}", trabH.DeleteTrabajo)
@@ -306,6 +311,7 @@ func main() {
 		r.Get("/entregas/{entregaId}/calificacion-historial", trabH.GetCalificacionHistorial)
 		r.Put("/entregas/{entregaId}/calificar", trabH.CalificarEntrega)
 		r.Put("/entregas/{entregaId}/calificar-por-pregunta", trabH.CalificarEntregaPorPregunta)
+		r.Put("/entregas/{entregaId}/autocalificar-cerradas", trabH.AutoCalificarEntregaCerradas)
 		r.Get("/trabajos/{trabajoId}/libro", libroH.GetEstado)
 		r.Get("/trabajos/{trabajoId}/libro/observabilidad", libroH.GetObservability)
 		r.Post("/trabajos/{trabajoId}/libro/extract", libroH.ExtractLibro)

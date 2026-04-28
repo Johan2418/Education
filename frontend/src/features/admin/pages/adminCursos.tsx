@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { getMe } from "@/shared/lib/auth";
 import api from "@/shared/lib/api";
@@ -15,6 +15,8 @@ import {
   Users,
   FileSpreadsheet,
   UserPlus,
+  AlertTriangle,
+  RefreshCw,
 } from "lucide-react";
 import type {
   Curso,
@@ -66,20 +68,41 @@ function Modal({
   children: React.ReactNode;
   panelClassName?: string;
 }) {
+  useEffect(() => {
+    if (!open) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [open, onClose]);
+
   if (!open) return null;
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={onClose}>
-      <div className={`bg-white rounded-2xl shadow-2xl w-full mx-4 overflow-hidden ${panelClassName || "max-w-lg"}`} onClick={(e) => e.stopPropagation()}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4" onClick={onClose}>
+      <div className={`bg-white rounded-2xl shadow-2xl w-full mx-4 overflow-hidden max-h-[90vh] flex flex-col ${panelClassName || "max-w-lg"}`} onClick={(e) => e.stopPropagation()}>
         {children}
       </div>
     </div>
   );
 }
 
+type ConfirmDialogIntent = "danger" | "warning";
+
+type ConfirmDialogState = {
+  open: boolean;
+  title: string;
+  description: string;
+  confirmLabel: string;
+  intent: ConfirmDialogIntent;
+  action: null | (() => Promise<void>);
+};
+
 /* ── Main component ─────────────────────────────────────── */
 export default function AdminCursos() {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const [loading, setLoading] = useState(true);
   const [loadingAssignments, setLoadingAssignments] = useState(false);
@@ -112,7 +135,11 @@ export default function AdminCursos() {
   const [enrolledStudents, setEnrolledStudents] = useState<EstudianteCursoDetail[]>([]);
   const [allStudents, setAllStudents] = useState<Profile[]>([]);
   const [enrollSearch, setEnrollSearch] = useState("");
+  const [enrolledSearch, setEnrolledSearch] = useState("");
+  const [enrollmentYear, setEnrollmentYear] = useState(getDefaultAcademicYear());
   const [enrollingId, setEnrollingId] = useState<string | null>(null);
+  const [bulkEnrolling, setBulkEnrolling] = useState(false);
+  const [selectedToEnroll, setSelectedToEnroll] = useState<Set<string>>(new Set());
 
   // Assignment create/edit
   const [assignmentForm, setAssignmentForm] = useState({
@@ -148,6 +175,35 @@ export default function AdminCursos() {
     orden: 0,
     activo: true,
   });
+  const [confirmLoading, setConfirmLoading] = useState(false);
+  const [confirmDialog, setConfirmDialog] = useState<ConfirmDialogState>({
+    open: false,
+    title: "",
+    description: "",
+    confirmLabel: "",
+    intent: "warning",
+    action: null,
+  });
+
+  const openConfirmDialog = useCallback((payload: Omit<ConfirmDialogState, "open">) => {
+    setConfirmDialog({ ...payload, open: true });
+  }, []);
+
+  const closeConfirmDialog = useCallback(() => {
+    if (confirmLoading) return;
+    setConfirmDialog((prev) => ({ ...prev, open: false, action: null }));
+  }, [confirmLoading]);
+
+  const runConfirmedAction = async () => {
+    if (!confirmDialog.action) return;
+    setConfirmLoading(true);
+    try {
+      await confirmDialog.action();
+      setConfirmDialog((prev) => ({ ...prev, open: false, action: null }));
+    } finally {
+      setConfirmLoading(false);
+    }
+  };
 
   const loadMateriasByCourseYear = useCallback(async (cursoID: string, anioEscolar: string) => {
     const params = new URLSearchParams();
@@ -406,7 +462,7 @@ export default function AdminCursos() {
         setLoading(false);
       }
     })();
-  }, [navigate, t, loadCatalogData, loadAssignments]);
+  }, [navigate, t, loadCatalogData, loadAssignments, anioEscolarFilter, onlyActiveAssignments]);
 
   const teacherLabelByID = useCallback((teacherID: string, fallbackName?: string | null, fallbackEmail?: string | null) => {
     if (fallbackName && fallbackName.trim()) return fallbackName;
@@ -418,9 +474,24 @@ export default function AdminCursos() {
   }, [teachers]);
 
   /* ── Filters ─────────────────────────────────────────── */
+  const selectedSidebarCursoId = (searchParams.get("cursoId") || "").trim();
+  const selectedSidebarCurso = useMemo(
+    () => cursos.find((curso) => curso.id === selectedSidebarCursoId) || null,
+    [cursos, selectedSidebarCursoId]
+  );
+
+  const clearSidebarCourseFilter = useCallback(() => {
+    const next = new URLSearchParams(searchParams);
+    next.delete("cursoId");
+    setSearchParams(next, { replace: true });
+  }, [searchParams, setSearchParams]);
+
   const filteredCursos = useMemo(() => {
+    const source = selectedSidebarCursoId
+      ? cursos.filter((curso) => curso.id === selectedSidebarCursoId)
+      : cursos;
     const q = search.toLowerCase();
-    return cursos.filter((c) => {
+    return source.filter((c) => {
       const materiasText = (materiasByCurso[c.id] || []).map((m) => m.nombre).join(" ").toLowerCase();
       return (
         c.nombre.toLowerCase().includes(q)
@@ -428,7 +499,7 @@ export default function AdminCursos() {
         || materiasText.includes(q)
       );
     });
-  }, [cursos, search, materiasByCurso]);
+  }, [cursos, search, materiasByCurso, selectedSidebarCursoId]);
 
   const filteredAsignaciones = useMemo(() => {
     const q = assignmentSearch.toLowerCase().trim();
@@ -449,6 +520,13 @@ export default function AdminCursos() {
     () => asignaciones.filter((item) => item.activo).length,
     [asignaciones]
   );
+
+  const isFilterYearValid = useMemo(() => /^\d{4}-\d{4}$/.test(anioEscolarFilter.trim()), [anioEscolarFilter]);
+  const bulkMissingTeacherCount = useMemo(
+    () => bulkSourceMaterias.filter((materia) => !bulkTeacherByMateria[materia.id]).length,
+    [bulkSourceMaterias, bulkTeacherByMateria]
+  );
+  const bulkReady = bulkSourceMaterias.length > 0 && bulkMissingTeacherCount === 0;
 
   /* ── Course CRUD ─────────────────────────────────────── */
   const handleCreateCurso = async () => {
@@ -520,7 +598,7 @@ export default function AdminCursos() {
 
   const handleDeleteCurso = async (id: string) => {
     const curso = cursos.find((c) => c.id === id);
-    if (!confirm(t("admin.cursos.confirmDelete", { nombre: curso?.nombre ?? "", defaultValue: `¿Eliminar "${curso?.nombre}"?` }))) return;
+    if (!curso) return;
 
     try {
       await api.delete(`/cursos/${id}`);
@@ -535,11 +613,26 @@ export default function AdminCursos() {
     }
   };
 
+  const requestDeleteCurso = (id: string) => {
+    const curso = cursos.find((item) => item.id === id);
+    if (!curso) return;
+    openConfirmDialog({
+      title: "Eliminar curso",
+      description: `Se eliminara el curso "${curso.nombre}". Esta accion no se puede deshacer.`,
+      confirmLabel: "Eliminar curso",
+      intent: "danger",
+      action: () => handleDeleteCurso(id),
+    });
+  };
+
   /* ── Enrollment ────────────────────────────────────────── */
   const openEnrollmentModal = async (c: Curso) => {
     setEnrollCurso(c);
     setEnrollOpen(true);
     setEnrollSearch("");
+    setEnrolledSearch("");
+    setSelectedToEnroll(new Set());
+    setEnrollmentYear((anioEscolarFilter || getDefaultAcademicYear()).trim());
     try {
       const [enrolledRes, studentsRes] = await Promise.all([
         api.get<{ data: EstudianteCursoDetail[] }>(`/cursos/${c.id}/estudiantes`),
@@ -553,6 +646,15 @@ export default function AdminCursos() {
   };
 
   const enrolledIds = useMemo(() => new Set(enrolledStudents.map((e) => e.estudiante_id)), [enrolledStudents]);
+  const filteredEnrolledStudents = useMemo(() => {
+    const q = enrolledSearch.toLowerCase().trim();
+    if (!q) return enrolledStudents;
+    return enrolledStudents.filter((student) => {
+      const name = (student.display_name || "").toLowerCase();
+      const email = student.email.toLowerCase();
+      return name.includes(q) || email.includes(q);
+    });
+  }, [enrolledSearch, enrolledStudents]);
 
   const availableStudents = useMemo(() => {
     const q = enrollSearch.toLowerCase();
@@ -561,11 +663,40 @@ export default function AdminCursos() {
       .filter((s) => (s.display_name || "").toLowerCase().includes(q) || s.email.toLowerCase().includes(q));
   }, [allStudents, enrolledIds, enrollSearch]);
 
+  useEffect(() => {
+    setSelectedToEnroll((prev) => {
+      const next = new Set<string>();
+      const availableIds = new Set(availableStudents.map((s) => s.id));
+      for (const id of prev) {
+        if (availableIds.has(id)) next.add(id);
+      }
+      return next;
+    });
+  }, [availableStudents]);
+
+  const validateEnrollmentYear = (value: string): string | null => {
+    const year = value.trim();
+    if (!year.match(/^\d{4}-\d{4}$/)) {
+      return null;
+    }
+    return year;
+  };
+
   const handleAdminEnroll = async (studentId: string) => {
     if (!enrollCurso) return;
+    const year = validateEnrollmentYear(enrollmentYear);
+    if (!year) {
+      toast.error("El año escolar debe tener formato YYYY-YYYY");
+      return;
+    }
+
     setEnrollingId(studentId);
     try {
-      await api.post(`/cursos/${enrollCurso.id}/estudiantes`, { estudiante_id: studentId, curso_id: enrollCurso.id });
+      await api.post(`/cursos/${enrollCurso.id}/estudiantes`, {
+        estudiante_id: studentId,
+        curso_id: enrollCurso.id,
+        anio_escolar: year,
+      });
       const res = await api.get<{ data: EstudianteCursoDetail[] }>(`/cursos/${enrollCurso.id}/estudiantes`);
       setEnrolledStudents(res.data || []);
       toast.success(t("admin.cursos.enrollment.enrolled", { defaultValue: "Estudiante inscrito" }));
@@ -576,9 +707,84 @@ export default function AdminCursos() {
     }
   };
 
-  const handleAdminUnenroll = async (enrollmentId: string, name: string) => {
+  const toggleStudentSelection = (studentId: string) => {
+    setSelectedToEnroll((prev) => {
+      const next = new Set(prev);
+      if (next.has(studentId)) {
+        next.delete(studentId);
+      } else {
+        next.add(studentId);
+      }
+      return next;
+    });
+  };
+
+  const toggleSelectAllVisible = () => {
+    setSelectedToEnroll((prev) => {
+      const next = new Set(prev);
+      const visibleIds = availableStudents.map((student) => student.id);
+      const allVisibleSelected = visibleIds.length > 0 && visibleIds.every((id) => next.has(id));
+      if (allVisibleSelected) {
+        for (const id of visibleIds) next.delete(id);
+      } else {
+        for (const id of visibleIds) next.add(id);
+      }
+      return next;
+    });
+  };
+
+  const clearSelectedToEnroll = () => {
+    setSelectedToEnroll(new Set());
+  };
+
+  const handleBulkEnroll = async () => {
     if (!enrollCurso) return;
-    if (!confirm(t("admin.cursos.enrollment.confirmUnenroll", { nombre: name, defaultValue: `¿Desinscribir a "${name}"?` }))) return;
+    const selectedIDs = [...selectedToEnroll];
+    if (selectedIDs.length === 0) {
+      toast.error("Selecciona al menos un estudiante");
+      return;
+    }
+
+    const year = validateEnrollmentYear(enrollmentYear);
+    if (!year) {
+      toast.error("El año escolar debe tener formato YYYY-YYYY");
+      return;
+    }
+
+    setBulkEnrolling(true);
+    try {
+      const results = await Promise.allSettled(
+        selectedIDs.map((studentId) =>
+          api.post(`/cursos/${enrollCurso.id}/estudiantes`, {
+            estudiante_id: studentId,
+            curso_id: enrollCurso.id,
+            anio_escolar: year,
+          })
+        )
+      );
+
+      const success = results.filter((result) => result.status === "fulfilled").length;
+      const failed = results.length - success;
+
+      const res = await api.get<{ data: EstudianteCursoDetail[] }>(`/cursos/${enrollCurso.id}/estudiantes`);
+      setEnrolledStudents(res.data || []);
+      clearSelectedToEnroll();
+
+      if (success > 0) {
+        toast.success(`${success} estudiante(s) inscritos`);
+      }
+      if (failed > 0) {
+        toast.error(`${failed} estudiante(s) no pudieron inscribirse`);
+      }
+    } catch (err) {
+      toast.error(getErrorMessage(err, t("admin.cursos.enrollment.enrollError", { defaultValue: "Error al inscribir" })));
+    } finally {
+      setBulkEnrolling(false);
+    }
+  };
+
+  const handleAdminUnenroll = async (enrollmentId: string, _name: string) => {
+    if (!enrollCurso) return;
 
     try {
       await api.delete(`/cursos/${enrollCurso.id}/estudiantes/${enrollmentId}`);
@@ -587,6 +793,16 @@ export default function AdminCursos() {
     } catch (err) {
       toast.error(getErrorMessage(err, t("admin.cursos.enrollment.unenrollError", { defaultValue: "Error al desinscribir" })));
     }
+  };
+
+  const requestAdminUnenroll = (enrollmentId: string, name: string) => {
+    openConfirmDialog({
+      title: "Desinscribir estudiante",
+      description: `Se removera a ${name} del curso actual para este ano escolar.`,
+      confirmLabel: "Desinscribir",
+      intent: "warning",
+      action: () => handleAdminUnenroll(enrollmentId, name),
+    });
   };
 
   /* ── Asignaciones por materia ─────────────────────────── */
@@ -604,6 +820,10 @@ export default function AdminCursos() {
     }
     if (!assignmentForm.anio_escolar.trim()) {
       toast.error("El ano escolar es obligatorio");
+      return;
+    }
+    if (!assignmentForm.anio_escolar.trim().match(/^\d{4}-\d{4}$/)) {
+      toast.error("El ano escolar debe tener formato YYYY-YYYY");
       return;
     }
 
@@ -646,6 +866,10 @@ export default function AdminCursos() {
       toast.error("El ano escolar es obligatorio");
       return;
     }
+    if (!assignmentEditForm.anio_escolar.trim().match(/^\d{4}-\d{4}$/)) {
+      toast.error("El ano escolar debe tener formato YYYY-YYYY");
+      return;
+    }
 
     setSavingAssignment(true);
     try {
@@ -667,9 +891,6 @@ export default function AdminCursos() {
   };
 
   const handleDeleteAssignment = async (item: DocenteMateriaAsignacion) => {
-    const label = `${item.materia_nombre || "Materia"} - ${item.curso_nombre || "Curso"}`;
-    if (!confirm(`¿Eliminar asignacion ${label}?`)) return;
-
     try {
       await api.delete(`/asignaciones-docente/${item.id}`);
       toast.success("Asignacion eliminada");
@@ -677,6 +898,17 @@ export default function AdminCursos() {
     } catch (err) {
       toast.error(getErrorMessage(err, "Error al eliminar asignacion"));
     }
+  };
+
+  const requestDeleteAssignment = (item: DocenteMateriaAsignacion) => {
+    const label = `${item.materia_nombre || "Materia"} - ${item.curso_nombre || "Curso"}`;
+    openConfirmDialog({
+      title: "Eliminar asignacion",
+      description: `Se eliminara la asignacion ${label}.`,
+      confirmLabel: "Eliminar asignacion",
+      intent: "danger",
+      action: () => handleDeleteAssignment(item),
+    });
   };
 
   /* ── Render ───────────────────────────────────────────── */
@@ -691,14 +923,14 @@ export default function AdminCursos() {
   return (
     <div className="max-w-6xl mx-auto p-4">
       {/* Header */}
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold">{t("admin.cursos.title", { defaultValue: "Gestión de Cursos" })}</h1>
           <p className="text-sm text-gray-500">
             {t("admin.cursos.description", { defaultValue: "Administra cursos, materias y asignaciones docentes" })}
           </p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <button onClick={() => navigate("/admin/bulk-import")} className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition">
             <FileSpreadsheet size={16} /> Importación Masiva
           </button>
@@ -708,15 +940,55 @@ export default function AdminCursos() {
         </div>
       </div>
 
-      {/* Search */}
-      <div className="relative mb-4">
-        <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-        <input
-          className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg"
-          placeholder={t("admin.cursos.search", { defaultValue: "Buscar por curso o materia..." })}
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-        />
+      {selectedSidebarCursoId && (
+        <div className="mb-4 rounded-lg border border-indigo-200 bg-indigo-50 px-4 py-3 flex flex-wrap items-center justify-between gap-3">
+          <p className="text-sm text-indigo-800">
+            {selectedSidebarCurso
+              ? `Mostrando curso: ${selectedSidebarCurso.nombre}`
+              : "Mostrando curso seleccionado desde Aprende"}
+          </p>
+          <button
+            type="button"
+            onClick={clearSidebarCourseFilter}
+            className="px-3 py-1.5 text-sm rounded-lg border border-indigo-300 text-indigo-700 hover:bg-indigo-100"
+          >
+            Ver todos los cursos
+          </button>
+        </div>
+      )}
+
+      {/* Search + context */}
+      <div className="grid grid-cols-1 gap-3 mb-4 md:grid-cols-3">
+        <div className="relative md:col-span-2">
+          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+          <input
+            className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg"
+            placeholder={t("admin.cursos.search", { defaultValue: "Buscar por curso o materia..." })}
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </div>
+        <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+          <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wide mb-1">Ano escolar activo</label>
+          <div className="flex items-center gap-2">
+            <input
+              className={`w-full px-3 py-2 border rounded-lg text-sm ${isFilterYearValid ? "border-slate-300" : "border-red-300"}`}
+              value={anioEscolarFilter}
+              onChange={(e) => setAnioEscolarFilter(e.target.value)}
+              placeholder="YYYY-YYYY"
+            />
+            <button
+              type="button"
+              onClick={() => void handleApplyAssignmentFilters()}
+              disabled={!isFilterYearValid}
+              className="inline-flex items-center gap-1 rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-700 hover:bg-slate-100 disabled:opacity-50"
+            >
+              <RefreshCw size={14} />
+              Actualizar
+            </button>
+          </div>
+          {!isFilterYearValid && <p className="mt-1 text-xs text-red-600">Usa formato YYYY-YYYY.</p>}
+        </div>
       </div>
 
       {/* Stats */}
@@ -810,7 +1082,7 @@ export default function AdminCursos() {
                         <button onClick={() => openEditCurso(c)} className="p-2 text-blue-600 hover:bg-blue-50 rounded" title={t("admin.cursos.actions.edit", { defaultValue: "Editar" })}>
                           <Pencil size={16} />
                         </button>
-                        <button onClick={() => void handleDeleteCurso(c.id)} className="p-2 text-red-600 hover:bg-red-50 rounded" title={t("admin.cursos.actions.delete", { defaultValue: "Eliminar" })}>
+                        <button onClick={() => requestDeleteCurso(c.id)} className="p-2 text-red-600 hover:bg-red-50 rounded" title={t("admin.cursos.actions.delete", { defaultValue: "Eliminar" })}>
                           <Trash2 size={16} />
                         </button>
                       </div>
@@ -851,11 +1123,12 @@ export default function AdminCursos() {
             <div>
               <label className="block text-sm font-medium mb-1">Ano escolar</label>
               <input
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                className={`w-full px-3 py-2 border rounded-lg text-sm ${isFilterYearValid ? "border-gray-300" : "border-red-300"}`}
                 value={anioEscolarFilter}
                 onChange={(e) => setAnioEscolarFilter(e.target.value)}
                 placeholder="YYYY-YYYY"
               />
+              {!isFilterYearValid && <p className="mt-1 text-xs text-red-600">Formato invalido.</p>}
             </div>
 
             <label className="inline-flex items-center gap-2 text-sm">
@@ -869,7 +1142,8 @@ export default function AdminCursos() {
 
             <button
               onClick={() => void handleApplyAssignmentFilters()}
-              className="md:col-span-2 px-4 py-2 bg-slate-900 text-white rounded-lg hover:bg-slate-800"
+              disabled={!isFilterYearValid}
+              className="md:col-span-2 px-4 py-2 bg-slate-900 text-white rounded-lg hover:bg-slate-800 disabled:opacity-50"
             >
               Aplicar filtros
             </button>
@@ -878,7 +1152,7 @@ export default function AdminCursos() {
 
         <div className="bg-white rounded-lg shadow p-4 mb-4">
           <h3 className="font-semibold mb-3">Crear asignación</h3>
-          <div className="grid grid-cols-1 md:grid-cols-5 gap-3 items-end">
+          <div className="grid grid-cols-1 md:grid-cols-6 gap-3 items-end">
             <div className="md:col-span-2">
               <label className="block text-sm font-medium mb-1">Materia</label>
               <select
@@ -912,16 +1186,25 @@ export default function AdminCursos() {
             <div>
               <label className="block text-sm font-medium mb-1">Ano escolar</label>
               <input
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                className={`w-full px-3 py-2 border rounded-lg text-sm ${/^\d{4}-\d{4}$/.test(assignmentForm.anio_escolar.trim()) || !assignmentForm.anio_escolar.trim() ? "border-gray-300" : "border-red-300"}`}
                 value={assignmentForm.anio_escolar}
                 onChange={(e) => setAssignmentForm((prev) => ({ ...prev, anio_escolar: e.target.value }))}
                 placeholder="YYYY-YYYY"
               />
             </div>
 
+            <label className="inline-flex items-center gap-2 text-sm pb-2">
+              <input
+                type="checkbox"
+                checked={assignmentForm.activo}
+                onChange={(e) => setAssignmentForm((prev) => ({ ...prev, activo: e.target.checked }))}
+              />
+              Activa
+            </label>
+
             <button
               onClick={() => void handleCreateAssignment()}
-              disabled={creatingAssignment}
+              disabled={creatingAssignment || !assignmentForm.materia_id || !assignmentForm.docente_id || !/^\d{4}-\d{4}$/.test(assignmentForm.anio_escolar.trim())}
               className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
             >
               {creatingAssignment ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
@@ -964,7 +1247,7 @@ export default function AdminCursos() {
                         <button onClick={() => openEditAssignment(item)} className="p-2 text-blue-600 hover:bg-blue-50 rounded" title="Editar asignación">
                           <Pencil size={16} />
                         </button>
-                        <button onClick={() => void handleDeleteAssignment(item)} className="p-2 text-red-600 hover:bg-red-50 rounded" title="Eliminar asignación">
+                        <button onClick={() => requestDeleteAssignment(item)} className="p-2 text-red-600 hover:bg-red-50 rounded" title="Eliminar asignación">
                           <Trash2 size={16} />
                         </button>
                       </div>
@@ -1022,12 +1305,18 @@ export default function AdminCursos() {
 
             <button
               onClick={() => void handleRunBulkAssign()}
-              disabled={!bulkCurso || loadingBulkSourceMaterias || runningBulkAssign}
+              disabled={!bulkCurso || loadingBulkSourceMaterias || runningBulkAssign || !bulkReady}
               className="px-4 py-2 rounded-lg bg-violet-700 text-white hover:bg-violet-800 disabled:opacity-50 inline-flex items-center justify-center gap-2"
             >
               {runningBulkAssign ? <Loader2 size={14} className="animate-spin" /> : <UserPlus size={14} />}
               Ejecutar asignación anual
             </button>
+          </div>
+
+          <div className={`mb-4 rounded-lg border px-3 py-2 text-sm ${bulkMissingTeacherCount > 0 ? "border-amber-200 bg-amber-50 text-amber-800" : "border-emerald-200 bg-emerald-50 text-emerald-800"}`}>
+            {bulkMissingTeacherCount > 0
+              ? `Faltan ${bulkMissingTeacherCount} materia(s) por asignar docente antes de ejecutar.`
+              : "Todo listo para ejecutar la asignacion anual."}
           </div>
 
           {loadingBulkSourceMaterias ? (
@@ -1116,11 +1405,14 @@ export default function AdminCursos() {
               <div>
                 <label className="block text-sm font-medium mb-1">Ano escolar</label>
                 <input
-                  className="w-full px-3 py-2 border rounded-lg"
+                  className={`w-full px-3 py-2 border rounded-lg ${/^\d{4}-\d{4}$/.test(createMateriaForm.anio_escolar.trim()) || !createMateriaForm.anio_escolar.trim() ? "border-gray-300" : "border-red-300"}`}
                   value={createMateriaForm.anio_escolar}
                   onChange={(e) => setCreateMateriaForm((prev) => ({ ...prev, anio_escolar: e.target.value }))}
                   placeholder="YYYY-YYYY"
                 />
+                {!/^\d{4}-\d{4}$/.test(createMateriaForm.anio_escolar.trim()) && createMateriaForm.anio_escolar.trim() && (
+                  <p className="mt-1 text-xs text-red-600">Usa formato YYYY-YYYY.</p>
+                )}
               </div>
 
               <div>
@@ -1149,7 +1441,7 @@ export default function AdminCursos() {
             <button onClick={() => setCreateMateriaOpen(false)} className="px-4 py-2 border rounded-lg hover:bg-gray-50">Cancelar</button>
             <button
               onClick={() => void handleCreateMateriaManual()}
-              disabled={creatingMateria}
+              disabled={creatingMateria || !createMateriaForm.nombre.trim() || !/^\d{4}-\d{4}$/.test(createMateriaForm.anio_escolar.trim())}
               className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-50 inline-flex items-center gap-2"
             >
               {creatingMateria ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
@@ -1182,7 +1474,7 @@ export default function AdminCursos() {
           </div>
           <div className="flex justify-end gap-2 mt-6">
             <button onClick={() => setCreateOpen(false)} className="px-4 py-2 border rounded-lg hover:bg-gray-50">{t("admin.cursos.cancel", { defaultValue: "Cancelar" })}</button>
-            <button onClick={() => void handleCreateCurso()} disabled={creating} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50">
+            <button onClick={() => void handleCreateCurso()} disabled={creating || !createForm.nombre.trim()} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50">
               {creating ? t("admin.cursos.creating", { defaultValue: "Creando..." }) : t("admin.cursos.create.button", { defaultValue: "Crear Curso" })}
             </button>
           </div>
@@ -1212,7 +1504,7 @@ export default function AdminCursos() {
           </div>
           <div className="flex justify-end gap-2 mt-6">
             <button onClick={() => setEditOpen(false)} className="px-4 py-2 border rounded-lg hover:bg-gray-50">{t("admin.cursos.cancel", { defaultValue: "Cancelar" })}</button>
-            <button onClick={() => void handleSaveEditCurso()} disabled={saving} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50">
+            <button onClick={() => void handleSaveEditCurso()} disabled={saving || !editForm.nombre.trim()} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50">
               {saving ? t("admin.cursos.saving", { defaultValue: "Guardando..." }) : t("admin.cursos.save", { defaultValue: "Guardar" })}
             </button>
           </div>
@@ -1220,71 +1512,186 @@ export default function AdminCursos() {
       </Modal>
 
       {/* ── Enrollment Modal ──────────────────────────────── */}
-      <Modal open={enrollOpen} onClose={() => setEnrollOpen(false)}>
+      <Modal open={enrollOpen} onClose={() => setEnrollOpen(false)} panelClassName="max-w-5xl">
         <div className="p-6">
-          <div className="flex items-center justify-between mb-4">
+          <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between mb-5">
             <div>
               <h2 className="text-lg font-semibold">{t("admin.cursos.enrollment.title", { defaultValue: "Estudiantes del Curso" })}</h2>
-              {enrollCurso && <p className="text-sm text-gray-500">{enrollCurso.nombre}</p>}
+              {enrollCurso && <p className="text-sm text-gray-500 mt-1">{enrollCurso.nombre}</p>}
             </div>
-            <button onClick={() => setEnrollOpen(false)} className="p-1 hover:bg-gray-100 rounded"><X size={18} /></button>
+            <div className="flex items-end gap-3">
+              <label className="text-sm">
+                <span className="block text-xs font-medium text-gray-500 mb-1">Año escolar de matrícula</span>
+                <input
+                  className="w-40 px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                  value={enrollmentYear}
+                  onChange={(e) => setEnrollmentYear(e.target.value)}
+                  placeholder="YYYY-YYYY"
+                />
+              </label>
+              <button onClick={() => setEnrollOpen(false)} className="p-2 hover:bg-gray-100 rounded-lg"><X size={18} /></button>
+            </div>
           </div>
 
-          {/* Currently enrolled */}
-          <h3 className="text-sm font-medium text-gray-700 mb-2">{t("admin.cursos.enrollment.current", { defaultValue: "Inscritos" })} ({enrolledStudents.length})</h3>
-          <div className="max-h-40 overflow-y-auto space-y-1 mb-4">
-            {enrolledStudents.length === 0 ? (
-              <p className="text-center text-gray-400 py-3 text-sm">{t("admin.cursos.enrollment.noStudents", { defaultValue: "Sin estudiantes inscritos" })}</p>
-            ) : (
-              enrolledStudents.map((e) => (
-                <div key={e.id} className="flex items-center justify-between p-2 rounded-lg border border-gray-100 hover:bg-gray-50">
-                  <div>
-                    <p className="text-sm font-medium">{e.display_name || e.email}</p>
-                    {e.display_name && <p className="text-xs text-gray-400">{e.email}</p>}
-                  </div>
-                  <button
-                    onClick={() => void handleAdminUnenroll(e.id, e.display_name || e.email)}
-                    className="p-1.5 text-red-500 hover:bg-red-50 rounded"
-                  >
-                    <Trash2 size={14} />
-                  </button>
-                </div>
-              ))
-            )}
+          <div className="mb-5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+            <p className="font-semibold">
+              Contexto de matrícula: Curso/Grado <span className="font-bold">{enrollCurso?.nombre || "—"}</span> + Año escolar <span className="font-bold">{enrollmentYear || "—"}</span>
+            </p>
+            <p className="mt-1 text-xs text-amber-800">
+              El curso (ejemplo: 5to Año) define el grado. El año escolar (ejemplo: 2026-2027) define la cohorte académica.
+            </p>
           </div>
 
-          {/* Add students */}
-          <h3 className="text-sm font-medium text-gray-700 mb-2">{t("admin.cursos.enrollment.add", { defaultValue: "Agregar estudiante" })}</h3>
-          <div className="relative mb-3">
-            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-            <input
-              className="w-full pl-9 pr-4 py-2 border border-gray-300 rounded-lg text-sm"
-              placeholder={t("admin.cursos.enrollment.searchPlaceholder", { defaultValue: "Buscar estudiante..." })}
-              value={enrollSearch}
-              onChange={(e) => setEnrollSearch(e.target.value)}
-            />
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 mb-5">
+            <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3">
+              <p className="text-xs font-medium text-emerald-700 uppercase tracking-wide">Inscritos</p>
+              <p className="text-2xl font-semibold text-emerald-900">{enrolledStudents.length}</p>
+            </div>
+            <div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3">
+              <p className="text-xs font-medium text-blue-700 uppercase tracking-wide">Disponibles</p>
+              <p className="text-2xl font-semibold text-blue-900">{availableStudents.length}</p>
+            </div>
+            <div className="rounded-xl border border-violet-200 bg-violet-50 px-4 py-3">
+              <p className="text-xs font-medium text-violet-700 uppercase tracking-wide">Seleccionados</p>
+              <p className="text-2xl font-semibold text-violet-900">{selectedToEnroll.size}</p>
+            </div>
           </div>
-          <div className="max-h-40 overflow-y-auto space-y-1">
-            {availableStudents.length === 0 ? (
-              <p className="text-center text-gray-400 py-3 text-sm">{t("admin.cursos.enrollment.allEnrolled", { defaultValue: "No hay más estudiantes disponibles" })}</p>
-            ) : (
-              availableStudents.map((s) => (
-                <div key={s.id} className="flex items-center justify-between p-2 rounded-lg border border-gray-100 hover:bg-gray-50">
-                  <div>
-                    <p className="text-sm font-medium">{s.display_name || s.email}</p>
-                    {s.display_name && <p className="text-xs text-gray-400">{s.email}</p>}
-                  </div>
+
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            <section className="rounded-xl border border-gray-200 p-4">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-sm font-semibold text-gray-800">{t("admin.cursos.enrollment.current", { defaultValue: "Inscritos" })}</h3>
+              </div>
+
+              <div className="relative mb-3">
+                <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                <input
+                  className="w-full pl-9 pr-4 py-2 border border-gray-300 rounded-lg text-sm"
+                  placeholder="Buscar inscritos..."
+                  value={enrolledSearch}
+                  onChange={(e) => setEnrolledSearch(e.target.value)}
+                />
+              </div>
+
+              <div className="max-h-80 overflow-y-auto space-y-2 pr-1">
+                {filteredEnrolledStudents.length === 0 ? (
+                  <p className="text-center text-gray-400 py-6 text-sm">{t("admin.cursos.enrollment.noStudents", { defaultValue: "Sin estudiantes inscritos" })}</p>
+                ) : (
+                  filteredEnrolledStudents.map((student) => (
+                    <div key={student.id} className="flex items-center justify-between rounded-lg border border-gray-200 px-3 py-2">
+                      <div>
+                        <p className="text-sm font-medium">{student.display_name || student.email}</p>
+                        {student.display_name && <p className="text-xs text-gray-400">{student.email}</p>}
+                        <p className="text-[11px] text-gray-500 mt-1">
+                          Año: {student.anio_escolar || "Sin año"}
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => requestAdminUnenroll(student.id, student.display_name || student.email)}
+                        className="p-1.5 text-red-500 hover:bg-red-50 rounded"
+                        title="Desinscribir"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  ))
+                )}
+              </div>
+            </section>
+
+            <section className="rounded-xl border border-gray-200 p-4">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-sm font-semibold text-gray-800">{t("admin.cursos.enrollment.add", { defaultValue: "Agregar estudiante" })}</h3>
+                <div className="flex items-center gap-2">
                   <button
-                    onClick={() => void handleAdminEnroll(s.id)}
-                    disabled={enrollingId === s.id}
-                    className="inline-flex items-center gap-1 px-2.5 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700 disabled:opacity-50"
+                    type="button"
+                    onClick={toggleSelectAllVisible}
+                    className="rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-700 hover:bg-gray-50"
                   >
-                    {enrollingId === s.id ? <Loader2 size={12} className="animate-spin" /> : <Plus size={12} />}
-                    {t("admin.cursos.enrollment.enroll", { defaultValue: "Inscribir" })}
+                    Seleccionar visibles
+                  </button>
+                  <button
+                    type="button"
+                    onClick={clearSelectedToEnroll}
+                    className="rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-700 hover:bg-gray-50"
+                  >
+                    Limpiar
                   </button>
                 </div>
-              ))
-            )}
+              </div>
+
+              <div className="relative mb-3">
+                <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                <input
+                  className="w-full pl-9 pr-4 py-2 border border-gray-300 rounded-lg text-sm"
+                  placeholder={t("admin.cursos.enrollment.searchPlaceholder", { defaultValue: "Buscar estudiante..." })}
+                  value={enrollSearch}
+                  onChange={(e) => setEnrollSearch(e.target.value)}
+                />
+              </div>
+
+              <button
+                type="button"
+                onClick={() => void handleBulkEnroll()}
+                disabled={bulkEnrolling || selectedToEnroll.size === 0}
+                className="mb-3 inline-flex items-center gap-2 rounded-lg bg-violet-600 px-3 py-2 text-sm font-medium text-white hover:bg-violet-700 disabled:opacity-50"
+              >
+                {bulkEnrolling ? <Loader2 size={14} className="animate-spin" /> : <UserPlus size={14} />}
+                Inscribir seleccionados ({selectedToEnroll.size})
+              </button>
+
+              <div className="max-h-80 overflow-y-auto space-y-2 pr-1">
+                {availableStudents.length === 0 ? (
+                  <p className="text-center text-gray-400 py-6 text-sm">{t("admin.cursos.enrollment.allEnrolled", { defaultValue: "No hay más estudiantes disponibles" })}</p>
+                ) : (
+                  availableStudents.map((student) => {
+                    const checked = selectedToEnroll.has(student.id);
+                    return (
+                      <div
+                        key={student.id}
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => toggleStudentSelection(student.id)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            toggleStudentSelection(student.id);
+                          }
+                        }}
+                        className={`flex items-center justify-between rounded-lg border px-3 py-2 transition ${
+                          checked ? "border-violet-300 bg-violet-50" : "border-gray-200 hover:bg-gray-50"
+                        }`}
+                      >
+                        <div className="flex items-start gap-2">
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => toggleStudentSelection(student.id)}
+                            onClick={(e) => e.stopPropagation()}
+                            className="mt-1"
+                          />
+                          <div>
+                            <p className="text-sm font-medium">{student.display_name || student.email}</p>
+                            {student.display_name && <p className="text-xs text-gray-400">{student.email}</p>}
+                          </div>
+                        </div>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            void handleAdminEnroll(student.id);
+                          }}
+                          disabled={enrollingId === student.id}
+                          className="inline-flex items-center gap-1 rounded bg-blue-600 px-2.5 py-1 text-xs text-white hover:bg-blue-700 disabled:opacity-50"
+                        >
+                          {enrollingId === student.id ? <Loader2 size={12} className="animate-spin" /> : <Plus size={12} />}
+                          {t("admin.cursos.enrollment.enroll", { defaultValue: "Inscribir" })}
+                        </button>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </section>
           </div>
         </div>
       </Modal>
@@ -1321,7 +1728,7 @@ export default function AdminCursos() {
               <div>
                 <label className="block text-sm font-medium mb-1">Ano escolar</label>
                 <input
-                  className="w-full px-3 py-2 border rounded-lg"
+                  className={`w-full px-3 py-2 border rounded-lg ${/^\d{4}-\d{4}$/.test(assignmentEditForm.anio_escolar.trim()) || !assignmentEditForm.anio_escolar.trim() ? "border-gray-300" : "border-red-300"}`}
                   value={assignmentEditForm.anio_escolar}
                   onChange={(e) => setAssignmentEditForm((prev) => ({ ...prev, anio_escolar: e.target.value }))}
                   placeholder="YYYY-YYYY"
@@ -1342,12 +1749,47 @@ export default function AdminCursos() {
 
           <div className="flex justify-end gap-2 mt-6">
             <button onClick={() => setAssignmentEditOpen(false)} className="px-4 py-2 border rounded-lg hover:bg-gray-50">Cancelar</button>
-            <button onClick={() => void handleSaveAssignment()} disabled={savingAssignment} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50">
+            <button onClick={() => void handleSaveAssignment()} disabled={savingAssignment || !assignmentEditForm.docente_id.trim() || !/^\d{4}-\d{4}$/.test(assignmentEditForm.anio_escolar.trim())} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50">
               {savingAssignment ? "Guardando..." : "Guardar"}
             </button>
           </div>
         </div>
       </Modal>
+
+      <Modal open={confirmDialog.open} onClose={closeConfirmDialog} panelClassName="max-w-md">
+        <div className="px-6 py-5 border-b border-gray-100">
+          <div className="flex items-start gap-3">
+            <div className={`mt-0.5 rounded-full p-2 ${confirmDialog.intent === "danger" ? "bg-red-100 text-red-700" : "bg-amber-100 text-amber-700"}`}>
+              <AlertTriangle size={16} />
+            </div>
+            <div>
+              <h3 className="text-base font-semibold text-gray-900">{confirmDialog.title}</h3>
+              <p className="text-sm text-gray-600 mt-1">{confirmDialog.description}</p>
+            </div>
+          </div>
+        </div>
+        <div className="px-6 py-4 bg-gray-50 flex justify-end gap-2">
+          <button
+            onClick={closeConfirmDialog}
+            disabled={confirmLoading}
+            className="px-4 py-2 text-sm text-gray-700 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 transition disabled:opacity-50"
+          >
+            Cancelar
+          </button>
+          <button
+            onClick={() => void runConfirmedAction()}
+            disabled={confirmLoading}
+            className={`px-5 py-2 text-sm text-white rounded-xl transition disabled:opacity-50 inline-flex items-center gap-2 ${
+              confirmDialog.intent === "danger" ? "bg-red-600 hover:bg-red-700" : "bg-amber-600 hover:bg-amber-700"
+            }`}
+          >
+            {confirmLoading && <Loader2 size={14} className="animate-spin" />}
+            {confirmDialog.confirmLabel}
+          </button>
+        </div>
+      </Modal>
     </div>
   );
 }
+
+

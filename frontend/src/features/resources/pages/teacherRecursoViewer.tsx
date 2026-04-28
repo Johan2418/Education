@@ -250,14 +250,29 @@ export default function TeacherRecursoViewer() {
       e.preventDefault();
       toast("Menu contextual deshabilitado en modo protegido");
     };
+    const preventClipboard = (e: ClipboardEvent) => {
+      e.preventDefault();
+      toast("Accion deshabilitada en modo protegido");
+    };
+    const preventSelection = (e: Event) => {
+      e.preventDefault();
+    };
     const preventKeys = (e: KeyboardEvent) => {
       const key = e.key.toLowerCase();
+      const printScreenPressed = key === "printscreen";
       const blocked =
         (e.ctrlKey && key === "s") ||
         (e.ctrlKey && key === "p") ||
-        (e.ctrlKey && e.shiftKey && ["i", "j", "c"].includes(key));
-      if (blocked) {
+        (e.metaKey && key === "s") ||
+        (e.metaKey && key === "p") ||
+        (e.ctrlKey && e.shiftKey && ["i", "j", "c", "s"].includes(key)) ||
+        (e.metaKey && e.altKey && ["i", "j", "c"].includes(key)) ||
+        printScreenPressed;
+      if (blocked || printScreenPressed) {
         e.preventDefault();
+        if (printScreenPressed && navigator.clipboard?.writeText) {
+          void navigator.clipboard.writeText("");
+        }
         toast("Accion deshabilitada en modo protegido");
       }
     };
@@ -267,11 +282,19 @@ export default function TeacherRecursoViewer() {
     };
 
     document.addEventListener("contextmenu", preventContextMenu);
+    document.addEventListener("copy", preventClipboard);
+    document.addEventListener("cut", preventClipboard);
+    document.addEventListener("selectstart", preventSelection);
+    document.addEventListener("dragstart", preventSelection);
     document.addEventListener("keydown", preventKeys);
     window.addEventListener("beforeprint", onBeforePrint);
 
     return () => {
       document.removeEventListener("contextmenu", preventContextMenu);
+      document.removeEventListener("copy", preventClipboard);
+      document.removeEventListener("cut", preventClipboard);
+      document.removeEventListener("selectstart", preventSelection);
+      document.removeEventListener("dragstart", preventSelection);
       document.removeEventListener("keydown", preventKeys);
       window.removeEventListener("beforeprint", onBeforePrint);
     };
@@ -482,6 +505,14 @@ export default function TeacherRecursoViewer() {
             </div>
 
             <div className="mt-3 grid grid-cols-2 gap-2">
+              <div className="rounded-lg border border-slate-200 bg-white px-2.5 py-2">
+                <p className="text-[10px] uppercase tracking-wide text-slate-500">Vistas recurso</p>
+                <p className="text-sm font-semibold text-slate-900">{chatReport?.vistas_recurso_total ?? 0}</p>
+              </div>
+              <div className="rounded-lg border border-slate-200 bg-white px-2.5 py-2">
+                <p className="text-[10px] uppercase tracking-wide text-slate-500">Usuarios unicos</p>
+                <p className="text-sm font-semibold text-slate-900">{chatReport?.usuarios_vistas_total ?? 0}</p>
+              </div>
               <div className="rounded-lg border border-slate-200 bg-white px-2.5 py-2">
                 <p className="text-[10px] uppercase tracking-wide text-slate-500">Sesiones</p>
                 <p className="text-sm font-semibold text-slate-900">{chatReport?.sesiones_total ?? 0}</p>

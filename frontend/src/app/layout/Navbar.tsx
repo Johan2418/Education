@@ -1,7 +1,7 @@
-import { Menu, Atom, Search, X } from "lucide-react";
+import { Menu, Atom, Search, X, Bell } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useNavbar } from "@/app/layout/hooks/useNavbar";
-import type { Leccion } from "@/shared/types";
+import type { Leccion, RecentContentItem } from "@/shared/types";
 
 export default function Navbar({
   toggleSidebar,
@@ -142,6 +142,92 @@ export default function Navbar({
 
           {hook.session && hook.profile ? (
             <>
+              {hook.isStudent && (
+                <div className="relative" ref={hook.notificationsPanelRef}>
+                  <button
+                    onClick={hook.toggleNotificationsPanel}
+                    className={`relative p-2.5 rounded-xl transition-all duration-200 ${
+                      highContrast
+                        ? "border border-yellow-400 text-yellow-300 hover:bg-yellow-900"
+                        : "border border-gray-200 text-gray-600 hover:border-indigo-300 hover:bg-indigo-50 hover:text-indigo-600"
+                    }`}
+                    aria-label={t("home.notificationsButton", { defaultValue: "Notificaciones" })}
+                    title={t("home.notificationsButton", { defaultValue: "Notificaciones" })}
+                  >
+                    <Bell size={18} />
+                    {hook.unreadNotifications > 0 && (
+                      <span className="absolute -top-1 -right-1 min-w-[1.1rem] h-[1.1rem] px-1 rounded-full bg-rose-500 text-white text-[10px] leading-none flex items-center justify-center font-bold">
+                        {hook.unreadNotifications > 99 ? "99+" : hook.unreadNotifications}
+                      </span>
+                    )}
+                  </button>
+
+                  {hook.notificationsOpen && (
+                    <div className={`absolute right-0 mt-2 w-80 rounded-2xl border shadow-2xl z-30 overflow-hidden ${
+                      highContrast ? "bg-black border-yellow-400" : "bg-white border-gray-200"
+                    }`}>
+                      <div className={`px-4 py-3 border-b flex items-center justify-between ${
+                        highContrast ? "border-yellow-700" : "border-gray-100"
+                      }`}>
+                        <p className="text-sm font-semibold">{t("home.notificationsButton", { defaultValue: "Notificaciones" })}</p>
+                        {hook.unreadNotifications > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => hook.markNotificationsAsRead()}
+                            className={`text-xs font-medium ${
+                              highContrast ? "text-yellow-300 hover:text-yellow-200" : "text-indigo-600 hover:text-indigo-700"
+                            }`}
+                          >
+                            {t("home.markNotificationsRead", { defaultValue: "Marcar como vistas" })}
+                          </button>
+                        )}
+                      </div>
+
+                      {hook.notificationsLoading ? (
+                        <div className={`px-4 py-6 text-sm ${highContrast ? "text-yellow-200" : "text-gray-500"}`}>
+                          {t("home.loadingRecentContent", { defaultValue: "Cargando..." })}
+                        </div>
+                      ) : hook.recentNotifications.length === 0 ? (
+                        <div className={`px-4 py-6 text-sm ${highContrast ? "text-yellow-200" : "text-gray-500"}`}>
+                          {t("home.noNotificationsYet", { defaultValue: "Sin notificaciones por ahora" })}
+                        </div>
+                      ) : (
+                        <ul className="max-h-80 overflow-y-auto">
+                          {hook.recentNotifications.map((item: RecentContentItem) => (
+                            <li key={`${item.tipo}-${item.id}`}>
+                              <button
+                                type="button"
+                                onClick={() => hook.handleNotificationClick(item)}
+                                className={`w-full text-left px-4 py-3 border-b transition-colors ${
+                                  highContrast
+                                    ? "border-yellow-800 hover:bg-yellow-900/30"
+                                    : "border-gray-100 hover:bg-gray-50"
+                                }`}
+                              >
+                                <div className="flex items-center justify-between gap-2">
+                                  <span className={`text-[11px] px-2 py-0.5 rounded-full font-semibold uppercase ${
+                                    highContrast ? "bg-yellow-800 text-yellow-100" : "bg-indigo-50 text-indigo-700"
+                                  }`}>
+                                    {t(`home.contentType.${item.tipo}`)}
+                                  </span>
+                                  <span className={`text-[11px] ${highContrast ? "text-yellow-300" : "text-gray-400"}`}>
+                                    {new Date(item.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                                  </span>
+                                </div>
+                                <p className="text-sm font-medium mt-1">{item.titulo}</p>
+                                <p className={`text-xs mt-1 truncate ${highContrast ? "text-yellow-200" : "text-gray-500"}`}>
+                                  {item.materia_nombre || item.curso_nombre || item.descripcion || t("home.noDescription")}
+                                </p>
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
               <span
                 className={`inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-semibold ${
                   hook.isAdmin

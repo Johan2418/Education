@@ -5,8 +5,8 @@ import { Loader2, Save } from "lucide-react";
 import toast from "react-hot-toast";
 
 import { getMe } from "@/shared/lib/auth";
-import { getTrabajoFormulario, upsertEntrega, updateEntrega } from "@/features/trabajos/services/trabajos";
-import type { CreateEntregaRequest, Trabajo, TrabajoEntrega, TrabajoPregunta } from "@/shared/types/trabajos";
+import { getEntregaDetalle, getTrabajoFormulario, upsertEntrega, updateEntrega } from "@/features/trabajos/services/trabajos";
+import type { CreateEntregaRequest, EntregaDetalleResponse, Trabajo, TrabajoEntrega, TrabajoPregunta } from "@/shared/types/trabajos";
 
 function normalizeError(err: unknown): string {
   if (typeof err === "object" && err !== null && "message" in err) {
@@ -35,6 +35,7 @@ export default function StudentTrabajoDetail() {
   const [saving, setSaving] = useState(false);
   const [trabajo, setTrabajo] = useState<Trabajo | null>(null);
   const [entrega, setEntrega] = useState<TrabajoEntrega | null>(null);
+  const [detalleEntrega, setDetalleEntrega] = useState<EntregaDetalleResponse | null>(null);
   const [preguntas, setPreguntas] = useState<TrabajoPregunta[]>([]);
 
   const [respuestas, setRespuestas] = useState<Record<string, string>>({});
@@ -45,6 +46,11 @@ export default function StudentTrabajoDetail() {
   const draftKey = useMemo(() => buildDraftKey(trabajoId), [trabajoId]);
   const currentSignature = useMemo(() => JSON.stringify({ respuestas, comentario, archivoUrl }), [archivoUrl, comentario, respuestas]);
   const hasUnsavedChanges = currentSignature !== lastSavedSignature;
+  const isLockedByGrade = detalleEntrega?.entrega.estado === "calificada";
+  const calificacionesPorPregunta = useMemo(
+    () => new Map((detalleEntrega?.calificaciones_pregunta || []).map((item) => [item.pregunta_id, item])),
+    [detalleEntrega]
+  );
 
   useEffect(() => {
     (async () => {
@@ -81,6 +87,13 @@ export default function StudentTrabajoDetail() {
             archivoUrl: formulario.mi_entrega.archivo_url || "",
           }));
           localStorage.removeItem(draftKey);
+
+          try {
+            const detalle = await getEntregaDetalle(formulario.mi_entrega.id);
+            setDetalleEntrega(detalle);
+          } catch {
+            setDetalleEntrega(null);
+          }
         } else {
           let initialRespuestas: Record<string, string> = respuestasIniciales;
           let initialComentario = "";
@@ -101,6 +114,7 @@ export default function StudentTrabajoDetail() {
           setRespuestas(initialRespuestas);
           setComentario(initialComentario);
           setArchivoUrl(initialArchivoUrl);
+          setDetalleEntrega(null);
           setLastSavedSignature(JSON.stringify({
             respuestas: initialRespuestas,
             comentario: initialComentario,
@@ -177,6 +191,12 @@ export default function StudentTrabajoDetail() {
       }
 
       setEntrega(saved);
+      try {
+        const detalle = await getEntregaDetalle(saved.id);
+        setDetalleEntrega(detalle);
+      } catch {
+        setDetalleEntrega(null);
+      }
       setLastSavedSignature(JSON.stringify({ respuestas, comentario, archivoUrl }));
       localStorage.removeItem(draftKey);
       toast.success(t("student.trabajos.saved", { defaultValue: "Entrega guardada" }));
@@ -234,6 +254,18 @@ export default function StudentTrabajoDetail() {
       <div className="bg-white rounded-lg shadow p-4 space-y-3">
         <h2 className="text-lg font-semibold">{t("student.trabajos.delivery", { defaultValue: "Tu entrega" })}</h2>
 
+        {detalleEntrega?.calificacion && (
+          <div className="rounded border border-emerald-200 bg-emerald-50 p-3">
+            <p className="text-sm font-semibold text-emerald-800">
+              Calificación: {detalleEntrega.calificacion.puntaje.toFixed(2)} / 100
+            </p>
+            <p className="text-xs text-emerald-700 mt-1">Estado: {detalleEntrega.entrega.estado}</p>
+            {detalleEntrega.calificacion.feedback && (
+              <p className="text-sm text-emerald-900 mt-2">{detalleEntrega.calificacion.feedback}</p>
+            )}
+          </div>
+        )}
+
         {preguntas.length === 0 ? (
           <div className="text-sm text-gray-500 border border-dashed border-gray-300 rounded p-4">
             {t("student.trabajos.formEmpty", { defaultValue: "Este trabajo no tiene preguntas configuradas." })}
@@ -265,6 +297,7 @@ export default function StudentTrabajoDetail() {
                           <input
                             type="radio"
                             name={`q-${pregunta.id}`}
+                            disabled={isLockedByGrade}
                             checked={answer === option}
                             onChange={() => setRespuestas((prev) => ({ ...prev, [pregunta.id]: option }))}
                           />
@@ -276,6 +309,7 @@ export default function StudentTrabajoDetail() {
                     <input
                       className="mt-2 w-full border border-gray-300 rounded px-3 py-2"
                       value={answer}
+                      disabled={isLockedByGrade}
                       placeholder={pregunta.placeholder || t("student.trabajos.answerPlaceholder", { defaultValue: "Escribe tu respuesta" })}
                       onChange={(e) => setRespuestas((prev) => ({ ...prev, [pregunta.id]: e.target.value }))}
                     />
@@ -283,10 +317,20 @@ export default function StudentTrabajoDetail() {
                     <textarea
                       rows={3}
                       className="mt-2 w-full border border-gray-300 rounded px-3 py-2"
+                      disabled={isLockedByGrade}
                       placeholder={pregunta.placeholder || t("student.trabajos.answerPlaceholder", { defaultValue: "Escribe tu respuesta" })}
                       value={answer}
                       onChange={(e) => setRespuestas((prev) => ({ ...prev, [pregunta.id]: e.target.value }))}
                     />
+                  )}
+
+                  {calificacionesPorPregunta.get(pregunta.id) && (
+                    <div className="mt-2 rounded border border-emerald-200 bg-emerald-50 px-2 py-1 text-xs text-emerald-800">
+                      Puntaje: {calificacionesPorPregunta.get(pregunta.id)?.puntaje?.toFixed(2) ?? "0.00"}
+                      {calificacionesPorPregunta.get(pregunta.id)?.feedback
+                        ? ` · ${calificacionesPorPregunta.get(pregunta.id)?.feedback}`
+                        : ""}
+                    </div>
                   )}
                 </div>
               );
@@ -299,6 +343,7 @@ export default function StudentTrabajoDetail() {
           <textarea
             rows={3}
             className="w-full border border-gray-300 rounded px-3 py-2"
+            disabled={isLockedByGrade}
             value={comentario}
             onChange={(e) => setComentario(e.target.value)}
           />
@@ -309,6 +354,7 @@ export default function StudentTrabajoDetail() {
           <input
             type="url"
             className="w-full border border-gray-300 rounded px-3 py-2"
+            disabled={isLockedByGrade}
             value={archivoUrl}
             onChange={(e) => setArchivoUrl(e.target.value)}
           />
@@ -325,8 +371,12 @@ export default function StudentTrabajoDetail() {
             <p className="text-xs text-amber-700 mr-2">{t("student.trabajos.unsaved", { defaultValue: "Tienes cambios sin guardar" })}</p>
           )}
 
+          {isLockedByGrade && (
+            <p className="text-xs text-emerald-700 mr-2">Entrega bloqueada porque ya fue calificada.</p>
+          )}
+
           <button
-            disabled={saving || trabajo.estado === "cerrado"}
+            disabled={saving || trabajo.estado === "cerrado" || isLockedByGrade}
             onClick={handleGuardar}
             className="inline-flex items-center gap-2 px-4 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
           >

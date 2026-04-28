@@ -2,22 +2,24 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { getMe } from "@/shared/lib/auth";
-import { listMisProgresos } from "@/shared/services/progresos";
 import toast from "react-hot-toast";
 import { BookOpen, Award, Clock, TrendingUp, ArrowRight, Sparkles } from "lucide-react";
-import type { Progreso, Leccion } from "@/shared/types";
-
-interface ProgresoConLeccion extends Progreso {
-  leccion?: Leccion;
-}
+import type { MateriaCalificacionEstudianteResponse, Progreso } from "@/shared/types";
+import { getStudentDashboardStats } from "@/features/student/services/dashboard";
 
 export default function StudentDashboard({ highContrast = false }: { highContrast?: boolean }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [profile, setProfile] = useState<any | null>(null);
-  const [progresos, setProgresos] = useState<ProgresoConLeccion[]>([]);
+  const [progresos, setProgresos] = useState<Progreso[]>([]);
   const [totalLessons, setTotalLessons] = useState<number>(0);
+  const [totalMaterias, setTotalMaterias] = useState<number>(0);
+  const [pendingTrabajos, setPendingTrabajos] = useState<number>(0);
+  const [materiaCalificaciones, setMateriaCalificaciones] = useState<MateriaCalificacionEstudianteResponse[]>([]);
+  const [materiasAprobadas, setMateriasAprobadas] = useState<number>(0);
+  const [materiasReprobadas, setMateriasReprobadas] = useState<number>(0);
+  const [materiasNoCompletadas, setMateriasNoCompletadas] = useState<number>(0);
 
   useEffect(() => {
     (async () => {
@@ -26,10 +28,15 @@ export default function StudentDashboard({ highContrast = false }: { highContras
         const me = await getMe();
         if (!me) { navigate("/login"); return; }
         setProfile(me);
-
-        const prog = await listMisProgresos();
-        setProgresos(prog);
-        setTotalLessons(0);
+        const dashboardStats = await getStudentDashboardStats();
+        setProgresos(dashboardStats.progresos);
+        setTotalLessons(dashboardStats.totalLessons);
+        setTotalMaterias(dashboardStats.totalMaterias);
+        setPendingTrabajos(dashboardStats.trabajosPendientes);
+        setMateriaCalificaciones(dashboardStats.materiaCalificaciones);
+        setMateriasAprobadas(dashboardStats.materiasAprobadas);
+        setMateriasReprobadas(dashboardStats.materiasReprobadas);
+        setMateriasNoCompletadas(dashboardStats.materiasNoCompletadas);
       } catch (err) {
         console.error("Error loading dashboard", err);
         toast.error(t("dashboard.loadError", { defaultValue: "Error al cargar dashboard" }));
@@ -42,8 +49,9 @@ export default function StudentDashboard({ highContrast = false }: { highContras
   const completedCount = progresos.filter((p) => !!p.completado).length;
   const totalScore = progresos.reduce((acc, p) => acc + (p.puntaje ?? 0), 0);
   const avgScore = progresos.length > 0 ? Math.round(totalScore / progresos.length) : 0;
+  const pendingLessons = Math.max(0, totalLessons - completedCount);
 
-  const lastVisited = progresos.reduce((best: ProgresoConLeccion | null, curr) => {
+  const lastVisited = progresos.reduce((best: Progreso | null, curr) => {
     if (!curr.updated_at) return best;
     if (!best) return curr;
     return new Date(curr.updated_at) > new Date(best.updated_at || "") ? curr : best;
@@ -59,7 +67,7 @@ export default function StudentDashboard({ highContrast = false }: { highContras
     },
     {
       label: t("student.dashboard.pendingLessons", { defaultValue: "Lecciones pendientes" }),
-      value: Math.max(0, progresos.length - completedCount),
+      value: pendingLessons,
       icon: Clock,
       from: "from-amber-500",
       to: "to-orange-500",
@@ -70,6 +78,20 @@ export default function StudentDashboard({ highContrast = false }: { highContras
       icon: TrendingUp,
       from: "from-indigo-500",
       to: "to-violet-500",
+    },
+    {
+      label: t("student.dashboard.pendingTasks", { defaultValue: "Trabajos pendientes" }),
+      value: pendingTrabajos,
+      icon: BookOpen,
+      from: "from-sky-500",
+      to: "to-cyan-500",
+    },
+    {
+      label: t("student.dashboard.approvedSubjects", { defaultValue: "Materias aprobadas" }),
+      value: materiasAprobadas,
+      icon: Award,
+      from: "from-green-500",
+      to: "to-emerald-500",
     },
   ];
 
@@ -94,14 +116,14 @@ export default function StudentDashboard({ highContrast = false }: { highContras
               <div className={`flex items-center gap-3 rounded-2xl px-5 py-3 ${highContrast ? "bg-yellow-900/30 border border-yellow-500" : "bg-white/10 backdrop-blur-sm border border-white/10"}`}>
                 <div className="text-center">
                   <p className="text-3xl font-bold">{avgScore}%</p>
-                  <p className={`text-xs ${highContrast ? "text-yellow-200" : "text-white/60"}`}>{t("student.dashboard.totalScore", { defaultValue: "Puntaje total" })}</p>
+                  <p className={`text-xs ${highContrast ? "text-yellow-200" : "text-white/60"}`}>{t("student.dashboard.averageScore", { defaultValue: "Promedio de puntaje" })}</p>
                 </div>
               </div>
             </div>
           </div>
 
           {/* Stats Grid */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-5 mb-8">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 mb-8">
             {statCards.map((card, idx) => (
               <div
                 key={card.label}
@@ -158,16 +180,68 @@ export default function StudentDashboard({ highContrast = false }: { highContras
               </h3>
               <div className="space-y-4">
                 <div className={`flex items-center justify-between p-3 rounded-xl ${highContrast ? "bg-yellow-900/20" : "bg-gray-50"}`}>
-                  <span className={`text-sm ${highContrast ? "text-yellow-300" : "text-gray-600"}`}>{t("student.dashboard.totalLessons", { defaultValue: "Total lecciones progresadas" })}</span>
+                  <span className={`text-sm ${highContrast ? "text-yellow-300" : "text-gray-600"}`}>{t("student.dashboard.totalLessons", { defaultValue: "Lecciones disponibles" })}</span>
+                  <span className={`font-bold ${highContrast ? "text-yellow-200" : "text-gray-900"}`}>{totalLessons}</span>
+                </div>
+                <div className={`flex items-center justify-between p-3 rounded-xl ${highContrast ? "bg-yellow-900/20" : "bg-gray-50"}`}>
+                  <span className={`text-sm ${highContrast ? "text-yellow-300" : "text-gray-600"}`}>{t("student.dashboard.totalProgress", { defaultValue: "Lecciones progresadas" })}</span>
                   <span className={`font-bold ${highContrast ? "text-yellow-200" : "text-gray-900"}`}>{progresos.length}</span>
                 </div>
                 <div className={`flex items-center justify-between p-3 rounded-xl ${highContrast ? "bg-yellow-900/20" : "bg-gray-50"}`}>
                   <span className={`text-sm ${highContrast ? "text-yellow-300" : "text-gray-600"}`}>{t("student.dashboard.averageScore", { defaultValue: "Promedio de puntaje" })}</span>
                   <span className={`font-bold ${highContrast ? "text-yellow-200" : "text-gray-900"}`}>{avgScore}%</span>
                 </div>
+                <div className={`flex items-center justify-between p-3 rounded-xl ${highContrast ? "bg-yellow-900/20" : "bg-gray-50"}`}>
+                  <span className={`text-sm ${highContrast ? "text-yellow-300" : "text-gray-600"}`}>{t("student.dashboard.enrolledSubjects", { defaultValue: "Materias matriculadas" })}</span>
+                  <span className={`font-bold ${highContrast ? "text-yellow-200" : "text-gray-900"}`}>{totalMaterias}</span>
+                </div>
+                <div className={`flex items-center justify-between p-3 rounded-xl ${highContrast ? "bg-yellow-900/20" : "bg-gray-50"}`}>
+                  <span className={`text-sm ${highContrast ? "text-yellow-300" : "text-gray-600"}`}>{t("student.dashboard.pendingTasks", { defaultValue: "Trabajos pendientes" })}</span>
+                  <span className={`font-bold ${highContrast ? "text-yellow-200" : "text-gray-900"}`}>{pendingTrabajos}</span>
+                </div>
+                <div className={`flex items-center justify-between p-3 rounded-xl ${highContrast ? "bg-yellow-900/20" : "bg-gray-50"}`}>
+                  <span className={`text-sm ${highContrast ? "text-yellow-300" : "text-gray-600"}`}>Materias aprobadas</span>
+                  <span className={`font-bold ${highContrast ? "text-yellow-200" : "text-emerald-700"}`}>{materiasAprobadas}</span>
+                </div>
+                <div className={`flex items-center justify-between p-3 rounded-xl ${highContrast ? "bg-yellow-900/20" : "bg-gray-50"}`}>
+                  <span className={`text-sm ${highContrast ? "text-yellow-300" : "text-gray-600"}`}>Materias reprobadas</span>
+                  <span className={`font-bold ${highContrast ? "text-yellow-200" : "text-rose-700"}`}>{materiasReprobadas}</span>
+                </div>
+                <div className={`flex items-center justify-between p-3 rounded-xl ${highContrast ? "bg-yellow-900/20" : "bg-gray-50"}`}>
+                  <span className={`text-sm ${highContrast ? "text-yellow-300" : "text-gray-600"}`}>Materias no completadas</span>
+                  <span className={`font-bold ${highContrast ? "text-yellow-200" : "text-amber-700"}`}>{materiasNoCompletadas}</span>
+                </div>
               </div>
             </aside>
           </div>
+
+          {materiaCalificaciones.length > 0 && (
+            <section className={`mt-8 rounded-2xl shadow-md p-6 animate-fade-in-up ${highContrast ? "bg-black border border-yellow-500" : "bg-white"}`}>
+              <h3 className={`font-bold text-lg mb-4 ${highContrast ? "text-yellow-200" : "text-gray-900"}`}>Calificaciones por materia</h3>
+              <div className="overflow-auto">
+                <table className="w-full text-sm">
+                  <thead className={highContrast ? "text-yellow-300 border-b border-yellow-700" : "text-slate-700 border-b"}>
+                    <tr>
+                      <th className="text-left py-2 pr-3">Materia</th>
+                      <th className="text-left py-2 pr-3">Nota final</th>
+                      <th className="text-left py-2 pr-3">Estado</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {materiaCalificaciones.map((item) => (
+                      <tr key={item.materia_id} className={highContrast ? "border-b border-yellow-900/40" : "border-b border-slate-100"}>
+                        <td className="py-2 pr-3 font-medium">{item.materia_nombre}</td>
+                        <td className="py-2 pr-3">{item.nota_final.toFixed(2)} / {item.puntaje_total.toFixed(2)}</td>
+                        <td className="py-2 pr-3">
+                          {item.estado_final === "aprobada" ? "Aprobada" : item.estado_final === "reprobada" ? "Reprobada" : item.estado_final === "materia_no_completada" ? "Materia no completada" : "Sin calificar"}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          )}
 
           {progresos.length === 0 && (
             <div className={`mt-8 rounded-2xl shadow-md p-10 text-center animate-fade-in-up ${highContrast ? "bg-black border border-yellow-500" : "bg-white"}`} style={{ animationDelay: "600ms" }}>

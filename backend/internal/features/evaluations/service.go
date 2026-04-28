@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"math"
 	"strings"
+
+	"gorm.io/gorm"
 )
 
 type Service struct {
@@ -150,7 +152,38 @@ func (s *Service) SubmitResultado(ctx context.Context, req ResultadoPruebaReques
 
 	canonical.Aprobado = canonical.PuntajeObtenido >= pruebaCompleta.PuntajeMinimo
 
-	return s.repo.CreateResultado(ctx, canonical, usuarioID)
+	resultado, err := s.repo.CreateResultado(ctx, canonical, usuarioID)
+	if err != nil {
+		return nil, err
+	}
+
+	if pruebaCompleta.LeccionID != nil && strings.TrimSpace(*pruebaCompleta.LeccionID) != "" {
+		leccionID := strings.TrimSpace(*pruebaCompleta.LeccionID)
+		reqProgreso := ProgresoRequest{LeccionID: leccionID}
+
+		existing, progresoErr := s.repo.GetProgreso(ctx, usuarioID, leccionID)
+		if progresoErr != nil && !errors.Is(progresoErr, gorm.ErrRecordNotFound) {
+			return nil, progresoErr
+		}
+
+		completado := canonical.Aprobado
+		if existing != nil && existing.Completado {
+			completado = true
+		}
+		reqProgreso.Completado = &completado
+
+		mejorPuntaje := canonical.PuntajeObtenido
+		if existing != nil && existing.Puntaje != nil && *existing.Puntaje > mejorPuntaje {
+			mejorPuntaje = *existing.Puntaje
+		}
+		reqProgreso.Puntaje = &mejorPuntaje
+
+		if _, err := s.repo.UpsertProgreso(ctx, usuarioID, reqProgreso); err != nil {
+			return nil, err
+		}
+	}
+
+	return resultado, nil
 }
 
 func (s *Service) ListResultadosByPrueba(ctx context.Context, pruebaID string) ([]ResultadoPrueba, error) {

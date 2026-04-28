@@ -5,8 +5,18 @@ import { getMe } from "@/shared/lib/auth";
 import api from "@/shared/lib/api";
 import { listMisProgresos } from "@/shared/services/progresos";
 import toast from "react-hot-toast";
-import type { Leccion, Progreso, Curso, Materia, Unidad, Tema } from "@/shared/types";
+import type { Leccion, Progreso, Curso, Materia, Unidad, Tema, Prueba } from "@/shared/types";
 import { BookOpen, GraduationCap } from "lucide-react";
+
+interface ApiEnvelope<T> {
+  data: T;
+}
+
+function unwrapList<T>(payload: T[] | ApiEnvelope<T[]>): T[] {
+  if (Array.isArray(payload)) return payload;
+  if (payload && Array.isArray(payload.data)) return payload.data;
+  return [];
+}
 
 export default function LessonsPage({ highContrast = false }: { highContrast?: boolean }) {
   const { t } = useTranslation();
@@ -23,17 +33,17 @@ export default function LessonsPage({ highContrast = false }: { highContrast?: b
         if (!me) { navigate("/login"); return; }
 
         // Fetch all lessons through the hierarchy
-        const cursos: Curso[] = await api.get("/cursos");
+        const cursos = unwrapList(await api.get<Curso[] | ApiEnvelope<Curso[]>>("/cursos"));
         const allLessons: Leccion[] = [];
-        for (const c of cursos || []) {
-          const materias: Materia[] = await api.get(`/cursos/${c.id}/materias`);
-          for (const m of materias || []) {
-            const unidades: Unidad[] = await api.get(`/materias/${m.id}/unidades`);
-            for (const u of unidades || []) {
-              const temas: Tema[] = await api.get(`/unidades/${u.id}/temas`);
-              for (const tema of temas || []) {
-                const lecciones: Leccion[] = await api.get(`/temas/${tema.id}/lecciones`);
-                allLessons.push(...(lecciones || []));
+        for (const c of cursos) {
+          const materias = unwrapList(await api.get<Materia[] | ApiEnvelope<Materia[]>>(`/cursos/${c.id}/materias`));
+          for (const m of materias) {
+            const unidades = unwrapList(await api.get<Unidad[] | ApiEnvelope<Unidad[]>>(`/materias/${m.id}/unidades`));
+            for (const u of unidades) {
+              const temas = unwrapList(await api.get<Tema[] | ApiEnvelope<Tema[]>>(`/unidades/${u.id}/temas`));
+              for (const tema of temas) {
+                const lecciones = unwrapList(await api.get<Leccion[] | ApiEnvelope<Leccion[]>>(`/temas/${tema.id}/lecciones`));
+                allLessons.push(...lecciones);
               }
             }
           }
@@ -55,6 +65,26 @@ export default function LessonsPage({ highContrast = false }: { highContrast?: b
       }
     })();
   }, [navigate, t]);
+
+  const openLessonFinalQuiz = async (lessonId: string) => {
+    try {
+      const pruebas = unwrapList(await api.get<Prueba[] | ApiEnvelope<Prueba[]>>(`/lecciones/${lessonId}/pruebas`));
+      const ordered = [...pruebas].sort((a, b) => {
+        const byOrder = (a.orden ?? 0) - (b.orden ?? 0);
+        if (byOrder !== 0) return byOrder;
+        return (a.created_at || "").localeCompare(b.created_at || "");
+      });
+      const target = ordered[0];
+      if (!target) {
+        toast.error("Esta leccion no tiene prueba final configurada todavia.");
+        return;
+      }
+      navigate(`/lesson/${lessonId}/prueba/${target.id}`);
+    } catch (err) {
+      console.error("Error opening lesson final quiz", err);
+      toast.error(t("lessons.loadError", { defaultValue: "Error al cargar lecciones" }));
+    }
+  };
 
   if (loading) {
     return (
@@ -97,7 +127,7 @@ export default function LessonsPage({ highContrast = false }: { highContrast?: b
                 key={l.id}
                 className={`group relative rounded-2xl shadow-md flex flex-col cursor-pointer hover:shadow-xl transition-all duration-300 hover:-translate-y-1 overflow-hidden animate-fade-in-up ${highContrast ? "bg-black border border-yellow-500 hover:bg-yellow-900/20" : "bg-white"}`}
                 style={{ animationDelay: `${Math.min(idx, 8) * 75}ms` }}
-                onClick={() => navigate(`/lesson/${l.id}`)}
+                onClick={() => void openLessonFinalQuiz(l.id)}
               >
                 {/* Gradient top accent */}
                 {!highContrast && <div className="absolute top-0 left-0 right-0 h-[3px] bg-gradient-to-r from-indigo-500 via-violet-500 to-cyan-400 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />}

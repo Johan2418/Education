@@ -2,8 +2,8 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { getMe } from "@/shared/lib/auth";
-import api from "@/shared/lib/api";
 import { Users, BookOpen, FileText, Shield, ArrowRight } from "lucide-react";
+import { getAdminDashboardStats, type AdminDashboardStats } from "@/features/admin/services/dashboard";
 
 const cardStyles = [
   { from: "from-indigo-500", to: "to-violet-500" },
@@ -16,8 +16,20 @@ export default function AdminDashboard({ highContrast = false }: { highContrast?
   const { t } = useTranslation();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
-  const [stats, setStats] = useState({ users: 0, cursos: 0, modelos: 0, recursos: 0 });
-  const [displayName, setDisplayName] = useState("");
+  const [stats, setStats] = useState<AdminDashboardStats>({
+    users: 0,
+    students: 0,
+    teachers: 0,
+    admins: 0,
+    cursos: 0,
+    modelos: 0,
+    recursos: 0,
+    totalTrabajos: 0,
+    totalEntregas: 0,
+    totalCalificadas: 0,
+    promedioPuntaje: null,
+    estudiantesActivos: 0,
+  });
 
   useEffect(() => {
     (async () => {
@@ -27,19 +39,8 @@ export default function AdminDashboard({ highContrast = false }: { highContrast?
           navigate("/login");
           return;
         }
-        setDisplayName(me.display_name || "Admin");
-        const [usersRes, cursosRes, modelosRes, recursosRes] = await Promise.all([
-          api.get<{ data: any[] }>("/admin/users").catch(() => ({ data: [] })),
-          api.get<{ data: any[] }>("/cursos").catch(() => ({ data: [] })),
-          api.get<{ data: any[] }>("/modelos").catch(() => ({ data: [] })),
-          api.get<{ data: any[] }>("/recursos").catch(() => ({ data: [] })),
-        ]);
-        setStats({
-          users: usersRes.data?.length ?? 0,
-          cursos: cursosRes.data?.length ?? 0,
-          modelos: modelosRes.data?.length ?? 0,
-          recursos: recursosRes.data?.length ?? 0,
-        });
+        const nextStats = await getAdminDashboardStats();
+        setStats(nextStats);
       } finally {
         setLoading(false);
       }
@@ -59,6 +60,33 @@ export default function AdminDashboard({ highContrast = false }: { highContrast?
     { label: t("admin.dashboard.cursos", { defaultValue: "Cursos" }), count: stats.cursos, icon: BookOpen, path: "/admin/cursos" },
     { label: t("admin.dashboard.modelos", { defaultValue: "Modelos 3D" }), count: stats.modelos, icon: FileText, path: "/admin/modelos" },
     { label: t("admin.dashboard.recursos", { defaultValue: "Recursos" }), count: stats.recursos, icon: Shield, path: "#" },
+  ];
+
+  const systemCards = [
+    {
+      label: t("admin.dashboard.students", { defaultValue: "Estudiantes" }),
+      value: stats.students,
+    },
+    {
+      label: t("admin.dashboard.teachers", { defaultValue: "Profesores" }),
+      value: stats.teachers,
+    },
+    {
+      label: t("admin.dashboard.works", { defaultValue: "Trabajos" }),
+      value: stats.totalTrabajos,
+    },
+    {
+      label: t("admin.dashboard.submissions", { defaultValue: "Entregas" }),
+      value: stats.totalEntregas,
+    },
+    {
+      label: t("admin.dashboard.averageScore", { defaultValue: "Puntaje promedio" }),
+      value: stats.promedioPuntaje != null ? `${stats.promedioPuntaje.toFixed(1)}%` : "N/A",
+    },
+    {
+      label: t("admin.dashboard.activeStudents", { defaultValue: "Estudiantes activos" }),
+      value: stats.estudiantesActivos,
+    },
   ];
 
   return (
@@ -102,6 +130,20 @@ export default function AdminDashboard({ highContrast = false }: { highContrast?
           );
         })}
       </div>
+
+      <section className={`mt-6 rounded-2xl p-5 ${highContrast ? "bg-black border border-yellow-500" : "bg-white shadow-md"}`}>
+        <h2 className={`font-semibold mb-4 ${highContrast ? "text-yellow-200" : "text-gray-900"}`}>
+          {t("admin.dashboard.systemSummary", { defaultValue: "Resumen operativo del sistema" })}
+        </h2>
+        <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
+          {systemCards.map((item) => (
+            <article key={item.label} className={`rounded-xl px-3 py-2 border ${highContrast ? "border-yellow-600 bg-yellow-900/20" : "border-gray-100 bg-gray-50"}`}>
+              <p className={`text-xs ${highContrast ? "text-yellow-300" : "text-gray-500"}`}>{item.label}</p>
+              <p className={`text-lg font-semibold mt-1 ${highContrast ? "text-yellow-200" : "text-gray-900"}`}>{item.value}</p>
+            </article>
+          ))}
+        </div>
+      </section>
     </div>
   );
 }

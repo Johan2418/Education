@@ -97,6 +97,7 @@ type TrabajoPregunta struct {
 	Texto                 string          `json:"texto" gorm:"column:texto"`
 	Tipo                  string          `json:"tipo" gorm:"column:tipo;type:internal.tipo_pregunta"`
 	Opciones              json.RawMessage `json:"opciones" gorm:"column:opciones;type:jsonb"`
+	RespuestaCorrecta     *string         `json:"respuesta_correcta" gorm:"column:respuesta_correcta"`
 	PuntajeMaximo         float64         `json:"puntaje_maximo" gorm:"column:puntaje_maximo;default:1"`
 	PaginaLibro           *int            `json:"pagina_libro" gorm:"column:pagina_libro"`
 	ConfianzaIA           *float64        `json:"confianza_ia" gorm:"column:confianza_ia"`
@@ -152,6 +153,7 @@ type LibroPreguntaInput struct {
 	Texto                 string          `json:"texto"`
 	Tipo                  string          `json:"tipo"`
 	Opciones              json.RawMessage `json:"opciones,omitempty"`
+	RespuestaCorrecta     *string         `json:"respuesta_correcta,omitempty"`
 	PuntajeMaximo         *float64        `json:"puntaje_maximo,omitempty"`
 	PaginaLibro           *int            `json:"pagina_libro,omitempty"`
 	ConfianzaIA           *float64        `json:"confianza_ia,omitempty"`
@@ -303,6 +305,24 @@ type LibroRecursoPaginaResponse struct {
 	Controles      ViewerControls        `json:"controles"`
 }
 
+type LibroRecursoView struct {
+	ID             string          `json:"id" gorm:"column:id;primaryKey;default:gen_random_uuid()"`
+	LibroRecursoID string          `json:"libro_recurso_id" gorm:"column:libro_recurso_id"`
+	UserID         *string         `json:"user_id,omitempty" gorm:"column:user_id"`
+	Pagina         int             `json:"pagina" gorm:"column:pagina"`
+	Metadata       json.RawMessage `json:"metadata,omitempty" gorm:"column:metadata;type:jsonb"`
+	ViewedAt       time.Time       `json:"viewed_at" gorm:"column:viewed_at;autoCreateTime"`
+}
+
+func (LibroRecursoView) TableName() string { return "internal.libro_recurso_view" }
+
+type LibroRecursoViewsSummary struct {
+	RecursoID      string     `json:"recurso_id"`
+	VistasTotal    int64      `json:"vistas_total"`
+	UsuariosUnicos int64      `json:"usuarios_unicos"`
+	UltimaVistaAt  *time.Time `json:"ultima_vista_at,omitempty"`
+}
+
 type ChatMessageRole string
 
 const (
@@ -384,6 +404,9 @@ type LibroChatToolUsage struct {
 
 type LibroChatReportResponse struct {
 	RecursoID          string               `json:"recurso_id"`
+	VistasRecursoTotal int64                `json:"vistas_recurso_total"`
+	UsuariosVistas     int64                `json:"usuarios_vistas_total"`
+	UltimaVistaAt      *time.Time           `json:"ultima_vista_recurso_at,omitempty"`
 	SesionesTotal      int64                `json:"sesiones_total"`
 	MensajesTotal      int64                `json:"mensajes_total"`
 	MensajesUsuario    int64                `json:"mensajes_usuario"`

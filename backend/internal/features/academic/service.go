@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"regexp"
 	"strconv"
 	"strings"
@@ -15,6 +16,14 @@ import (
 type Service struct {
 	repo *Repository
 }
+
+const (
+	defaultPesoContenidosPct       = 35.0
+	defaultPesoLeccionesPct        = 35.0
+	defaultPesoTrabajosPct         = 30.0
+	defaultPuntajeTotal            = 10.0
+	defaultPuntajeMinimoAprobacion = 6.0
+)
 
 func NewService(repo *Repository) *Service {
 	return &Service{repo: repo}
@@ -60,6 +69,30 @@ func (s *Service) ListEstudiantesByCurso(ctx context.Context, cursoID string) ([
 }
 
 func (s *Service) EnrollStudent(ctx context.Context, req EstudianteCursoRequest) (*EstudianteCurso, error) {
+	req.EstudianteID = strings.TrimSpace(req.EstudianteID)
+	req.CursoID = strings.TrimSpace(req.CursoID)
+	if req.EstudianteID == "" {
+		return nil, errRequired("estudiante_id")
+	}
+	if req.CursoID == "" {
+		return nil, errRequired("curso_id")
+	}
+
+	if req.AnioEscolar != nil && strings.TrimSpace(*req.AnioEscolar) != "" {
+		normalized, err := normalizeAnioEscolar(*req.AnioEscolar)
+		if err != nil {
+			return nil, err
+		}
+		req.AnioEscolar = &normalized
+	} else {
+		activeYear, err := s.repo.GetAnioEscolarActivo(ctx)
+		if err != nil {
+			return nil, err
+		}
+		activeYear = strings.TrimSpace(activeYear)
+		req.AnioEscolar = &activeYear
+	}
+
 	return s.repo.EnrollStudent(ctx, req)
 }
 
@@ -95,14 +128,24 @@ func (s *Service) ListMaterias(ctx context.Context, cursoID string, anioEscolar 
 	return s.repo.ListMaterias(ctx, cursoID, &activeYear)
 }
 
+func (s *Service) ListMateriasByEstudiante(ctx context.Context, estudianteID string) ([]Materia, error) {
+	estudianteID = strings.TrimSpace(estudianteID)
+	if estudianteID == "" {
+		return nil, errRequired("estudiante_id")
+	}
+	return s.repo.ListMateriasByEstudiante(ctx, estudianteID)
+}
+
 func (s *Service) GetMateria(ctx context.Context, id string) (*Materia, error) {
 	return s.repo.GetMateria(ctx, id)
 }
 
 func (s *Service) CreateMateria(ctx context.Context, req MateriaRequest, createdBy string) (*Materia, error) {
+	req.Nombre = strings.TrimSpace(req.Nombre)
 	if req.Nombre == "" {
 		return nil, errRequired("nombre")
 	}
+	req.CursoID = strings.TrimSpace(req.CursoID)
 	if req.CursoID == "" {
 		return nil, errRequired("curso_id")
 	}
@@ -122,15 +165,144 @@ func (s *Service) CreateMateria(ctx context.Context, req MateriaRequest, created
 		req.AnioEscolar = &activeYear
 	}
 
+	if err := applyMateriaConfigDefaultsForCreate(&req); err != nil {
+		return nil, err
+	}
+
 	return s.repo.CreateMateria(ctx, req, createdBy)
 }
 
 func (s *Service) UpdateMateria(ctx context.Context, id string, req MateriaRequest) (*Materia, error) {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return nil, errRequired("materia_id")
+	}
+
+	if req.AnioEscolar != nil && strings.TrimSpace(*req.AnioEscolar) != "" {
+		normalized, err := normalizeAnioEscolar(*req.AnioEscolar)
+		if err != nil {
+			return nil, err
+		}
+		req.AnioEscolar = &normalized
+	}
+
+	current, err := s.repo.GetMateria(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if err := applyMateriaConfigDefaultsForUpdate(current, &req); err != nil {
+		return nil, err
+	}
+
 	return s.repo.UpdateMateria(ctx, id, req)
 }
 
 func (s *Service) DeleteMateria(ctx context.Context, id string) error {
 	return s.repo.DeleteMateria(ctx, id)
+}
+
+func (s *Service) GetMateriaCalificaciones(ctx context.Context, materiaID, actorID, actorRole string) (*MateriaCalificacionesResponse, error) {
+	materiaID = strings.TrimSpace(materiaID)
+	if materiaID == "" {
+		return nil, errRequired("materia_id")
+	}
+
+	switch actorRole {
+	case "admin", "super_admin":
+		// autorizado
+	case "teacher":
+		ok, err := s.repo.IsTeacherAssignedToMateria(ctx, strings.TrimSpace(actorID), materiaID)
+		if err != nil {
+			return nil, err
+		}
+		if !ok {
+			return nil, errors.New("no autorizado para esta materia")
+		}
+	default:
+		return nil, errors.New("no autorizado")
+	}
+
+	materia, err := s.repo.GetMateria(ctx, materiaID)
+	if err != nil {
+		return nil, err
+	}
+
+	rows, err := s.repo.ListMateriaCalificacionBaseRows(ctx, materiaID)
+	if err != nil {
+		return nil, err
+	}
+
+	items := make([]MateriaCalificacionAlumno, 0, len(rows))
+	for _, row := range rows {
+		items = append(items, buildMateriaCalificacionAlumno(*materia, row))
+	}
+
+	return &MateriaCalificacionesResponse{
+		MateriaID:               materia.ID,
+		MateriaNombre:           materia.Nombre,
+		CursoID:                 materia.CursoID,
+		AnioEscolar:             materia.AnioEscolar,
+		PesoContenidosPct:       materia.PesoContenidosPct,
+		PesoLeccionesPct:        materia.PesoLeccionesPct,
+		PesoTrabajosPct:         materia.PesoTrabajosPct,
+		PuntajeTotal:            materia.PuntajeTotal,
+		PuntajeMinimoAprobacion: materia.PuntajeMinimoAprobacion,
+		Items:                   items,
+	}, nil
+}
+
+func (s *Service) ListMisCalificacionesMateriasEstudiante(ctx context.Context, estudianteID string) ([]MateriaCalificacionEstudianteResponse, error) {
+	estudianteID = strings.TrimSpace(estudianteID)
+	if estudianteID == "" {
+		return nil, errRequired("estudiante_id")
+	}
+
+	materias, err := s.repo.ListMateriasByEstudiante(ctx, estudianteID)
+	if err != nil {
+		return nil, err
+	}
+
+	items := make([]MateriaCalificacionEstudianteResponse, 0, len(materias))
+	for _, materia := range materias {
+		row, err := s.repo.GetMateriaCalificacionBaseRow(ctx, materia.ID, estudianteID)
+		if err != nil {
+			return nil, err
+		}
+
+		base := materiaCalificacionBaseRow{
+			EstudianteID: estudianteID,
+		}
+		if row != nil {
+			base = *row
+		}
+
+		calculo := buildMateriaCalificacionAlumno(materia, base)
+		items = append(items, MateriaCalificacionEstudianteResponse{
+			MateriaID:               materia.ID,
+			MateriaNombre:           materia.Nombre,
+			CursoID:                 materia.CursoID,
+			AnioEscolar:             materia.AnioEscolar,
+			PesoContenidosPct:       materia.PesoContenidosPct,
+			PesoLeccionesPct:        materia.PesoLeccionesPct,
+			PesoTrabajosPct:         materia.PesoTrabajosPct,
+			PuntajeTotal:            materia.PuntajeTotal,
+			PuntajeMinimoAprobacion: materia.PuntajeMinimoAprobacion,
+			PromedioContenidos10:    calculo.PromedioContenidos10,
+			PromedioLecciones10:     calculo.PromedioLecciones10,
+			PromedioTrabajos10:      calculo.PromedioTrabajos10,
+			PuntosContenidos:        calculo.PuntosContenidos,
+			PuntosLecciones:         calculo.PuntosLecciones,
+			PuntosTrabajos:          calculo.PuntosTrabajos,
+			NotaFinal:               calculo.NotaFinal,
+			EstadoFinal:             calculo.EstadoFinal,
+			CumpleMinimo:            calculo.CumpleMinimo,
+			ComponentesCompletos:    calculo.ComponentesCompletos,
+			ComponentesCalificados:  calculo.ComponentesCalificados,
+			ComponentesRequeridos:   calculo.ComponentesRequeridos,
+		})
+	}
+
+	return items, nil
 }
 
 // ─── Unidad ─────────────────────────────────────────────────
@@ -172,10 +344,69 @@ func (s *Service) CreateTema(ctx context.Context, req TemaRequest, createdBy str
 	if req.Nombre == "" {
 		return nil, errRequired("nombre")
 	}
+	usarSolo := true
+	if req.UsarSoloCalificacionLeccion != nil {
+		usarSolo = *req.UsarSoloCalificacionLeccion
+	}
+	pesoLeccion := 100.0
+	if req.PesoCalificacionLeccion != nil {
+		pesoLeccion = *req.PesoCalificacionLeccion
+	}
+	pesoContenido := 0.0
+	if req.PesoCalificacionContenido != nil {
+		pesoContenido = *req.PesoCalificacionContenido
+	}
+	puntajeMinimo := 60.0
+	if req.PuntajeMinimoAprobacion != nil {
+		puntajeMinimo = *req.PuntajeMinimoAprobacion
+	}
+	if err := validateTemaCalificacionConfig(usarSolo, pesoLeccion, pesoContenido, puntajeMinimo); err != nil {
+		return nil, err
+	}
+	if usarSolo {
+		pesoLeccion = 100
+		pesoContenido = 0
+	}
+	req.UsarSoloCalificacionLeccion = &usarSolo
+	req.PesoCalificacionLeccion = &pesoLeccion
+	req.PesoCalificacionContenido = &pesoContenido
+	req.PuntajeMinimoAprobacion = &puntajeMinimo
 	return s.repo.CreateTema(ctx, req, createdBy)
 }
 
 func (s *Service) UpdateTema(ctx context.Context, id string, req TemaRequest) (*Tema, error) {
+	existing, err := s.repo.GetTema(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+
+	usarSolo := existing.UsarSoloCalificacionLeccion
+	if req.UsarSoloCalificacionLeccion != nil {
+		usarSolo = *req.UsarSoloCalificacionLeccion
+	}
+	pesoLeccion := existing.PesoCalificacionLeccion
+	if req.PesoCalificacionLeccion != nil {
+		pesoLeccion = *req.PesoCalificacionLeccion
+	}
+	pesoContenido := existing.PesoCalificacionContenido
+	if req.PesoCalificacionContenido != nil {
+		pesoContenido = *req.PesoCalificacionContenido
+	}
+	puntajeMinimo := existing.PuntajeMinimoAprobacion
+	if req.PuntajeMinimoAprobacion != nil {
+		puntajeMinimo = *req.PuntajeMinimoAprobacion
+	}
+	if err := validateTemaCalificacionConfig(usarSolo, pesoLeccion, pesoContenido, puntajeMinimo); err != nil {
+		return nil, err
+	}
+	if usarSolo {
+		pesoLeccion = 100
+		pesoContenido = 0
+	}
+	req.UsarSoloCalificacionLeccion = &usarSolo
+	req.PesoCalificacionLeccion = &pesoLeccion
+	req.PesoCalificacionContenido = &pesoContenido
+	req.PuntajeMinimoAprobacion = &puntajeMinimo
 	return s.repo.UpdateTema(ctx, id, req)
 }
 
@@ -205,6 +436,24 @@ func (s *Service) ListRecentLecciones(ctx context.Context, userID string, limit 
 	}
 
 	return s.repo.ListLatestLecciones(ctx, limit)
+}
+
+func (s *Service) ListRecentContenido(ctx context.Context, userRole, userID string, limit int) ([]ContenidoReciente, error) {
+	if limit <= 0 {
+		limit = 6
+	}
+	role := strings.ToLower(strings.TrimSpace(userRole))
+
+	switch role {
+	case "student":
+		return s.repo.ListRecentContenidoForStudent(ctx, userID, limit)
+	case "teacher":
+		return s.repo.ListRecentContenidoForTeacher(ctx, limit)
+	case "admin", "super_admin":
+		return s.repo.ListRecentContenidoGlobal(ctx, limit)
+	default:
+		return []ContenidoReciente{}, nil
+	}
 }
 
 func (s *Service) GetLeccion(ctx context.Context, id string) (*Leccion, error) {
@@ -380,6 +629,9 @@ func (s *Service) UpsertSeccionGatingPDF(ctx context.Context, seccionID, actorID
 	}
 	if req.PuntajeMinimo != nil && (*req.PuntajeMinimo < 0 || *req.PuntajeMinimo > 100) {
 		return nil, errors.New("puntaje_minimo debe estar entre 0 y 100")
+	}
+	if req.CheckpointSegundos != nil && *req.CheckpointSegundos <= 0 {
+		return nil, errors.New("checkpoint_segundos debe ser mayor a 0")
 	}
 	if req.Habilitado != nil && *req.Habilitado && req.SeccionPreguntasID == nil {
 		return nil, errors.New("seccion_preguntas_id es requerido cuando habilitado=true")
@@ -833,6 +1085,211 @@ func (s *Service) ensureAsignacionAccess(ctx context.Context, actorRole, actorID
 }
 
 // ─── helpers ────────────────────────────────────────────────
+
+func applyMateriaConfigDefaultsForCreate(req *MateriaRequest) error {
+	if req == nil {
+		return errors.New("configuracion de materia invalida")
+	}
+
+	pesoContenidos := defaultPesoContenidosPct
+	pesoLecciones := defaultPesoLeccionesPct
+	pesoTrabajos := defaultPesoTrabajosPct
+	puntajeTotal := defaultPuntajeTotal
+	puntajeMinimo := defaultPuntajeMinimoAprobacion
+
+	if req.PesoContenidosPct != nil {
+		pesoContenidos = *req.PesoContenidosPct
+	}
+	if req.PesoLeccionesPct != nil {
+		pesoLecciones = *req.PesoLeccionesPct
+	}
+	if req.PesoTrabajosPct != nil {
+		pesoTrabajos = *req.PesoTrabajosPct
+	}
+	if req.PuntajeTotal != nil {
+		puntajeTotal = *req.PuntajeTotal
+	}
+	if req.PuntajeMinimoAprobacion != nil {
+		puntajeMinimo = *req.PuntajeMinimoAprobacion
+	}
+
+	if err := validateMateriaConfig(pesoContenidos, pesoLecciones, pesoTrabajos, puntajeTotal, puntajeMinimo); err != nil {
+		return err
+	}
+
+	req.PesoContenidosPct = &pesoContenidos
+	req.PesoLeccionesPct = &pesoLecciones
+	req.PesoTrabajosPct = &pesoTrabajos
+	req.PuntajeTotal = &puntajeTotal
+	req.PuntajeMinimoAprobacion = &puntajeMinimo
+	return nil
+}
+
+func applyMateriaConfigDefaultsForUpdate(current *Materia, req *MateriaRequest) error {
+	if current == nil || req == nil {
+		return errors.New("configuracion de materia invalida")
+	}
+
+	pesoContenidos := current.PesoContenidosPct
+	pesoLecciones := current.PesoLeccionesPct
+	pesoTrabajos := current.PesoTrabajosPct
+	puntajeTotal := current.PuntajeTotal
+	puntajeMinimo := current.PuntajeMinimoAprobacion
+
+	if req.PesoContenidosPct != nil {
+		pesoContenidos = *req.PesoContenidosPct
+	}
+	if req.PesoLeccionesPct != nil {
+		pesoLecciones = *req.PesoLeccionesPct
+	}
+	if req.PesoTrabajosPct != nil {
+		pesoTrabajos = *req.PesoTrabajosPct
+	}
+	if req.PuntajeTotal != nil {
+		puntajeTotal = *req.PuntajeTotal
+	}
+	if req.PuntajeMinimoAprobacion != nil {
+		puntajeMinimo = *req.PuntajeMinimoAprobacion
+	}
+
+	if err := validateMateriaConfig(pesoContenidos, pesoLecciones, pesoTrabajos, puntajeTotal, puntajeMinimo); err != nil {
+		return err
+	}
+
+	req.PesoContenidosPct = &pesoContenidos
+	req.PesoLeccionesPct = &pesoLecciones
+	req.PesoTrabajosPct = &pesoTrabajos
+	req.PuntajeTotal = &puntajeTotal
+	req.PuntajeMinimoAprobacion = &puntajeMinimo
+	return nil
+}
+
+func validateMateriaConfig(pesoContenidos, pesoLecciones, pesoTrabajos, puntajeTotal, puntajeMinimo float64) error {
+	if pesoContenidos < 0 || pesoContenidos > 100 {
+		return errors.New("peso_contenidos_pct debe estar entre 0 y 100")
+	}
+	if pesoLecciones < 0 || pesoLecciones > 100 {
+		return errors.New("peso_lecciones_pct debe estar entre 0 y 100")
+	}
+	if pesoTrabajos < 0 || pesoTrabajos > 100 {
+		return errors.New("peso_trabajos_pct debe estar entre 0 y 100")
+	}
+	totalPesos := pesoContenidos + pesoLecciones + pesoTrabajos
+	if absFloat(totalPesos-100) > 0.0001 {
+		return errors.New("la suma de ponderaciones debe ser exactamente 100")
+	}
+	if puntajeTotal <= 0 {
+		return errors.New("puntaje_total debe ser mayor a 0")
+	}
+	if puntajeMinimo < 0 || puntajeMinimo > puntajeTotal {
+		return errors.New("puntaje_minimo_aprobacion debe estar entre 0 y puntaje_total")
+	}
+	return nil
+}
+
+func validateTemaCalificacionConfig(usarSolo bool, pesoLeccion, pesoContenido, puntajeMinimo float64) error {
+	if pesoLeccion < 0 || pesoLeccion > 100 {
+		return errors.New("peso_calificacion_leccion debe estar entre 0 y 100")
+	}
+	if pesoContenido < 0 || pesoContenido > 100 {
+		return errors.New("peso_calificacion_contenido debe estar entre 0 y 100")
+	}
+	if puntajeMinimo < 0 || puntajeMinimo > 100 {
+		return errors.New("puntaje_minimo_aprobacion debe estar entre 0 y 100")
+	}
+	if usarSolo {
+		return nil
+	}
+	if math.Abs((pesoLeccion+pesoContenido)-100) > 0.01 {
+		return errors.New("la suma de peso_calificacion_leccion y peso_calificacion_contenido debe ser 100")
+	}
+	return nil
+}
+
+func buildMateriaCalificacionAlumno(materia Materia, row materiaCalificacionBaseRow) MateriaCalificacionAlumno {
+	puntosContenidos, contenidosCalificado := computeWeightedPoints(row.PromedioContenidos10, materia.PesoContenidosPct)
+	puntosLecciones, leccionesCalificado := computeWeightedPoints(row.PromedioLecciones10, materia.PesoLeccionesPct)
+	puntosTrabajos, trabajosCalificado := computeWeightedPoints(row.PromedioTrabajos10, materia.PesoTrabajosPct)
+
+	componentesRequeridos := 0
+	componentesCalificados := 0
+	if materia.PesoContenidosPct > 0 {
+		componentesRequeridos++
+		if contenidosCalificado {
+			componentesCalificados++
+		}
+	}
+	if materia.PesoLeccionesPct > 0 {
+		componentesRequeridos++
+		if leccionesCalificado {
+			componentesCalificados++
+		}
+	}
+	if materia.PesoTrabajosPct > 0 {
+		componentesRequeridos++
+		if trabajosCalificado {
+			componentesCalificados++
+		}
+	}
+
+	notaFinal := round2(puntosContenidos + puntosLecciones + puntosTrabajos)
+	completa := componentesCalificados == componentesRequeridos
+	cumpleMinimo := notaFinal >= materia.PuntajeMinimoAprobacion
+
+	estado := "sin_calificar"
+	switch {
+	case componentesCalificados == 0:
+		estado = "sin_calificar"
+	case !completa:
+		estado = "materia_no_completada"
+	case cumpleMinimo:
+		estado = "aprobada"
+	default:
+		estado = "reprobada"
+	}
+
+	return MateriaCalificacionAlumno{
+		EstudianteID:           row.EstudianteID,
+		EstudianteNombre:       row.EstudianteNombre,
+		EstudianteEmail:        row.EstudianteEmail,
+		PromedioContenidos10:   row.PromedioContenidos10,
+		PromedioLecciones10:    row.PromedioLecciones10,
+		PromedioTrabajos10:     row.PromedioTrabajos10,
+		PuntosContenidos:       puntosContenidos,
+		PuntosLecciones:        puntosLecciones,
+		PuntosTrabajos:         puntosTrabajos,
+		NotaFinal:              notaFinal,
+		EstadoFinal:            estado,
+		CumpleMinimo:           cumpleMinimo,
+		ComponentesCompletos:   completa,
+		ComponentesCalificados: componentesCalificados,
+		ComponentesRequeridos:  componentesRequeridos,
+	}
+}
+
+func computeWeightedPoints(promedio10 *float64, pesoPct float64) (float64, bool) {
+	if pesoPct <= 0 {
+		return 0, true
+	}
+	if promedio10 == nil {
+		return 0, false
+	}
+	return round2(*promedio10 * pesoPct / 100.0), true
+}
+
+func round2(value float64) float64 {
+	if value >= 0 {
+		return float64(int(value*100+0.5)) / 100
+	}
+	return float64(int(value*100-0.5)) / 100
+}
+
+func absFloat(value float64) float64 {
+	if value < 0 {
+		return -value
+	}
+	return value
+}
 
 func errRequired(field string) error {
 	return &validationError{field: field}

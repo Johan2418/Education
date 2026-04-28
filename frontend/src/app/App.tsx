@@ -35,6 +35,7 @@ import TeacherHorario from "@/features/teacher/pages/teacherHorario";
 import TeacherMaterias from "@/features/teacher/pages/teacherMaterias";
 import TeacherTrabajos from "@/features/trabajos/pages/teacherTrabajos";
 import TeacherTrabajoCalificar from "@/features/trabajos/pages/teacherTrabajoCalificar";
+import TeacherTrabajoPreguntas from "@/features/trabajos/pages/teacherTrabajoPreguntas";
 import TeacherTrabajoLibroWizard from "@/features/trabajos/pages/teacherTrabajoLibroWizard";
 import TeacherTrabajoReportes from "@/features/trabajos/pages/teacherTrabajoReportes";
 import TeacherTrabajosAnalytics from "@/features/trabajos/pages/teacherTrabajosAnalytics";
@@ -160,6 +161,7 @@ function App() {
               <Route path="/teacher/pruebas" element={<TeacherPruebas />} />
               <Route path="/teacher/trabajos" element={<TeacherTrabajos />} />
               <Route path="/teacher/trabajos/:trabajoId/calificar" element={<TeacherTrabajoCalificar />} />
+              <Route path="/teacher/trabajos/:trabajoId/preguntas" element={<TeacherTrabajoPreguntas />} />
               <Route path="/teacher/trabajos/:trabajoId/libro" element={<TeacherTrabajoLibroWizard />} />
               <Route path="/teacher/trabajos/:trabajoId/reportes" element={<TeacherTrabajoReportes />} />
               <Route path="/teacher/trabajos/analytics" element={<TeacherTrabajosAnalytics />} />

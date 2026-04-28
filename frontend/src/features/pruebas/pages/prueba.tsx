@@ -3,12 +3,24 @@ import { useParams, useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { getMe } from "@/shared/lib/auth";
 import api from "@/shared/lib/api";
+import { getStudentLessonAccess } from "@/shared/services/studentProgression";
 import toast from "react-hot-toast";
-import type { PruebaCompleta, Pregunta, Respuesta } from "@/shared/types";
+import type { Leccion, LeccionSeccion, PruebaCompleta, Pregunta, Respuesta } from "@/shared/types";
 import { Loader2, CheckCircle, XCircle } from "lucide-react";
 
+interface ApiEnvelope<T> {
+  data: T;
+}
+
+function unwrapApiData<T>(payload: T | ApiEnvelope<T>): T {
+  if (typeof payload === "object" && payload !== null && "data" in payload) {
+    return (payload as ApiEnvelope<T>).data;
+  }
+  return payload as T;
+}
+
 export default function PruebaPage() {
-  const { pruebaId } = useParams<{ pruebaId: string }>();
+  const { pruebaId, lessonId } = useParams<{ pruebaId: string; lessonId: string }>();
   const { t } = useTranslation();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
@@ -17,16 +29,32 @@ export default function PruebaPage() {
   const [submitted, setSubmitted] = useState(false);
   const [score, setScore] = useState<number | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [studentAccessDenied, setStudentAccessDenied] = useState(false);
+  const [blockedMateriaId, setBlockedMateriaId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!pruebaId) return;
     (async () => {
       setLoading(true);
+      setStudentAccessDenied(false);
+      setBlockedMateriaId(null);
       try {
         const me = await getMe();
         if (!me) { navigate("/login"); return; }
-        const data: PruebaCompleta = await api.get(`/pruebas/${pruebaId}/completa`);
-        setPrueba(data);
+
+        if (me.role === "student" && lessonId) {
+          const lessonRes = await api.get<Leccion | ApiEnvelope<Leccion>>(`/lecciones/${lessonId}`);
+          const lesson = unwrapApiData(lessonRes);
+          const lessonAccess = await getStudentLessonAccess(lesson);
+          if (!lessonAccess.allowed) {
+            setStudentAccessDenied(true);
+            setBlockedMateriaId(lessonAccess.materiaId);
+            return;
+          }
+        }
+
+        const pruebaRes = await api.get<PruebaCompleta | ApiEnvelope<PruebaCompleta>>(`/pruebas/${pruebaId}/completa`);
+        setPrueba(unwrapApiData(pruebaRes));
       } catch (err) {
         console.error("Error loading prueba", err);
         toast.error(t("pruebas.loadError", { defaultValue: "Error al cargar la prueba" }));
@@ -34,7 +62,7 @@ export default function PruebaPage() {
         setLoading(false);
       }
     })();
-  }, [pruebaId, navigate, t]);
+  }, [lessonId, pruebaId, navigate, t]);
 
   const handleSelect = (preguntaId: string, respuestaId: string) => {
     if (submitted) return;
@@ -61,6 +89,24 @@ export default function PruebaPage() {
         respuestas: answers,
       });
 
+      if (lessonId && pruebaId) {
+        try {
+          const seccionesRes = await api.get<LeccionSeccion[] | ApiEnvelope<LeccionSeccion[]>>(`/lecciones/${lessonId}/secciones`);
+          const secciones = unwrapApiData(seccionesRes) || [];
+          const quizSection = secciones.find((section) => section.prueba_id === pruebaId);
+          if (quizSection) {
+            await api.put("/progreso-secciones", {
+              leccion_seccion_id: quizSection.id,
+              completado: pct >= (prueba.puntaje_minimo ?? 0),
+              puntuacion: pct,
+              intentos: 1,
+            });
+          }
+        } catch {
+          // fallback: keep quiz result even if section progress fails.
+        }
+      }
+
       setScore(pct);
       setSubmitted(true);
       toast.success(t("pruebas.submitted", { defaultValue: "Prueba enviada" }));
@@ -76,6 +122,23 @@ export default function PruebaPage() {
     return (
       <div className="flex items-center justify-center min-h-[40vh]">
         <Loader2 size={32} className="animate-spin text-blue-600" />
+      </div>
+    );
+  }
+
+  if (studentAccessDenied) {
+    const returnPath = blockedMateriaId ? `/contents/${blockedMateriaId}` : "/contents";
+    return (
+      <div className="max-w-3xl mx-auto p-4">
+        <div className="rounded-lg border border-amber-300 bg-amber-50 p-4 text-amber-900">
+          Esta prueba está bloqueada por el orden de avance configurado por tu docente.
+        </div>
+        <button
+          onClick={() => navigate(returnPath)}
+          className="mt-4 rounded-md bg-blue-600 px-4 py-2 text-white hover:bg-blue-700"
+        >
+          Volver a la materia
+        </button>
       </div>
     );
   }
@@ -96,7 +159,7 @@ export default function PruebaPage() {
       {prueba.descripcion && <p className="text-gray-600 mb-6">{prueba.descripcion}</p>}
 
       {submitted && score !== null && (
-        <div className={`mb-6 p-4 rounded-lg ${score >= 70 ? "bg-green-50 text-green-800" : "bg-red-50 text-red-800"}`}>
+        <div className={`mb-6 p-4 rounded-lg ${score >= (prueba.puntaje_minimo ?? 0) ? "bg-green-50 text-green-800" : "bg-red-50 text-red-800"}`}>
           <p className="font-semibold">{t("pruebas.score", { defaultValue: "Puntaje" })}: {score}%</p>
         </div>
       )}

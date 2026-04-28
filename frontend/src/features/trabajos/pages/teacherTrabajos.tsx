@@ -1469,6 +1469,14 @@ export default function TeacherTrabajos() {
                 </button>
 
                 <button
+                  onClick={() => navigate(`/teacher/trabajos/${trabajo.id}/preguntas`)}
+                  className="inline-flex items-center gap-1 px-3 py-1.5 text-sm rounded bg-slate-700 text-white hover:bg-slate-800"
+                >
+                  <ClipboardList size={14} />
+                  Preguntas
+                </button>
+
+                <button
                   onClick={() => openEditModal(trabajo)}
                   className="inline-flex items-center gap-1 px-3 py-1.5 text-sm rounded bg-indigo-600 text-white hover:bg-indigo-700"
                 >

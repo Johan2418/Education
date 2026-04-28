@@ -145,6 +145,9 @@ export interface LibroChatToolUsage {
 
 export interface LibroChatReportResponse {
   recurso_id: string;
+  vistas_recurso_total: number;
+  usuarios_vistas_total: number;
+  ultima_vista_recurso_at?: string;
   sesiones_total: number;
   mensajes_total: number;
   mensajes_usuario: number;

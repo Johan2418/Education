@@ -6,7 +6,9 @@ import toast from "react-hot-toast";
 
 import { getMe } from "@/shared/lib/auth";
 import type { TrabajoAnalyticsV2Response } from "@/shared/types/trabajos";
+import type { MisCursoDocente } from "@/shared/types/academic";
 import { getTrabajoAnalyticsV2 } from "@/features/trabajos/services/trabajos";
+import { listMisCursosDocente } from "@/features/teacher/services/docencia";
 
 function normalizeError(err: unknown): string {
   if (typeof err === "object" && err !== null && "message" in err) {
@@ -38,6 +40,7 @@ export default function TeacherTrabajosAnalytics() {
   const [refreshing, setRefreshing] = useState(false);
   const [analytics, setAnalytics] = useState<TrabajoAnalyticsV2Response | null>(null);
   const [previousSummary, setPreviousSummary] = useState<TrabajoAnalyticsV2Response["summary"] | null>(null);
+  const [assignedCursos, setAssignedCursos] = useState<MisCursoDocente[]>([]);
 
   const [from, setFrom] = useState<string>(toDateInputValue(new Date(today.getFullYear(), today.getMonth(), Math.max(1, today.getDate() - 30))));
   const [to, setTo] = useState<string>(toDateInputValue(today));
@@ -46,7 +49,19 @@ export default function TeacherTrabajosAnalytics() {
   const [temaId, setTemaId] = useState<string>("");
   const [leccionId, setLeccionId] = useState<string>("");
 
-  const cursoOptions = useMemo(() => analytics?.cursos ?? [], [analytics]);
+  const cursoOptions = useMemo(() => {
+    if (assignedCursos.length > 0) {
+      const unique = new Map<string, { curso_id: string; curso_nombre: string }>();
+      assignedCursos.forEach((item) => {
+        if (!unique.has(item.curso_id)) {
+          unique.set(item.curso_id, { curso_id: item.curso_id, curso_nombre: item.curso_nombre });
+        }
+      });
+      return Array.from(unique.values());
+    }
+    return analytics?.cursos ?? [];
+  }, [assignedCursos, analytics]);
+
   const unidadOptions = useMemo(() => {
     const all = analytics?.unidades ?? [];
     if (!cursoId) return all;
@@ -103,6 +118,17 @@ export default function TeacherTrabajosAnalytics() {
       setRefreshing(false);
     }
   }, [cursoId, from, leccionId, temaId, to, unidadId]);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const cursos = await listMisCursosDocente();
+        setAssignedCursos(cursos);
+      } catch (err) {
+        console.error(err);
+      }
+    })();
+  }, []);
 
   useEffect(() => {
     (async () => {

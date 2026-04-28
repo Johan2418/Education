@@ -5,6 +5,7 @@ export type {
   Unidad,
   Tema,
   Leccion,
+  RecentContentItem,
   LeccionSeccion,
   Foro,
   ForoHilo,
@@ -23,6 +24,9 @@ export type {
   CursoAnioAsignarMaestrosRequest,
   CursoAnioAsignarMaestrosDetalle,
   CursoAnioAsignarMaestrosResult,
+  MateriaCalificacionAlumno,
+  MateriaCalificacionesResponse,
+  MateriaCalificacionEstudianteResponse,
 } from "./academic";
 export type { Recurso, ModeloRA } from "./resources";
 export type {

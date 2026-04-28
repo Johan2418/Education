@@ -1,5 +1,6 @@
 export { default as TeacherTrabajos } from "./pages/teacherTrabajos";
 export { default as TeacherTrabajoCalificar } from "./pages/teacherTrabajoCalificar";
+export { default as TeacherTrabajoPreguntas } from "./pages/teacherTrabajoPreguntas";
 export { default as TeacherTrabajoLibroWizard } from "./pages/teacherTrabajoLibroWizard";
 export { default as TeacherTrabajoReportes } from "./pages/teacherTrabajoReportes";
 export { default as TeacherTrabajosAnalytics } from "./pages/teacherTrabajosAnalytics";

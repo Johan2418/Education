@@ -26,13 +26,19 @@ func (m *mcpOrchestrator) BuildChatContext(ctx context.Context, recursoID string
 		return nil, fmt.Errorf("recurso_id es requerido")
 	}
 
-	bundle := &mcpContextBundle{ToolCalls: make([]MCPToolCall, 0, 3)}
+	bundle := &mcpContextBundle{ToolCalls: make([]MCPToolCall, 0, 4)}
 
 	detail, call, err := m.toolGetLibroOverview(ctx, recursoID)
 	if err != nil {
 		return nil, err
 	}
 	bundle.ToolCalls = append(bundle.ToolCalls, call)
+
+	views, viewsCall, err := m.toolGetResourceViews(ctx, recursoID)
+	if err != nil {
+		return nil, err
+	}
+	bundle.ToolCalls = append(bundle.ToolCalls, viewsCall)
 
 	preguntas, searchCall, err := m.toolSearchPreguntas(ctx, recursoID, userPrompt)
 	if err != nil {
@@ -53,6 +59,11 @@ func (m *mcpOrchestrator) BuildChatContext(ctx context.Context, recursoID string
 	sb.WriteString(fmt.Sprintf("- idioma: %s\n", detail.Idioma))
 	sb.WriteString(fmt.Sprintf("- estado: %s\n", detail.Estado))
 	sb.WriteString(fmt.Sprintf("- preguntas_totales: %d\n", detail.PreguntasTotales))
+	sb.WriteString(fmt.Sprintf("- vistas_recurso_total: %d\n", views.VistasTotal))
+	sb.WriteString(fmt.Sprintf("- usuarios_vistas_total: %d\n", views.UsuariosUnicos))
+	if views.UltimaVistaAt != nil {
+		sb.WriteString(fmt.Sprintf("- ultima_vista_recurso_at: %s\n", views.UltimaVistaAt.Format(time.RFC3339)))
+	}
 	if detail.PaginasTotales != nil {
 		sb.WriteString(fmt.Sprintf("- paginas_totales: %d\n", *detail.PaginasTotales))
 	}
@@ -100,6 +111,24 @@ func (m *mcpOrchestrator) toolGetLibroOverview(ctx context.Context, recursoID st
 	output := fmt.Sprintf("titulo=%s, idioma=%s, preguntas=%d", detail.Titulo, detail.Idioma, detail.PreguntasTotales)
 	return detail, MCPToolCall{
 		Name:          "libro.get_overview",
+		Input:         mustJSON(input),
+		OutputSummary: output,
+		DurationMs:    time.Since(started).Milliseconds(),
+	}, nil
+}
+
+func (m *mcpOrchestrator) toolGetResourceViews(ctx context.Context, recursoID string) (*LibroRecursoViewsSummary, MCPToolCall, error) {
+	started := time.Now()
+	input := map[string]interface{}{"recurso_id": recursoID}
+
+	summary, err := m.repo.GetLibroRecursoViewsSummary(ctx, recursoID)
+	if err != nil {
+		return nil, MCPToolCall{}, err
+	}
+
+	output := fmt.Sprintf("vistas=%d, usuarios_unicos=%d", summary.VistasTotal, summary.UsuariosUnicos)
+	return summary, MCPToolCall{
+		Name:          "libro.get_resource_views",
 		Input:         mustJSON(input),
 		OutputSummary: output,
 		DurationMs:    time.Since(started).Milliseconds(),

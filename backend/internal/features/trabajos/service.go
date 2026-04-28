@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strconv"
 	"strings"
 
 	"github.com/arcanea/backend/internal/notifications"
@@ -99,6 +100,103 @@ func (s *Service) UpdateTrabajo(ctx context.Context, trabajoID string, req Updat
 
 	req.Titulo = strings.TrimSpace(req.Titulo)
 	return s.repo.UpdateTrabajo(ctx, trabajoID, req)
+}
+
+func (s *Service) UpdateTrabajoPreguntas(ctx context.Context, trabajoID string, req UpdateTrabajoPreguntasRequest, userID, userRole string) ([]TrabajoPregunta, error) {
+	if strings.TrimSpace(trabajoID) == "" {
+		return nil, errors.New("trabajo_id es requerido")
+	}
+	if !canManage(userRole) {
+		return nil, errors.New("no autorizado")
+	}
+	if userRole == "teacher" {
+		ok, err := s.repo.IsTeacherOfTrabajo(ctx, userID, trabajoID)
+		if err != nil {
+			return nil, err
+		}
+		if !ok {
+			return nil, errors.New("no autorizado para este trabajo")
+		}
+	}
+
+	totalEntregas, err := s.repo.CountEntregasByTrabajo(ctx, trabajoID)
+	if err != nil {
+		return nil, err
+	}
+	if totalEntregas > 0 {
+		return nil, errors.New("no se pueden modificar preguntas cuando ya existen entregas")
+	}
+
+	normalized := make([]TrabajoPregunta, 0, len(req.Preguntas))
+	for idx, input := range req.Preguntas {
+		texto := strings.TrimSpace(input.Texto)
+		if texto == "" {
+			return nil, errors.New("texto es requerido en cada pregunta")
+		}
+
+		tipo := normalizeTipoPregunta(input.Tipo)
+		if tipo == "" {
+			return nil, errors.New("tipo de pregunta invalido")
+		}
+
+		puntajeMaximo := 1.0
+		if input.PuntajeMaximo != nil {
+			puntajeMaximo = *input.PuntajeMaximo
+		}
+		if puntajeMaximo <= 0 {
+			return nil, errors.New("puntaje_maximo debe ser > 0")
+		}
+
+		opcionesList := normalizeStringSlice(input.Opciones)
+		if tipo == "verdadero_falso" && len(opcionesList) == 0 {
+			opcionesList = []string{"Verdadero", "Falso"}
+		}
+		if tipo == "opcion_multiple" && len(opcionesList) < 2 {
+			return nil, errors.New("las preguntas de opcion_multiple deben tener al menos 2 opciones")
+		}
+
+		if isClosedQuestionType(tipo) && len(opcionesList) == 0 {
+			return nil, errors.New("las preguntas cerradas deben tener opciones")
+		}
+
+		respuestaEsperadaTipo := normalizeRespuestaEsperadaTipo(input.RespuestaEsperadaTipo, tipo)
+		if respuestaEsperadaTipo == nil {
+			return nil, errors.New("respuesta_esperada_tipo invalida")
+		}
+
+		respuestaCorrecta := trimOptionalText(input.RespuestaCorrecta)
+		if isClosedQuestionType(tipo) && respuestaCorrecta == nil {
+			return nil, errors.New("respuesta_correcta es obligatoria para preguntas cerradas")
+		}
+
+		opcionesJSON, err := json.Marshal(opcionesList)
+		if err != nil {
+			return nil, err
+		}
+
+		orden := idx + 1
+		if input.Orden != nil && *input.Orden > 0 {
+			orden = *input.Orden
+		}
+
+		normalized = append(normalized, TrabajoPregunta{
+			TrabajoID:             trabajoID,
+			Texto:                 texto,
+			Tipo:                  tipo,
+			Opciones:              opcionesJSON,
+			RespuestaCorrecta:     respuestaCorrecta,
+			PuntajeMaximo:         puntajeMaximo,
+			PaginaLibro:           input.PaginaLibro,
+			ConfianzaIA:           input.ConfianzaIA,
+			ImagenBase64:          trimOptionalText(input.ImagenBase64),
+			ImagenFuente:          trimOptionalText(input.ImagenFuente),
+			RespuestaEsperadaTipo: respuestaEsperadaTipo,
+			Placeholder:           trimOptionalText(input.Placeholder),
+			Orden:                 orden,
+		})
+	}
+
+	return s.repo.ReplaceTrabajoPreguntas(ctx, trabajoID, normalized)
 }
 
 func (s *Service) DeleteTrabajo(ctx context.Context, trabajoID, userID, userRole string) error {
@@ -304,6 +402,9 @@ func (s *Service) GetTrabajoFormulario(ctx context.Context, trabajoID, userID, u
 	if err != nil {
 		return nil, err
 	}
+	if userRole == "student" {
+		preguntas = sanitizePreguntasForStudent(preguntas)
+	}
 
 	resp := &TrabajoFormularioResponse{
 		Trabajo:             *t,
@@ -494,11 +595,13 @@ func (s *Service) CalificarEntrega(ctx context.Context, entregaID string, req Ca
 	if !canManage(userRole) {
 		return nil, errors.New("no autorizado")
 	}
+
+	entrega, err := s.repo.GetEntregaByID(ctx, entregaID)
+	if err != nil {
+		return nil, err
+	}
+
 	if userRole == "teacher" {
-		entrega, err := s.repo.GetEntregaByID(ctx, entregaID)
-		if err != nil {
-			return nil, err
-		}
 		ok, err := s.repo.IsTeacherOfTrabajo(ctx, userID, entrega.TrabajoID)
 		if err != nil {
 			return nil, err
@@ -512,7 +615,8 @@ func (s *Service) CalificarEntrega(ctx context.Context, entregaID string, req Ca
 	if err != nil {
 		return nil, err
 	}
-	tipoCambio, motivo, err := resolveCalificacionCambio(req.TipoCambio, req.Motivo, current != nil)
+	isOverwrite := current != nil && strings.TrimSpace(entrega.Estado) == "calificada"
+	tipoCambio, motivo, err := resolveCalificacionCambio(req.TipoCambio, req.Motivo, isOverwrite)
 	if err != nil {
 		return nil, err
 	}
@@ -525,18 +629,15 @@ func (s *Service) CalificarEntrega(ctx context.Context, entregaID string, req Ca
 	}
 
 	if s.notifier != nil {
-		entrega, err := s.repo.GetEntregaByID(ctx, entregaID)
+		student, err := s.repo.GetStudentContactByEntrega(ctx, entregaID)
 		if err == nil {
-			student, err := s.repo.GetStudentContactByEntrega(ctx, entregaID)
+			t, err := s.repo.GetTrabajo(ctx, entrega.TrabajoID)
 			if err == nil {
-				t, err := s.repo.GetTrabajo(ctx, entrega.TrabajoID)
-				if err == nil {
-					email := ""
-					if student.Email != nil {
-						email = *student.Email
-					}
-					s.notifier.NotifyEntregaCalificada(entrega.TrabajoID, email, t.Titulo, req.Puntaje)
+				email := ""
+				if student.Email != nil {
+					email = *student.Email
 				}
+				s.notifier.NotifyEntregaCalificada(entrega.TrabajoID, email, t.Titulo, req.Puntaje)
 			}
 		}
 	}
@@ -548,16 +649,14 @@ func (s *Service) GetEntregaDetalle(ctx context.Context, entregaID, userID, user
 	if entregaID == "" {
 		return nil, errors.New("entrega_id es requerido")
 	}
-	if !canManage(userRole) {
-		return nil, errors.New("no autorizado")
-	}
 
 	entrega, err := s.repo.GetEntregaByID(ctx, entregaID)
 	if err != nil {
 		return nil, err
 	}
 
-	if userRole == "teacher" {
+	switch {
+	case canManage(userRole) && userRole == "teacher":
 		ok, err := s.repo.IsTeacherOfTrabajo(ctx, userID, entrega.TrabajoID)
 		if err != nil {
 			return nil, err
@@ -565,6 +664,18 @@ func (s *Service) GetEntregaDetalle(ctx context.Context, entregaID, userID, user
 		if !ok {
 			return nil, errors.New("no autorizado para este trabajo")
 		}
+	case canManage(userRole):
+		// admin/super_admin: permitido
+	case userRole == "student":
+		isOwner, err := s.repo.IsStudentOwnerOfEntrega(ctx, userID, entregaID)
+		if err != nil {
+			return nil, err
+		}
+		if !isOwner {
+			return nil, errors.New("no autorizado para esta entrega")
+		}
+	default:
+		return nil, errors.New("no autorizado")
 	}
 
 	t, err := s.repo.GetTrabajo(ctx, entrega.TrabajoID)
@@ -574,6 +685,9 @@ func (s *Service) GetEntregaDetalle(ctx context.Context, entregaID, userID, user
 	preguntas, err := s.repo.ListTrabajoPreguntas(ctx, entrega.TrabajoID)
 	if err != nil {
 		return nil, err
+	}
+	if userRole == "student" {
+		preguntas = sanitizePreguntasForStudent(preguntas)
 	}
 	respuestas, err := s.repo.ListRespuestasPreguntasByEntrega(ctx, entregaID)
 	if err != nil {
@@ -626,11 +740,12 @@ func (s *Service) CalificarEntregaPorPregunta(ctx context.Context, entregaID str
 		}
 	}
 
+	entrega, err := s.repo.GetEntregaByID(ctx, entregaID)
+	if err != nil {
+		return nil, err
+	}
+
 	if userRole == "teacher" {
-		entrega, err := s.repo.GetEntregaByID(ctx, entregaID)
-		if err != nil {
-			return nil, err
-		}
 		ok, err := s.repo.IsTeacherOfTrabajo(ctx, userID, entrega.TrabajoID)
 		if err != nil {
 			return nil, err
@@ -644,14 +759,15 @@ func (s *Service) CalificarEntregaPorPregunta(ctx context.Context, entregaID str
 	if err != nil {
 		return nil, err
 	}
-	tipoCambio, motivo, err := resolveCalificacionCambio(req.TipoCambio, req.Motivo, current != nil)
+	isOverwrite := current != nil && strings.TrimSpace(entrega.Estado) == "calificada"
+	tipoCambio, motivo, err := resolveCalificacionCambio(req.TipoCambio, req.Motivo, isOverwrite)
 	if err != nil {
 		return nil, err
 	}
 	req.TipoCambio = tipoCambio
 	req.Motivo = motivo
 
-	if _, err := s.repo.UpsertCalificacionPorPregunta(ctx, entregaID, userID, userRole, req); err != nil {
+	if _, err := s.repo.UpsertCalificacionPorPregunta(ctx, entregaID, userID, userRole, req, true); err != nil {
 		return nil, err
 	}
 
@@ -661,6 +777,180 @@ func (s *Service) CalificarEntregaPorPregunta(ctx context.Context, entregaID str
 	}
 
 	if s.notifier != nil {
+		student, err := s.repo.GetStudentContactByEntrega(ctx, entregaID)
+		if err == nil {
+			email := ""
+			if student.Email != nil {
+				email = *student.Email
+			}
+			title := detalle.Trabajo.Titulo
+			total := 0.0
+			if detalle.Calificacion != nil {
+				total = detalle.Calificacion.Puntaje
+			}
+			s.notifier.NotifyEntregaCalificada(detalle.Trabajo.ID, email, title, total)
+		}
+	}
+
+	return detalle, nil
+}
+
+func (s *Service) AutoCalificarEntregaCerradas(ctx context.Context, entregaID, userID, userRole string) (*EntregaDetalleResponse, error) {
+	if strings.TrimSpace(entregaID) == "" {
+		return nil, errors.New("entrega_id es requerido")
+	}
+	if !canManage(userRole) {
+		return nil, errors.New("no autorizado")
+	}
+
+	entrega, err := s.repo.GetEntregaByID(ctx, entregaID)
+	if err != nil {
+		return nil, err
+	}
+	if userRole == "teacher" {
+		ok, err := s.repo.IsTeacherOfTrabajo(ctx, userID, entrega.TrabajoID)
+		if err != nil {
+			return nil, err
+		}
+		if !ok {
+			return nil, errors.New("no autorizado para calificar esta entrega")
+		}
+	}
+
+	preguntas, err := s.repo.ListTrabajoPreguntas(ctx, entrega.TrabajoID)
+	if err != nil {
+		return nil, err
+	}
+	if len(preguntas) == 0 {
+		return nil, errors.New("este trabajo no tiene preguntas configuradas")
+	}
+
+	respuestas, err := s.repo.ListRespuestasPreguntasByEntrega(ctx, entregaID)
+	if err != nil {
+		return nil, err
+	}
+	if len(respuestas) == 0 {
+		respuestas = buildRespuestasPreguntasFallback(entrega.ID, entrega.Respuestas, preguntas)
+	}
+
+	respuestaByPregunta := make(map[string]TrabajoRespuestaPregunta, len(respuestas))
+	for _, row := range respuestas {
+		respuestaByPregunta[row.PreguntaID] = row
+	}
+
+	current, err := s.repo.GetCalificacionByEntrega(ctx, entregaID)
+	if err != nil {
+		return nil, err
+	}
+
+	itemsByPregunta := map[string]CalificarEntregaPreguntaItem{}
+	feedbackGeneral := (*string)(nil)
+	if current != nil {
+		feedbackGeneral = current.Feedback
+		existing, err := s.repo.ListCalificacionesPreguntaByCalificacion(ctx, current.ID)
+		if err != nil {
+			return nil, err
+		}
+		for _, item := range existing {
+			itemsByPregunta[item.PreguntaID] = CalificarEntregaPreguntaItem{
+				PreguntaID: item.PreguntaID,
+				Puntaje:    item.Puntaje,
+				Feedback:   item.Feedback,
+			}
+		}
+	}
+
+	totalAuto := 0
+	for _, pregunta := range preguntas {
+		if !isClosedQuestionType(pregunta.Tipo) {
+			continue
+		}
+
+		correcta := trimOptionalText(pregunta.RespuestaCorrecta)
+		if correcta == nil {
+			continue
+		}
+
+		respuesta := ""
+		if row, ok := respuestaByPregunta[pregunta.ID]; ok {
+			if row.RespuestaOpcion != nil && strings.TrimSpace(*row.RespuestaOpcion) != "" {
+				respuesta = *row.RespuestaOpcion
+			} else if row.RespuestaTexto != nil {
+				respuesta = *row.RespuestaTexto
+			}
+		}
+
+		puntaje := 0.0
+		if isClosedAnswerCorrect(pregunta, respuesta, *correcta) {
+			puntaje = pregunta.PuntajeMaximo
+			if puntaje <= 0 {
+				puntaje = 1
+			}
+		}
+
+		var feedback *string
+		if puntaje > 0 {
+			msg := "Correcta"
+			feedback = &msg
+		} else {
+			msg := "Incorrecta"
+			feedback = &msg
+		}
+
+		itemsByPregunta[pregunta.ID] = CalificarEntregaPreguntaItem{
+			PreguntaID: pregunta.ID,
+			Puntaje:    puntaje,
+			Feedback:   feedback,
+		}
+		totalAuto++
+	}
+
+	if totalAuto == 0 {
+		return nil, errors.New("no hay preguntas cerradas con respuesta_correcta configurada")
+	}
+
+	finalItems := make([]CalificarEntregaPreguntaItem, 0, len(itemsByPregunta))
+	for _, pregunta := range preguntas {
+		item, ok := itemsByPregunta[pregunta.ID]
+		if !ok {
+			continue
+		}
+		finalItems = append(finalItems, item)
+	}
+
+	missing := 0
+	for _, pregunta := range preguntas {
+		if _, ok := itemsByPregunta[pregunta.ID]; !ok {
+			missing++
+		}
+	}
+
+	autoReq := CalificarEntregaPorPreguntaRequest{
+		Items:        finalItems,
+		Feedback:     feedbackGeneral,
+		SugerenciaIA: json.RawMessage("{}"),
+		TipoCambio:   CalificacionTipoAutoObjetiva,
+	}
+
+	isOverwrite := current != nil && strings.TrimSpace(entrega.Estado) == "calificada"
+	tipoCambio, motivo, err := resolveCalificacionCambio(autoReq.TipoCambio, autoReq.Motivo, isOverwrite)
+	if err != nil {
+		return nil, err
+	}
+	autoReq.TipoCambio = tipoCambio
+	autoReq.Motivo = motivo
+
+	marcarCalificada := missing == 0
+	if _, err := s.repo.UpsertCalificacionPorPregunta(ctx, entregaID, userID, userRole, autoReq, marcarCalificada); err != nil {
+		return nil, err
+	}
+
+	detalle, err := s.GetEntregaDetalle(ctx, entregaID, userID, userRole)
+	if err != nil {
+		return nil, err
+	}
+
+	if marcarCalificada && s.notifier != nil {
 		student, err := s.repo.GetStudentContactByEntrega(ctx, entregaID)
 		if err == nil {
 			email := ""
@@ -716,9 +1006,9 @@ func resolveCalificacionCambio(tipoRaw string, motivo *string, isOverwrite bool)
 
 	switch tipo {
 	case CalificacionTipoManual, CalificacionTipoManualOverride, CalificacionTipoAutoObjetiva, CalificacionTipoAutoHeuristica:
-		// tipo válido
+		// tipo valido
 	default:
-		return "", nil, errors.New("tipo_cambio inválido")
+		return "", nil, errors.New("tipo_cambio invalido")
 	}
 
 	if isOverwrite && tipo == CalificacionTipoManual {
@@ -729,8 +1019,8 @@ func resolveCalificacionCambio(tipoRaw string, motivo *string, isOverwrite bool)
 	}
 
 	motivoNormalizado := trimOptionalText(motivo)
-	if isOverwrite && motivoNormalizado == nil {
-		return "", nil, errors.New("motivo es obligatorio para sobreescribir una calificación")
+	if tipo == CalificacionTipoManualOverride && motivoNormalizado == nil {
+		return "", nil, errors.New("motivo es obligatorio para sobreescribir una calificacion")
 	}
 
 	return tipo, motivoNormalizado, nil
@@ -745,6 +1035,163 @@ func trimOptionalText(value *string) *string {
 		return nil
 	}
 	return &trimmed
+}
+
+func normalizeStringSlice(values []string) []string {
+	if len(values) == 0 {
+		return []string{}
+	}
+
+	items := make([]string, 0, len(values))
+	for _, value := range values {
+		trimmed := strings.TrimSpace(value)
+		if trimmed == "" {
+			continue
+		}
+		items = append(items, trimmed)
+	}
+	return items
+}
+
+func normalizeTipoPregunta(value string) string {
+	tipo := strings.TrimSpace(value)
+	switch tipo {
+	case "opcion_multiple", "verdadero_falso", "respuesta_corta", "completar":
+		return tipo
+	default:
+		return ""
+	}
+}
+
+func isClosedQuestionType(tipo string) bool {
+	switch strings.TrimSpace(tipo) {
+	case "opcion_multiple", "verdadero_falso":
+		return true
+	default:
+		return false
+	}
+}
+
+func normalizeRespuestaEsperadaTipo(value *string, tipoPregunta string) *string {
+	if value != nil {
+		normalized := strings.TrimSpace(*value)
+		switch normalized {
+		case "abierta", "opciones":
+			return &normalized
+		default:
+			return nil
+		}
+	}
+
+	defaultValue := "abierta"
+	if isClosedQuestionType(tipoPregunta) {
+		defaultValue = "opciones"
+	}
+	return &defaultValue
+}
+
+func sanitizePreguntasForStudent(preguntas []TrabajoPregunta) []TrabajoPregunta {
+	if len(preguntas) == 0 {
+		return preguntas
+	}
+
+	items := make([]TrabajoPregunta, 0, len(preguntas))
+	for _, pregunta := range preguntas {
+		copyPregunta := pregunta
+		copyPregunta.RespuestaCorrecta = nil
+		items = append(items, copyPregunta)
+	}
+	return items
+}
+
+func isClosedAnswerCorrect(pregunta TrabajoPregunta, respuestaRaw, correctaRaw string) bool {
+	respuesta := normalizeComparableAnswer(respuestaRaw)
+	if respuesta == "" {
+		return false
+	}
+
+	options := parseOpcionesPregunta(pregunta.Opciones)
+	candidates := strings.Split(correctaRaw, "||")
+	for _, candidateRaw := range candidates {
+		candidate := normalizeComparableAnswer(candidateRaw)
+		if candidate == "" {
+			continue
+		}
+
+		if candidate == respuesta {
+			return true
+		}
+
+		if resolved, ok := resolveOptionCandidate(candidate, options); ok && resolved == respuesta {
+			return true
+		}
+
+		if expectedBool, ok := normalizeBoolAlias(candidate); ok {
+			if answerBool, ok := normalizeBoolAlias(respuesta); ok && expectedBool == answerBool {
+				return true
+			}
+		}
+	}
+
+	return false
+}
+
+func parseOpcionesPregunta(raw json.RawMessage) []string {
+	if len(raw) == 0 {
+		return nil
+	}
+
+	var options []string
+	if err := json.Unmarshal(raw, &options); err != nil {
+		return nil
+	}
+	return normalizeStringSlice(options)
+}
+
+func resolveOptionCandidate(candidate string, options []string) (string, bool) {
+	if len(options) == 0 {
+		return "", false
+	}
+
+	if len(candidate) == 1 {
+		ch := candidate[0]
+		if ch >= 'a' && ch <= 'z' {
+			idx := int(ch - 'a')
+			if idx >= 0 && idx < len(options) {
+				return normalizeComparableAnswer(options[idx]), true
+			}
+		}
+	}
+
+	if numeric, err := strconv.Atoi(candidate); err == nil {
+		switch {
+		case numeric >= 1 && numeric <= len(options):
+			return normalizeComparableAnswer(options[numeric-1]), true
+		case numeric >= 0 && numeric < len(options):
+			return normalizeComparableAnswer(options[numeric]), true
+		}
+	}
+
+	return "", false
+}
+
+func normalizeBoolAlias(value string) (string, bool) {
+	switch normalizeComparableAnswer(value) {
+	case "verdadero", "true", "v", "si", "yes", "1":
+		return "true", true
+	case "falso", "false", "f", "no", "0":
+		return "false", true
+	default:
+		return "", false
+	}
+}
+
+func normalizeComparableAnswer(value string) string {
+	trimmed := strings.TrimSpace(strings.ToLower(value))
+	if trimmed == "" {
+		return ""
+	}
+	return strings.Join(strings.Fields(trimmed), " ")
 }
 
 func buildRespuestasPreguntasFallback(entregaID string, respuestasJSON json.RawMessage, preguntas []TrabajoPregunta) []TrabajoRespuestaPregunta {
@@ -783,3 +1230,4 @@ func buildRespuestasPreguntasFallback(entregaID string, respuestasJSON json.RawM
 func canManage(role string) bool {
 	return role == "teacher" || role == "admin" || role == "super_admin"
 }
+

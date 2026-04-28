@@ -4,6 +4,7 @@ import toast from "react-hot-toast";
 import { useNavigate } from "react-router-dom";
 import { getMe } from "@/shared/lib/auth";
 import api from "@/shared/lib/api";
+import { listMisMateriasEstudiante } from "@/shared/services/studentAcademic";
 import { Heart, ArrowRight, BookOpenText } from "lucide-react";
 import type { Materia } from "@/shared/types";
 
@@ -46,6 +47,12 @@ export default function ContentsPage({ highContrast = false }: { highContrast?: 
           let seguimientos: any[] = [];
           try { seguimientos = await api.get(`/materias/0/seguimientos`); } catch { /* ignore */ }
           setFollowedIds(new Set(seguimientos.map((s: any) => s.materia_id)));
+
+          if (me.role === "student") {
+            const enrolledMaterias = await listMisMateriasEstudiante();
+            setMaterias(enrolledMaterias);
+            return;
+          }
         }
       } catch {
         // Not logged in — ok

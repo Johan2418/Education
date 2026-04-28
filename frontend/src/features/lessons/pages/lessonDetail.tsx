@@ -3,6 +3,8 @@ import { useParams, useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { getMe } from "@/shared/lib/auth";
 import api from "@/shared/lib/api";
+import { getProgreso, upsertProgreso } from "@/shared/services/progresos";
+import { getStudentLessonAccess } from "@/shared/services/studentProgression";
 import toast from "react-hot-toast";
 import type {
   ActividadInteractiva,
@@ -14,6 +16,7 @@ import type {
   LeccionSeccion,
   LeccionSeccionGatingPDF,
   LeccionVideoProgreso,
+  PruebaCompleta,
   ProgresoSeccion,
 } from "@/shared/types";
 import {
@@ -34,6 +37,7 @@ import {
   getMiIntentoActividad,
   isInteractiveOriginAllowed,
   normalizeInteractiveProviderEvent,
+  parseNativeInteractiveConfig,
   resolveInteractiveScoreThreshold,
   upsertIntentoActividad,
 } from "@/features/lessons/services/interactivas";
@@ -86,6 +90,31 @@ function safeNumber(input: string): number {
   return Math.round(n);
 }
 
+function buildProtectedPdfUrl(rawUrl: string): string {
+  const hashFlags = "toolbar=0&navpanes=0&scrollbar=0&view=FitH";
+  try {
+    const parsed = new URL(rawUrl, window.location.origin);
+    parsed.hash = hashFlags;
+    return parsed.toString();
+  } catch {
+    const joiner = rawUrl.includes("#") ? "&" : "#";
+    return `${rawUrl}${joiner}${hashFlags}`;
+  }
+}
+
+interface CheckpointQuestionOption {
+  id: string;
+  text: string;
+  isCorrect: boolean;
+}
+
+interface CheckpointQuestion {
+  seccionId: string;
+  pruebaId: string;
+  prompt: string;
+  options: CheckpointQuestionOption[];
+}
+
 export default function LessonDetailPage() {
   const { lessonId } = useParams<{ lessonId: string }>();
   const { t } = useTranslation();
@@ -118,12 +147,29 @@ export default function LessonDetailPage() {
   const [videoWatchedDraft, setVideoWatchedDraft] = useState("0");
   const [videoTotalDraft, setVideoTotalDraft] = useState("0");
   const [savingVideoProgress, setSavingVideoProgress] = useState(false);
+  const [checkpointQuestion, setCheckpointQuestion] = useState<CheckpointQuestion | null>(null);
+  const [checkpointPromptVisible, setCheckpointPromptVisible] = useState(false);
+  const [checkpointSelectedOption, setCheckpointSelectedOption] = useState("");
+  const [checkpointSubmitting, setCheckpointSubmitting] = useState(false);
+  const [checkpointUnlocked, setCheckpointUnlocked] = useState(false);
+  const [nativeAnswers, setNativeAnswers] = useState<Record<string, string>>({});
+  const [nativeSubmitting, setNativeSubmitting] = useState(false);
+  const [nativeFeedback, setNativeFeedback] = useState<string | null>(null);
+  const [nativeQuickQuestionIdx, setNativeQuickQuestionIdx] = useState(0);
+  const [nativeQuickRemainingSeconds, setNativeQuickRemainingSeconds] = useState(0);
+  const [nativeTimedOutQuestions, setNativeTimedOutQuestions] = useState<Record<string, boolean>>({});
+  const [nativeQuickStartedAtMs, setNativeQuickStartedAtMs] = useState<number | null>(null);
   const [savingActividadIntento, setSavingActividadIntento] = useState(false);
+  const [lessonAlreadyCompleted, setLessonAlreadyCompleted] = useState(false);
+  const [studentAccessDenied, setStudentAccessDenied] = useState(false);
+  const [blockedMateriaId, setBlockedMateriaId] = useState<string | null>(null);
 
   const interactiveIframeRef = useRef<HTMLIFrameElement | null>(null);
+  const videoElementRef = useRef<HTMLVideoElement | null>(null);
   const processedInteractiveEventKeysRef = useRef<Set<string>>(new Set());
   const currentActividadIntentoRef = useRef<ActividadInteractivaIntento | null>(null);
   const progresoSeccionesRef = useRef<Record<string, ProgresoSeccion>>({});
+  const lessonProgressSyncingRef = useRef(false);
 
   const isEditor = ["teacher", "admin", "super_admin", "resource_manager"].includes(currentRole);
 
@@ -139,6 +185,8 @@ export default function LessonDetailPage() {
     if (!lessonId) return;
     (async () => {
       setLoading(true);
+      setStudentAccessDenied(false);
+      setBlockedMateriaId(null);
       try {
         const me = await getMe();
         if (!me) { navigate("/login"); return; }
@@ -146,6 +194,20 @@ export default function LessonDetailPage() {
 
         const lessonRes = await api.get<{ data: Leccion }>(`/lecciones/${lessonId}`);
         setLesson(lessonRes.data);
+
+        if (me.role === "student") {
+          const lessonAccess = await getStudentLessonAccess(lessonRes.data);
+          if (!lessonAccess.allowed) {
+            setStudentAccessDenied(true);
+            setBlockedMateriaId(lessonAccess.materiaId);
+            return;
+          }
+
+          const lessonProgress = await getProgreso(lessonId);
+          setLessonAlreadyCompleted(!!lessonProgress?.completado);
+        } else {
+          setLessonAlreadyCompleted(false);
+        }
 
         const seccionesRes = await api.get<{ data: LeccionSeccion[] }>(`/lecciones/${lessonId}/secciones`);
         const secs: LeccionSeccion[] = seccionesRes.data || [];
@@ -270,14 +332,53 @@ export default function LessonDetailPage() {
         leccion_seccion_id: seccionId,
         completado: true,
       });
-      setProgSecciones((prev) => ({
-        ...prev,
+      const updatedMap = {
+        ...progresoSeccionesRef.current,
         [seccionId]: response.data,
-      }));
+      };
+      setProgSecciones(updatedMap);
+      await syncLessonProgressIfCompleted(updatedMap);
     } catch {
       toast.error(t("lessons.progressError", { defaultValue: "Error al guardar progreso" }));
     }
   };
+
+  const syncLessonProgressIfCompleted = async (progressMap: Record<string, ProgresoSeccion>) => {
+    if (isEditor || !lesson || lessonAlreadyCompleted || lessonProgressSyncingRef.current) return;
+    const hasQuizSection = secciones.some((section) => section.tipo === "prueba" || !!section.prueba_id);
+    if (hasQuizSection) return;
+
+    const requiredSections = secciones.filter((section) => section.es_obligatorio !== false);
+    if (requiredSections.length === 0) return;
+
+    const completedAllRequired = requiredSections.every((section) => !!progressMap[section.id]?.completado);
+    if (!completedAllRequired) return;
+
+    const numericScores = requiredSections
+      .map((section) => progressMap[section.id]?.puntuacion)
+      .filter((value): value is number => typeof value === "number" && Number.isFinite(value));
+    const lessonScore = numericScores.length > 0
+      ? Math.round(numericScores.reduce((sum, score) => sum + score, 0) / numericScores.length)
+      : 100;
+
+    lessonProgressSyncingRef.current = true;
+    try {
+      await upsertProgreso({
+        leccion_id: lesson.id,
+        completado: true,
+        puntaje: lessonScore,
+      });
+      setLessonAlreadyCompleted(true);
+    } catch {
+      // no-op: section progress is still valid even when lesson aggregation fails.
+    } finally {
+      lessonProgressSyncingRef.current = false;
+    }
+  };
+
+  useEffect(() => {
+    void syncLessonProgressIfCompleted(progSecciones);
+  }, [progSecciones, secciones, lessonAlreadyCompleted]);
 
   const onSelectHilo = async (hiloId: string) => {
     setSelectedHiloId(hiloId);
@@ -353,6 +454,20 @@ export default function LessonDetailPage() {
   const youtubeVideoId = useMemo(() => extractYouTubeVideoId(contentURL), [contentURL]);
 
   const currentVideoProgress = currentSection ? videoProgressBySeccion[currentSection.id] : undefined;
+  const nativeConfig = useMemo(
+    () => (currentActividad?.proveedor === "nativo" ? parseNativeInteractiveConfig(currentActividad.configuracion) : null),
+    [currentActividad]
+  );
+  const isNativeQuickQuizMode = Boolean(nativeConfig?.isQuickQuiz && nativeConfig.questions.length > 0);
+  const currentNativeQuickQuestion = isNativeQuickQuizMode
+    ? (nativeConfig?.questions[nativeQuickQuestionIdx] ?? null)
+    : null;
+  const nativeAnsweredCount = nativeConfig
+    ? nativeConfig.questions.filter((question) => Boolean(nativeAnswers[question.id])).length
+    : 0;
+  const nativeTimedOutCount = nativeConfig
+    ? nativeConfig.questions.filter((question) => nativeTimedOutQuestions[question.id]).length
+    : 0;
 
   useEffect(() => {
     if (!currentSection || !youtubeVideoId) {
@@ -397,6 +512,160 @@ export default function LessonDetailPage() {
     }
   };
 
+  useEffect(() => {
+    setNativeAnswers({});
+    setNativeFeedback(null);
+    setNativeQuickQuestionIdx(0);
+    setNativeQuickRemainingSeconds(0);
+    setNativeTimedOutQuestions({});
+    setNativeQuickStartedAtMs(null);
+  }, [currentSection?.id, currentActividad?.id]);
+
+  useEffect(() => {
+    if (!isNativeQuickQuizMode || !nativeConfig) {
+      setNativeQuickRemainingSeconds(0);
+      setNativeQuickStartedAtMs(null);
+      return;
+    }
+    setNativeQuickQuestionIdx(0);
+    setNativeQuickRemainingSeconds(nativeConfig.timePerQuestionSeconds);
+    setNativeQuickStartedAtMs(Date.now());
+  }, [isNativeQuickQuizMode, nativeConfig, currentSection?.id, currentActividad?.id]);
+
+  useEffect(() => {
+    if (!isNativeQuickQuizMode || !nativeConfig) return;
+    setNativeQuickRemainingSeconds(nativeConfig.timePerQuestionSeconds);
+  }, [isNativeQuickQuizMode, nativeConfig, nativeQuickQuestionIdx]);
+
+  useEffect(() => {
+    setCheckpointQuestion(null);
+    setCheckpointPromptVisible(false);
+    setCheckpointSelectedOption("");
+
+    if (currentSection?.tipo !== "video" || !currentGating?.habilitado || !currentGating.seccion_preguntas_id) {
+      setCheckpointUnlocked(false);
+      return;
+    }
+
+    const requiredSectionId = currentGating.seccion_preguntas_id;
+    const minScore = currentGating.puntaje_minimo ?? 0;
+    const relatedProgress = progSecciones[requiredSectionId];
+    const alreadyUnlocked = !!relatedProgress?.completado && (relatedProgress.puntuacion ?? 0) >= minScore;
+    setCheckpointUnlocked(alreadyUnlocked);
+    if (alreadyUnlocked) return;
+
+    const checkpointSeconds = currentGating.checkpoint_segundos;
+    if (checkpointSeconds == null || checkpointSeconds <= 0) return;
+
+    const questionSection = secciones.find((section) => section.id === requiredSectionId);
+    if (!questionSection?.prueba_id) return;
+    const pruebaId = questionSection.prueba_id;
+
+    let active = true;
+    void (async () => {
+      try {
+        const prueba = await api.get<PruebaCompleta>(`/pruebas/${pruebaId}/completa`);
+        const firstQuestion = prueba?.preguntas?.[0];
+        const options = (firstQuestion?.respuestas || [])
+          .map((respuesta) => ({
+            id: respuesta.id,
+            text: respuesta.texto,
+            isCorrect: Boolean(respuesta.es_correcta),
+          }))
+          .filter((option) => option.text.trim() !== "");
+
+        if (!active || !firstQuestion || options.length < 2 || !options.some((option) => option.isCorrect)) {
+          return;
+        }
+
+        setCheckpointQuestion({
+          seccionId: questionSection.id,
+          pruebaId,
+          prompt: firstQuestion.texto,
+          options,
+        });
+      } catch {
+        // keep null when the linked quiz cannot be loaded
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [
+    currentSection?.id,
+    currentSection?.tipo,
+    currentGating?.habilitado,
+    currentGating?.seccion_preguntas_id,
+    currentGating?.checkpoint_segundos,
+    currentGating?.puntaje_minimo,
+    secciones,
+    progSecciones,
+  ]);
+
+  const onVideoTimeUpdate = () => {
+    if (isEditor || currentSection?.tipo !== "video" || youtubeVideoId) return;
+    if (!currentGating?.habilitado || !checkpointQuestion || checkpointUnlocked || checkpointPromptVisible) return;
+
+    const checkpointSeconds = currentGating.checkpoint_segundos;
+    if (checkpointSeconds == null || checkpointSeconds <= 0) return;
+
+    const player = videoElementRef.current;
+    if (!player) return;
+
+    if (player.currentTime >= checkpointSeconds) {
+      player.pause();
+      setCheckpointPromptVisible(true);
+    }
+  };
+
+  const onSubmitCheckpointQuestion = async () => {
+    if (!currentGating?.seccion_preguntas_id || !checkpointQuestion || !checkpointSelectedOption) return;
+
+    const selected = checkpointQuestion.options.find((option) => option.id === checkpointSelectedOption);
+    if (!selected) return;
+
+    const score = selected.isCorrect ? 100 : 0;
+    const passScore = currentGating.puntaje_minimo ?? 0;
+    const passed = score >= passScore;
+    const currentIntentos = progSecciones[checkpointQuestion.seccionId]?.intentos ?? 0;
+
+    setCheckpointSubmitting(true);
+    try {
+      const response = await api.put<{ data: ProgresoSeccion }>("/progreso-secciones", {
+        leccion_seccion_id: checkpointQuestion.seccionId,
+        completado: passed,
+        puntuacion: score,
+        intentos: currentIntentos + 1,
+      });
+      const updated = response.data;
+      const merged = {
+        ...progresoSeccionesRef.current,
+        [checkpointQuestion.seccionId]: updated,
+      };
+      setProgSecciones(merged);
+      await syncLessonProgressIfCompleted(merged);
+
+      if (passed) {
+        setCheckpointUnlocked(true);
+        setCheckpointPromptVisible(false);
+        setCheckpointSelectedOption("");
+        try {
+          await videoElementRef.current?.play();
+        } catch {
+          // no-op
+        }
+        toast.success("Checkpoint de video superado. Puedes continuar.");
+      } else {
+        toast.error("Respuesta incorrecta. Intenta nuevamente para desbloquear el video.");
+      }
+    } catch (err) {
+      toast.error(normalizeError(err));
+    } finally {
+      setCheckpointSubmitting(false);
+    }
+  };
+
   const onRegistrarActividadCompletada = async () => {
     if (!currentSection?.actividad_interactiva_id) return;
 
@@ -424,8 +693,162 @@ export default function LessonDetailPage() {
     }
   };
 
+  const onSubmitNativeActividad = async (options?: {
+    allowPartial?: boolean;
+    source?: "native_manual_submit" | "quick_auto_timeout" | "quick_manual_finish" | "quick_auto_answer";
+  }) => {
+    if (!currentSection?.actividad_interactiva_id || !nativeConfig || nativeConfig.questions.length === 0) return;
+
+    const allowPartial = options?.allowPartial ?? false;
+    const unansweredQuestionIds = nativeConfig.questions
+      .filter((question) => !nativeAnswers[question.id])
+      .map((question) => question.id);
+    if (!allowPartial && unansweredQuestionIds.length > 0) {
+      toast.error("Responde todas las preguntas para enviar la actividad nativa.");
+      return;
+    }
+
+    const timedOutQuestionIds = nativeConfig.questions
+      .filter((question) => nativeTimedOutQuestions[question.id])
+      .map((question) => question.id);
+    const correctAnswers = nativeConfig.questions.reduce((total, question) => {
+      const selectedId = nativeAnswers[question.id];
+      const selectedOption = question.options.find((option) => option.id === selectedId);
+      return total + (selectedOption?.isCorrect ? 1 : 0);
+    }, 0);
+    const scoreNormalizado = Math.round((correctAnswers / nativeConfig.questions.length) * 100);
+
+    const completedByRule = currentActividad?.regla_completitud === "puntaje"
+      ? scoreNormalizado >= nativeConfig.scoreThreshold
+      : true;
+    const elapsedSeconds = nativeQuickStartedAtMs != null
+      ? Math.max(1, Math.round((Date.now() - nativeQuickStartedAtMs) / 1000))
+      : undefined;
+
+    setNativeSubmitting(true);
+    try {
+      const previousIntentos = currentActividadIntento?.intentos ?? 0;
+      const intento = await upsertIntentoActividad(currentSection.actividad_interactiva_id, {
+        completado: completedByRule,
+        intentos: previousIntentos + 1,
+        score_obtenido: correctAnswers,
+        score_normalizado: scoreNormalizado,
+        tiempo_dedicado: elapsedSeconds,
+        completed_at: completedByRule ? new Date().toISOString() : undefined,
+        metadata: {
+          origen: options?.source ?? "native_manual_submit",
+          native_mode: isNativeQuickQuizMode ? "quick_quiz" : "standard_quiz",
+          total_questions: nativeConfig.questions.length,
+          answered_questions: nativeConfig.questions.length - unansweredQuestionIds.length,
+          unanswered_questions: unansweredQuestionIds.length,
+          unanswered_question_ids: unansweredQuestionIds,
+          timed_out_questions: timedOutQuestionIds.length,
+          timed_out_question_ids: timedOutQuestionIds,
+          score_threshold: nativeConfig.scoreThreshold,
+          quick_quiz_enabled: isNativeQuickQuizMode,
+          time_per_question_seconds: isNativeQuickQuizMode ? nativeConfig.timePerQuestionSeconds : undefined,
+          auto_skip_on_timeout: isNativeQuickQuizMode ? nativeConfig.autoSkipOnTimeout : undefined,
+        },
+      });
+      setCurrentActividadIntento(intento);
+
+      if (completedByRule && !progSecciones[currentSection.id]?.completado) {
+        await markSectionComplete(currentSection.id);
+      }
+
+      if (completedByRule) {
+        if (unansweredQuestionIds.length > 0) {
+          setNativeFeedback(`Completada con ${scoreNormalizado}%. Quedaron ${unansweredQuestionIds.length} pregunta(s) sin responder.`);
+        } else {
+          setNativeFeedback(`Completada con ${scoreNormalizado}%.`);
+        }
+      } else {
+        setNativeFeedback(`Obtuviste ${scoreNormalizado}%. Debes alcanzar ${nativeConfig.scoreThreshold}% para completar.`);
+      }
+    } catch (err) {
+      toast.error(normalizeError(err));
+    } finally {
+      setNativeSubmitting(false);
+    }
+  };
+
+  const onAdvanceNativeQuickQuestion = (reason: "timeout" | "manual_skip") => {
+    if (!isNativeQuickQuizMode || !nativeConfig || nativeSubmitting) return;
+    const isLastQuestion = nativeQuickQuestionIdx >= nativeConfig.questions.length - 1;
+    if (isLastQuestion) {
+      void onSubmitNativeActividad({
+        allowPartial: true,
+        source: reason === "timeout" ? "quick_auto_timeout" : "quick_manual_finish",
+      });
+      return;
+    }
+    setNativeQuickRemainingSeconds(nativeConfig.timePerQuestionSeconds);
+    setNativeQuickQuestionIdx((prev) => Math.min(prev + 1, nativeConfig.questions.length - 1));
+  };
+
+  const onSelectNativeAnswer = (questionId: string, optionId: string) => {
+    setNativeAnswers((prev) => ({ ...prev, [questionId]: optionId }));
+    if (!isNativeQuickQuizMode || !nativeConfig || nativeSubmitting) return;
+    if (questionId !== currentNativeQuickQuestion?.id) return;
+
+    const isLastQuestion = nativeQuickQuestionIdx >= nativeConfig.questions.length - 1;
+    if (isLastQuestion) {
+      void onSubmitNativeActividad({
+        allowPartial: true,
+        source: "quick_auto_answer",
+      });
+      return;
+    }
+    setNativeQuickRemainingSeconds(nativeConfig.timePerQuestionSeconds);
+    setNativeQuickQuestionIdx((prev) => Math.min(prev + 1, nativeConfig.questions.length - 1));
+  };
+
   useEffect(() => {
-    if (isEditor || !currentSection?.actividad_interactiva_id || !currentActividad) {
+    if (!isNativeQuickQuizMode || isEditor || nativeSubmitting || !currentNativeQuickQuestion) return;
+    if (nativeQuickRemainingSeconds <= 0) return;
+    const timeoutId = window.setTimeout(() => {
+      setNativeQuickRemainingSeconds((prev) => Math.max(0, prev - 1));
+    }, 1000);
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [
+    isNativeQuickQuizMode,
+    isEditor,
+    nativeSubmitting,
+    currentNativeQuickQuestion?.id,
+    nativeQuickRemainingSeconds,
+  ]);
+
+  useEffect(() => {
+    if (!isNativeQuickQuizMode || isEditor || nativeSubmitting || !nativeConfig || !currentNativeQuickQuestion) return;
+    if (nativeQuickRemainingSeconds > 0) return;
+
+    const questionId = currentNativeQuickQuestion.id;
+    if (nativeTimedOutQuestions[questionId]) return;
+
+    setNativeTimedOutQuestions((prev) => ({ ...prev, [questionId]: true }));
+    toast("Tiempo agotado: se anulo esta pregunta y se avanzo a la siguiente.");
+    if (nativeConfig.autoSkipOnTimeout) {
+      onAdvanceNativeQuickQuestion("timeout");
+    }
+  }, [
+    isNativeQuickQuizMode,
+    isEditor,
+    nativeSubmitting,
+    nativeConfig,
+    currentNativeQuickQuestion,
+    nativeQuickRemainingSeconds,
+    nativeTimedOutQuestions,
+  ]);
+
+  useEffect(() => {
+    if (
+      isEditor
+      || !currentSection?.actividad_interactiva_id
+      || !currentActividad
+      || currentActividad.proveedor === "nativo"
+    ) {
       processedInteractiveEventKeysRef.current.clear();
       return;
     }
@@ -546,13 +969,76 @@ export default function LessonDetailPage() {
     );
   }
 
+  if (studentAccessDenied) {
+    const returnPath = blockedMateriaId ? `/contents/${blockedMateriaId}` : "/contents";
+    return (
+      <div className="max-w-3xl mx-auto p-4">
+        <div className="rounded-lg border border-amber-300 bg-amber-50 p-4 text-amber-900">
+          Esta lección está bloqueada por el orden de avance configurado por tu docente.
+        </div>
+        <button
+          onClick={() => navigate(returnPath)}
+          className="mt-4 rounded-md bg-blue-600 px-4 py-2 text-white hover:bg-blue-700"
+        >
+          Volver a la materia
+        </button>
+      </div>
+    );
+  }
+
   if (!lesson) {
     return <div className="text-center py-8 text-gray-500">{t("lessons.notFound", { defaultValue: "Lección no encontrada" })}</div>;
   }
   const isForoSection = !!currentSection && (currentSection.tipo === "foro" || !!currentSection.foro_id);
   const isVideoSection = currentSection?.tipo === "video";
+  const isQuizSection = currentSection?.tipo === "prueba";
   const isInteractiveSection = currentSection?.tipo === "actividad_interactiva";
   const isPdfResource = !!contentURL && contentURL.toLowerCase().includes(".pdf");
+  const protectedPdfURL = useMemo(
+    () => (isPdfResource && contentURL ? buildProtectedPdfUrl(contentURL) : null),
+    [contentURL, isPdfResource],
+  );
+
+  useEffect(() => {
+    if (!isPdfResource) return;
+
+    const preventContextMenu = (event: MouseEvent) => {
+      event.preventDefault();
+      toast("Visor PDF protegido: accion bloqueada");
+    };
+    const preventCopyCut = (event: ClipboardEvent) => {
+      event.preventDefault();
+      toast("Visor PDF protegido: accion bloqueada");
+    };
+    const preventKeys = (event: KeyboardEvent) => {
+      const key = event.key.toLowerCase();
+      const printScreenPressed = key === "printscreen";
+      const blocked =
+        (event.ctrlKey && key === "s") ||
+        (event.ctrlKey && key === "p") ||
+        (event.metaKey && key === "s") ||
+        (event.metaKey && key === "p") ||
+        printScreenPressed;
+      if (!blocked) return;
+      event.preventDefault();
+      if (printScreenPressed && navigator.clipboard?.writeText) {
+        void navigator.clipboard.writeText("");
+      }
+      toast("Visor PDF protegido: accion bloqueada");
+    };
+
+    document.addEventListener("contextmenu", preventContextMenu);
+    document.addEventListener("copy", preventCopyCut);
+    document.addEventListener("cut", preventCopyCut);
+    document.addEventListener("keydown", preventKeys);
+
+    return () => {
+      document.removeEventListener("contextmenu", preventContextMenu);
+      document.removeEventListener("copy", preventCopyCut);
+      document.removeEventListener("cut", preventCopyCut);
+      document.removeEventListener("keydown", preventKeys);
+    };
+  }, [isPdfResource]);
 
   const currentRequisitos = currentSection?.requisitos || [];
   const blockedByRequisitos = currentRequisitos.some((id) => !progSecciones[id]?.completado);
@@ -565,6 +1051,7 @@ export default function LessonDetailPage() {
   const canMarkComplete =
     !!currentSection &&
     !isEditor &&
+    !isQuizSection &&
     !sectionCompleted &&
     !blockedByRequisitos &&
     (!isVideoSection || youtubeValidated) &&
@@ -664,8 +1151,15 @@ export default function LessonDetailPage() {
                         />
                       </div>
 
+                      {!isEditor && currentGating?.checkpoint_segundos && (
+                        <div className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                          Este video usa reproductor YouTube embebido. El checkpoint en tiempo se aplica solo para video HTML5 nativo;
+                          puedes responder la seccion de preguntas vinculada para desbloquear el avance.
+                        </div>
+                      )}
+
                       <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-                        <p className="text-sm font-medium text-slate-800 mb-2">Comprobación de visualización YouTube (mínimo 90%)</p>
+                        <p className="text-sm font-medium text-slate-800 mb-2">Comprobacion de visualizacion YouTube (minimo 90%)</p>
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-2 mb-2">
                           <label className="text-sm text-slate-700">
                             Segundos vistos
@@ -677,7 +1171,7 @@ export default function LessonDetailPage() {
                             />
                           </label>
                           <label className="text-sm text-slate-700">
-                            Duración total
+                            Duracion total
                             <input
                               value={videoTotalDraft}
                               onChange={(e) => setVideoTotalDraft(e.target.value)}
@@ -704,7 +1198,43 @@ export default function LessonDetailPage() {
                       </div>
                     </>
                   ) : (
-                    <video src={contentURL} controls className="w-full rounded" />
+                    <video
+                      ref={videoElementRef}
+                      src={contentURL}
+                      controls
+                      onTimeUpdate={onVideoTimeUpdate}
+                      className="w-full rounded"
+                    />
+                  )}
+
+                  {!isEditor && checkpointPromptVisible && checkpointQuestion && (
+                    <div className="rounded-lg border border-indigo-300 bg-indigo-50 p-4">
+                      <p className="text-sm font-semibold text-indigo-900 mb-2">
+                        Checkpoint del video (segundo {currentGating?.checkpoint_segundos}): responde para continuar
+                      </p>
+                      <p className="text-sm text-indigo-900 mb-3">{checkpointQuestion.prompt}</p>
+                      <div className="space-y-2 mb-3">
+                        {checkpointQuestion.options.map((option) => (
+                          <label key={option.id} className="flex items-center gap-2 text-sm text-indigo-900">
+                            <input
+                              type="radio"
+                              name={`checkpoint-${checkpointQuestion.seccionId}`}
+                              checked={checkpointSelectedOption === option.id}
+                              onChange={() => setCheckpointSelectedOption(option.id)}
+                            />
+                            {option.text}
+                          </label>
+                        ))}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => void onSubmitCheckpointQuestion()}
+                        disabled={checkpointSubmitting || !checkpointSelectedOption}
+                        className="rounded-md bg-indigo-700 px-3 py-2 text-white hover:bg-indigo-800 disabled:opacity-50"
+                      >
+                        {checkpointSubmitting ? "Validando..." : "Enviar respuesta y continuar"}
+                      </button>
+                    </div>
                   )}
                 </div>
               )}
@@ -719,9 +1249,12 @@ export default function LessonDetailPage() {
                   {!currentSection.contenido && currentRecurso?.descripcion && <p className="text-gray-700 whitespace-pre-wrap">{currentRecurso.descripcion}</p>}
                   {isPdfResource && contentURL && (
                     <iframe
-                      src={contentURL}
+                      src={protectedPdfURL || contentURL}
                       className="w-full h-[540px] rounded border border-slate-200"
                       title="PDF Recurso"
+                      sandbox="allow-scripts allow-same-origin"
+                      referrerPolicy="strict-origin-when-cross-origin"
+                      onContextMenu={(event) => event.preventDefault()}
                     />
                   )}
                   {!isPdfResource && contentURL && (
@@ -748,24 +1281,130 @@ export default function LessonDetailPage() {
                         )}
                       </div>
 
-                      <div className="aspect-video w-full overflow-hidden rounded-lg border border-slate-200 bg-slate-100">
-                        <iframe
-                          ref={interactiveIframeRef}
-                          title={`Actividad interactiva ${currentActividad.proveedor}`}
-                          src={currentActividad.embed_url}
-                          className="h-full w-full"
-                          allow="fullscreen; autoplay"
-                          sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox"
-                          referrerPolicy="strict-origin-when-cross-origin"
-                        />
-                      </div>
+                      {currentActividad.proveedor === "nativo" && nativeConfig ? (
+                        <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 space-y-4">
+                          {nativeConfig.questions.length === 0 ? (
+                            <p className="text-sm text-amber-800">La actividad nativa no tiene preguntas validas configuradas.</p>
+                          ) : (
+                            <>
+                              {isNativeQuickQuizMode ? (
+                                <>
+                                  <div className="rounded-md border border-emerald-300 bg-white p-3">
+                                    <p className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-700">
+                                      Quiz veloz activo
+                                    </p>
+                                    <p className="mt-1 text-sm text-emerald-900">
+                                      Pregunta {Math.min(nativeQuickQuestionIdx + 1, nativeConfig.questions.length)} de {nativeConfig.questions.length}
+                                      {" | "}Respondidas: {nativeAnsweredCount}
+                                      {" | "}Timeout: {nativeTimedOutCount}
+                                    </p>
+                                    <p className={`mt-1 text-sm font-semibold ${nativeQuickRemainingSeconds <= 5 ? "text-rose-700" : "text-emerald-800"}`}>
+                                      Tiempo restante: {nativeQuickRemainingSeconds}s
+                                    </p>
+                                    <p className="mt-1 text-xs text-emerald-700">
+                                      Auto-salto por timeout: {nativeConfig.autoSkipOnTimeout ? "si" : "no"}
+                                    </p>
+                                  </div>
+
+                                  {currentNativeQuickQuestion && (
+                                    <div key={currentNativeQuickQuestion.id} className="rounded-md border border-emerald-200 bg-white p-3">
+                                      <p className="text-sm font-medium text-emerald-900 mb-2">
+                                        {nativeQuickQuestionIdx + 1}. {currentNativeQuickQuestion.prompt}
+                                      </p>
+                                      <div className="space-y-2">
+                                        {currentNativeQuickQuestion.options.map((option) => (
+                                          <label key={option.id} className="flex items-center gap-2 text-sm text-emerald-900">
+                                            <input
+                                              type="radio"
+                                              name={`native-${currentNativeQuickQuestion.id}`}
+                                              checked={nativeAnswers[currentNativeQuickQuestion.id] === option.id}
+                                              onChange={() => onSelectNativeAnswer(currentNativeQuickQuestion.id, option.id)}
+                                            />
+                                            {option.text}
+                                          </label>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  )}
+
+                                  {!isEditor && (
+                                    <div className="flex flex-wrap gap-2">
+                                      <button
+                                        type="button"
+                                        onClick={() => onAdvanceNativeQuickQuestion("manual_skip")}
+                                        disabled={nativeSubmitting}
+                                        className="rounded-md border border-emerald-300 bg-white px-3 py-2 text-emerald-800 hover:bg-emerald-100 disabled:opacity-50"
+                                      >
+                                        Saltar pregunta
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => void onSubmitNativeActividad({ allowPartial: true, source: "quick_manual_finish" })}
+                                        disabled={nativeSubmitting}
+                                        className="rounded-md bg-emerald-700 px-3 py-2 text-white hover:bg-emerald-800 disabled:opacity-50"
+                                      >
+                                        {nativeSubmitting ? "Enviando..." : "Finalizar quiz veloz"}
+                                      </button>
+                                    </div>
+                                  )}
+                                </>
+                              ) : (
+                                <>
+                                  {nativeConfig.questions.map((question, index) => (
+                                    <div key={question.id} className="rounded-md border border-emerald-200 bg-white p-3">
+                                      <p className="text-sm font-medium text-emerald-900 mb-2">{index + 1}. {question.prompt}</p>
+                                      <div className="space-y-2">
+                                        {question.options.map((option) => (
+                                          <label key={option.id} className="flex items-center gap-2 text-sm text-emerald-900">
+                                            <input
+                                              type="radio"
+                                              name={`native-${question.id}`}
+                                              checked={nativeAnswers[question.id] === option.id}
+                                              onChange={() => onSelectNativeAnswer(question.id, option.id)}
+                                            />
+                                            {option.text}
+                                          </label>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  ))}
+
+                                  {!isEditor && (
+                                    <button
+                                      type="button"
+                                      onClick={() => void onSubmitNativeActividad()}
+                                      disabled={nativeSubmitting}
+                                      className="rounded-md bg-emerald-700 px-3 py-2 text-white hover:bg-emerald-800 disabled:opacity-50"
+                                    >
+                                      {nativeSubmitting ? "Enviando..." : "Enviar actividad nativa"}
+                                    </button>
+                                  )}
+                                </>
+                              )}
+                            </>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="aspect-video w-full overflow-hidden rounded-lg border border-slate-200 bg-slate-100">
+                          <iframe
+                            ref={interactiveIframeRef}
+                            title={`Actividad interactiva ${currentActividad.proveedor}`}
+                            src={currentActividad.embed_url}
+                            className="h-full w-full"
+                            allow="fullscreen; autoplay"
+                            sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox"
+                            referrerPolicy="strict-origin-when-cross-origin"
+                          />
+                        </div>
+                      )}
 
                       <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
                         <p>
                           Estado: {currentActividadIntento?.completado ? "Completada" : "Pendiente"}
                         </p>
                         <p>Intentos registrados: {currentActividadIntento?.intentos ?? 0}</p>
-                        {!isEditor && !currentActividadIntento?.completado && (
+                        {nativeFeedback && <p className="mt-2 text-sm text-emerald-800">{nativeFeedback}</p>}
+                        {!isEditor && !currentActividadIntento?.completado && currentActividad.proveedor !== "nativo" && (
                           <button
                             onClick={() => void onRegistrarActividadCompletada()}
                             disabled={savingActividadIntento}
@@ -778,8 +1417,31 @@ export default function LessonDetailPage() {
                     </>
                   ) : (
                     <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
-                      Esta sección interactiva no tiene actividad vinculada o no pudo cargarse.
+                      Esta seccion interactiva no tiene actividad vinculada o no pudo cargarse.
                     </div>
+                  )}
+                </div>
+              )}
+
+              {isQuizSection && (
+                <div className="mb-4 rounded-lg border border-indigo-200 bg-indigo-50 p-4">
+                  {currentSection.prueba_id ? (
+                    <>
+                      <p className="text-sm text-indigo-900 mb-2">
+                        Completa y aprueba esta prueba para desbloquear la siguiente sección.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => navigate(`/lesson/${lesson.id}/prueba/${currentSection.prueba_id}`)}
+                        className="rounded-md bg-indigo-700 px-3 py-2 text-white hover:bg-indigo-800"
+                      >
+                        Abrir prueba
+                      </button>
+                    </>
+                  ) : (
+                    <p className="text-sm text-amber-800">
+                      Esta sección de prueba no tiene evaluación vinculada.
+                    </p>
                   )}
                 </div>
               )}
@@ -895,7 +1557,7 @@ export default function LessonDetailPage() {
                 </div>
               )}
 
-              {!isEditor && !progSecciones[currentSection.id]?.completado && (
+              {!isEditor && !isQuizSection && !progSecciones[currentSection.id]?.completado && (
                 <button
                   onClick={() => void markSectionComplete(currentSection.id)}
                   disabled={!canMarkComplete}

@@ -52,6 +52,7 @@ export interface TrabajoPregunta {
   texto: string;
   tipo: "opcion_multiple" | "verdadero_falso" | "respuesta_corta" | "completar";
   opciones: string[];
+  respuesta_correcta?: string | null;
   puntaje_maximo: number;
   pagina_libro: number | null;
   confianza_ia: number | null;
@@ -100,6 +101,7 @@ export interface LibroPreguntaInput {
   texto: string;
   tipo: "opcion_multiple" | "verdadero_falso" | "respuesta_corta" | "completar";
   opciones?: string[];
+  respuesta_correcta?: string;
   puntaje_maximo?: number;
   pagina_libro?: number;
   confianza_ia?: number;
@@ -402,6 +404,25 @@ export interface CreateEntregaPreguntaRespuesta {
   pregunta_id: string;
   respuesta_texto?: string;
   respuesta_opcion?: string;
+}
+
+export interface TrabajoPreguntaInput {
+  texto: string;
+  tipo: "opcion_multiple" | "verdadero_falso" | "respuesta_corta" | "completar";
+  opciones?: string[];
+  respuesta_correcta?: string;
+  puntaje_maximo?: number;
+  pagina_libro?: number;
+  confianza_ia?: number;
+  imagen_base64?: string;
+  imagen_fuente?: string;
+  respuesta_esperada_tipo?: "abierta" | "opciones";
+  placeholder?: string;
+  orden?: number;
+}
+
+export interface UpdateTrabajoPreguntasRequest {
+  preguntas: TrabajoPreguntaInput[];
 }
 
 export interface CalificarEntregaRequest {

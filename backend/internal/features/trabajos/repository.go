@@ -496,7 +496,12 @@ func (r *Repository) UpsertCalificacion(ctx context.Context, entregaID, docenteI
 	return &cal, nil
 }
 
-func (r *Repository) UpsertCalificacionPorPregunta(ctx context.Context, entregaID, docenteID, actorRole string, req CalificarEntregaPorPreguntaRequest) (*TrabajoCalificacion, error) {
+func (r *Repository) UpsertCalificacionPorPregunta(
+	ctx context.Context,
+	entregaID, docenteID, actorRole string,
+	req CalificarEntregaPorPreguntaRequest,
+	marcarCalificada bool,
+) (*TrabajoCalificacion, error) {
 	var cal TrabajoCalificacion
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		entrega, err := r.getEntregaByIDTx(ctx, tx, entregaID)
@@ -590,9 +595,14 @@ func (r *Repository) UpsertCalificacionPorPregunta(ctx context.Context, entregaI
 			}
 		}
 
+		estadoObjetivo := "revisada"
+		if marcarCalificada {
+			estadoObjetivo = "calificada"
+		}
+
 		if err := tx.Model(&TrabajoEntrega{}).
 			Where("id = ?", entregaID).
-			Update("estado", gorm.Expr("?::internal.estado_entrega_trabajo", "calificada")).Error; err != nil {
+			Update("estado", gorm.Expr("?::internal.estado_entrega_trabajo", estadoObjetivo)).Error; err != nil {
 			return err
 		}
 
@@ -618,6 +628,37 @@ func (r *Repository) UpsertCalificacionPorPregunta(ctx context.Context, entregaI
 		return nil, err
 	}
 	return &cal, nil
+}
+
+func (r *Repository) ReplaceTrabajoPreguntas(ctx context.Context, trabajoID string, preguntas []TrabajoPregunta) ([]TrabajoPregunta, error) {
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("trabajo_id = ?", trabajoID).Delete(&TrabajoPregunta{}).Error; err != nil {
+			return err
+		}
+
+		for idx := range preguntas {
+			preguntas[idx].TrabajoID = trabajoID
+			if preguntas[idx].Orden <= 0 {
+				preguntas[idx].Orden = idx + 1
+			}
+			if preguntas[idx].PuntajeMaximo <= 0 {
+				preguntas[idx].PuntajeMaximo = 1
+			}
+			if len(preguntas[idx].Opciones) == 0 {
+				preguntas[idx].Opciones = []byte("[]")
+			}
+			if err := tx.Create(&preguntas[idx]).Error; err != nil {
+				return err
+			}
+		}
+
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return r.ListTrabajoPreguntas(ctx, trabajoID)
 }
 
 func (r *Repository) ListTrabajoPreguntas(ctx context.Context, trabajoID string) ([]TrabajoPregunta, error) {
@@ -840,6 +881,15 @@ func (r *Repository) IsTeacherOfLeccion(ctx context.Context, teacherID, leccionI
 		Where("l.id = ? AND c.teacher_id = ?", leccionID, teacherID).
 		Count(&count).Error
 	return count > 0, err
+}
+
+func (r *Repository) CountEntregasByTrabajo(ctx context.Context, trabajoID string) (int64, error) {
+	var count int64
+	err := r.db.WithContext(ctx).
+		Model(&TrabajoEntrega{}).
+		Where("trabajo_id = ?", trabajoID).
+		Count(&count).Error
+	return count, err
 }
 
 func (r *Repository) IsTeacherOfTrabajo(ctx context.Context, teacherID, trabajoID string) (bool, error) {
@@ -1218,9 +1268,9 @@ func (r *Repository) listLeccionAnalytics(ctx context.Context, filter TrabajoAna
 func (r *Repository) listEstudianteAnalytics(ctx context.Context, filter TrabajoAnalyticsFilter) ([]EstudianteAnalyticsItem, error) {
 	var items []EstudianteAnalyticsItem
 	query := r.db.WithContext(ctx).
-		Table("internal.trabajo_entrega e").
+		Table("internal.estudiante_curso ec").
 		Select(`
-			e.estudiante_id,
+			ec.estudiante_id,
 			p.display_name AS estudiante_nombre,
 			p.email AS estudiante_email,
 			c.id AS curso_id,
@@ -1232,20 +1282,29 @@ func (r *Repository) listEstudianteAnalytics(ctx context.Context, filter Trabajo
 			AVG(tc.puntaje) AS promedio_puntaje,
 			MAX(e.submitted_at) AS ultima_entrega_at
 		`).
-		Joins("JOIN internal.trabajo tr ON tr.id = e.trabajo_id").
-		Joins("JOIN internal.leccion l ON l.id = tr.leccion_id").
-		Joins("JOIN internal.tema t ON t.id = l.tema_id").
-		Joins("JOIN internal.unidad u ON u.id = t.unidad_id").
-		Joins("JOIN internal.materia m ON m.id = u.materia_id").
-		Joins("JOIN internal.curso c ON c.id = m.curso_id").
-		Joins("JOIN internal.profiles p ON p.id = e.estudiante_id").
+		Joins("JOIN internal.profiles p ON p.id = ec.estudiante_id").
+		Joins("JOIN internal.curso c ON c.id = ec.curso_id").
+		Joins("LEFT JOIN internal.trabajo_entrega e ON e.estudiante_id = ec.estudiante_id").
+		Joins("LEFT JOIN internal.trabajo tr ON tr.id = e.trabajo_id").
+		Joins("LEFT JOIN internal.leccion l ON l.id = tr.leccion_id").
+		Joins("LEFT JOIN internal.tema t ON t.id = l.tema_id").
+		Joins("LEFT JOIN internal.unidad u ON u.id = t.unidad_id").
+		Joins("LEFT JOIN internal.materia m ON m.id = u.materia_id").
 		Joins("LEFT JOIN internal.trabajo_calificacion tc ON tc.entrega_id = e.id")
 
 	query = applyTrabajoScope(query, filter)
-	query = applyEntregaScope(query, filter)
+	if filter.EstudianteID != nil && *filter.EstudianteID != "" {
+		query = query.Where("ec.estudiante_id = ?", *filter.EstudianteID)
+	}
+	if filter.From != nil {
+		query = query.Where("e.submitted_at >= ?", *filter.From)
+	}
+	if filter.To != nil {
+		query = query.Where("e.submitted_at <= ?", *filter.To)
+	}
 
 	err := query.
-		Group("e.estudiante_id, p.display_name, p.email, c.id, c.nombre, l.id, l.titulo").
+		Group("ec.estudiante_id, p.display_name, p.email, c.id, c.nombre, l.id, l.titulo").
 		Order("p.display_name ASC").
 		Scan(&items).Error
 	return items, err

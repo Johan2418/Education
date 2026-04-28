@@ -7,6 +7,8 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"net/url"
+	"path"
 	"strings"
 	"sync"
 	"time"
@@ -237,12 +239,73 @@ func (s *Service) ExtractLibro(ctx context.Context, trabajoID string, req Extrac
 		}
 	}
 
+	idioma := strings.TrimSpace(req.Idioma)
+	if idioma == "" {
+		idioma = "es"
+	}
+
+	titulo := inferLibroTitulo(req.ArchivoURL, trabajoID)
 	libroRecurso, err := s.repo.FindLibroRecursoByHashes(ctx, *contentHash, fileHash, "v1")
 	if err != nil {
 		finalErr = err
 		return nil, err
 	}
 
+	if libroRecurso == nil {
+		byTitle, findTitleErr := s.repo.FindLatestLibroRecursoByTitulo(ctx, titulo)
+		if findTitleErr != nil {
+			finalErr = findTitleErr
+			return nil, findTitleErr
+		}
+		if byTitle != nil {
+			sameContent := strings.EqualFold(strings.TrimSpace(byTitle.HashContenido), strings.TrimSpace(*contentHash))
+			sameFile := byTitle.HashArchivo != nil && fileHash != nil && strings.EqualFold(strings.TrimSpace(*byTitle.HashArchivo), strings.TrimSpace(*fileHash))
+
+			if sameContent || sameFile {
+				libroRecurso = byTitle
+			} else {
+				updateMetadata := asRawJSON(map[string]interface{}{
+					"origen":          "trabajo_libro_extract",
+					"accion":          "actualizacion_por_nueva_informacion",
+					"actualizado_por": userID,
+				})
+				libroRecurso, err = s.repo.RefreshLibroRecursoForNewContenido(ctx, LibroRecurso{
+					ID:             byTitle.ID,
+					Titulo:         titulo,
+					ArchivoURL:     req.ArchivoURL,
+					Idioma:         idioma,
+					HashContenido:  *contentHash,
+					HashArchivo:    fileHash,
+					HashVersion:    "v1",
+					Estado:         EstadoLibroRecursoProcesando,
+					EsPublico:      true,
+					Metadata:       updateMetadata,
+					CreatedBy:      &userID,
+					PaginasTotales: nil,
+					Descripcion:    byTitle.Descripcion,
+				})
+				if err != nil {
+					finalErr = err
+					return nil, err
+				}
+			}
+		}
+	}
+
+	paginaInicio := 1
+	if req.PaginaInicio != nil && *req.PaginaInicio > 0 {
+		paginaInicio = *req.PaginaInicio
+	}
+
+	if libroRecurso != nil && !libroRecurso.EsPublico {
+		if err := s.repo.EnsureLibroRecursoPublic(ctx, libroRecurso.ID); err != nil {
+			finalErr = err
+			return nil, err
+		}
+		libroRecurso.EsPublico = true
+	}
+
+	notaExtrayendo := "extrayendo con IA"
 	if libroRecurso != nil && libroRecurso.Estado == EstadoLibroRecursoCompletado {
 		reusedResp, reused, reuseErr := s.tryReuseLibroRecurso(ctx, trabajoID, req, userID, libroRecurso)
 		if reuseErr != nil {
@@ -253,19 +316,7 @@ func (s *Service) ExtractLibro(ctx context.Context, trabajoID string, req Extrac
 			return reusedResp, nil
 		}
 	}
-
-	idioma := strings.TrimSpace(req.Idioma)
-	if idioma == "" {
-		idioma = "es"
-	}
-	paginaInicio := 1
-	if req.PaginaInicio != nil && *req.PaginaInicio > 0 {
-		paginaInicio = *req.PaginaInicio
-	}
-
-	notaExtrayendo := "extrayendo con IA"
 	if libroRecurso == nil {
-		titulo := inferLibroTitulo(req.ArchivoURL, trabajoID)
 		libroRecurso, err = s.repo.CreateLibroRecurso(ctx, LibroRecurso{
 			Titulo:        titulo,
 			Descripcion:   nil,
@@ -275,7 +326,7 @@ func (s *Service) ExtractLibro(ctx context.Context, trabajoID string, req Extrac
 			HashArchivo:   fileHash,
 			HashVersion:   "v1",
 			Estado:        EstadoLibroRecursoProcesando,
-			EsPublico:     false,
+			EsPublico:     true,
 			Metadata:      []byte(`{"origen":"trabajo_libro_extract"}`),
 			CreatedBy:     &userID,
 		})
@@ -559,6 +610,12 @@ func (s *Service) GetLibroRecursoPagina(ctx context.Context, recursoID string, p
 		contenido = strings.TrimSpace(contenidoPagina.Contenido)
 		imagenBase64 = contenidoPagina.ImagenBase64
 	}
+
+	viewMetadata := asRawJSON(map[string]interface{}{
+		"origen": "libro_recurso_viewer",
+		"pagina": pagina,
+	})
+	_ = s.repo.CreateLibroRecursoView(ctx, recursoID, pagina, &userID, viewMetadata)
 
 	watermarkText := fmt.Sprintf("Arcanea • %s • %s", role, userID)
 
@@ -864,6 +921,7 @@ func (s *Service) RevisarLibro(ctx context.Context, trabajoID string, req Revisi
 				Texto:                 itemText,
 				Tipo:                  tipo,
 				Opciones:              opciones,
+				RespuestaCorrecta:     trimOrNil(p.RespuestaCorrecta),
 				PuntajeMaximo:         puntajeMaximo,
 				PaginaLibro:           p.PaginaLibro,
 				ConfianzaIA:           p.ConfianzaIA,
@@ -1155,8 +1213,14 @@ func inferLibroTitulo(archivoURL *string, trabajoID string) string {
 	if archivoURL != nil {
 		trimmed := strings.TrimSpace(*archivoURL)
 		if trimmed != "" {
-			parts := strings.Split(trimmed, "/")
-			candidate := strings.TrimSpace(parts[len(parts)-1])
+			candidate := trimmed
+			if parsed, err := url.Parse(trimmed); err == nil {
+				decodedPath, unescapeErr := url.PathUnescape(parsed.Path)
+				if unescapeErr == nil && strings.TrimSpace(decodedPath) != "" {
+					candidate = strings.TrimSpace(path.Base(decodedPath))
+				}
+			}
+			candidate = strings.TrimSpace(strings.TrimSuffix(candidate, "/"))
 			if candidate != "" {
 				return candidate
 			}

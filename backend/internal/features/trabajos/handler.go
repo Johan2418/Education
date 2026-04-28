@@ -83,6 +83,23 @@ func (h *Handler) UpdateTrabajo(w http.ResponseWriter, r *http.Request) {
 	shared.Success(w, item)
 }
 
+func (h *Handler) UpdateTrabajoPreguntas(w http.ResponseWriter, r *http.Request) {
+	claims := middleware.GetClaims(r.Context())
+	var req UpdateTrabajoPreguntasRequest
+	if err := shared.Decode(r, &req); err != nil {
+		shared.Error(w, http.StatusBadRequest, "Datos inválidos")
+		return
+	}
+
+	items, err := h.svc.UpdateTrabajoPreguntas(r.Context(), chi.URLParam(r, "trabajoId"), req, claims.Subject, claims.UserRole)
+	if err != nil {
+		shared.Error(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	shared.Success(w, items)
+}
+
 func (h *Handler) DeleteTrabajo(w http.ResponseWriter, r *http.Request) {
 	claims := middleware.GetClaims(r.Context())
 	if err := h.svc.DeleteTrabajo(r.Context(), chi.URLParam(r, "trabajoId"), claims.Subject, claims.UserRole); err != nil {
@@ -536,6 +553,16 @@ func (h *Handler) CalificarEntregaPorPregunta(w http.ResponseWriter, r *http.Req
 		return
 	}
 	item, err := h.svc.CalificarEntregaPorPregunta(r.Context(), chi.URLParam(r, "entregaId"), req, claims.Subject, claims.UserRole)
+	if err != nil {
+		shared.Error(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	shared.Success(w, item)
+}
+
+func (h *Handler) AutoCalificarEntregaCerradas(w http.ResponseWriter, r *http.Request) {
+	claims := middleware.GetClaims(r.Context())
+	item, err := h.svc.AutoCalificarEntregaCerradas(r.Context(), chi.URLParam(r, "entregaId"), claims.Subject, claims.UserRole)
 	if err != nil {
 		shared.Error(w, http.StatusBadRequest, err.Error())
 		return

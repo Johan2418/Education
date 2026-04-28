@@ -5,6 +5,7 @@ import type {
   DocenteMateriaAsignacion,
   DocenteMateriaHorario,
   DocenteMateriaHorarioRequest,
+  MateriaCalificacionesResponse,
   MisCursoDocente,
 } from "@/shared/types";
 
@@ -116,4 +117,9 @@ export async function asignarMaestrosCursoAnio(
 ): Promise<CursoAnioAsignarMaestrosResult> {
   const resp = await api.post<unknown>(`/admin/cursos/${cursoId}/asignar-maestros-anio`, payload);
   return unwrapDataRecursive<CursoAnioAsignarMaestrosResult>(resp);
+}
+
+export async function getMateriaCalificaciones(materiaId: string): Promise<MateriaCalificacionesResponse> {
+  const resp = await api.get<unknown>(`/materias/${materiaId}/calificaciones`);
+  return unwrapDataRecursive<MateriaCalificacionesResponse>(resp);
 }

@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { Loader2, Save } from "lucide-react";
+import { Loader2, Save, WandSparkles } from "lucide-react";
 import toast from "react-hot-toast";
 
 import { getMe } from "@/shared/lib/auth";
-import { calificarEntregaPorPregunta, getEntregaDetalle, getTrabajo, listEntregasByTrabajo } from "@/features/trabajos/services/trabajos";
+import { autoCalificarEntregaCerradas, calificarEntregaPorPregunta, getEntregaDetalle, getTrabajo, listEntregasByTrabajo } from "@/features/trabajos/services/trabajos";
 import type { CalificarEntregaPreguntaItem, EntregaConCalificacion, EntregaDetalleResponse, Trabajo } from "@/shared/types/trabajos";
 
 function normalizeError(err: unknown): string {
@@ -25,6 +25,7 @@ export default function TeacherTrabajoCalificar() {
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [autoGrading, setAutoGrading] = useState(false);
   const [trabajo, setTrabajo] = useState<Trabajo | null>(null);
   const [entregas, setEntregas] = useState<EntregaConCalificacion[]>([]);
   const [selectedEntrega, setSelectedEntrega] = useState<string>("");
@@ -136,7 +137,7 @@ export default function TeacherTrabajoCalificar() {
       return;
     }
 
-    const isOverride = Boolean(detalle.calificacion);
+    const isOverride = Boolean(detalle.calificacion) && detalle.entrega.estado === "calificada";
     const motivo = motivoOverride.trim();
     if (isOverride && motivo.length === 0) {
       toast.error(t("teacher.trabajos.overrideReasonRequired", { defaultValue: "Debes indicar un motivo para sobrescribir una calificacion" }));
@@ -179,6 +180,38 @@ export default function TeacherTrabajoCalificar() {
     }
   };
 
+  const handleAutoCalificar = async () => {
+    if (!selected) {
+      toast.error(t("teacher.trabajos.selectEntrega", { defaultValue: "Selecciona una entrega" }));
+      return;
+    }
+
+    setAutoGrading(true);
+    try {
+      const updated = await autoCalificarEntregaCerradas(selected.entrega.id);
+      setDetalle(updated);
+      setFeedbackGeneral(updated.calificacion?.feedback || "");
+      setMotivoOverride("");
+
+      const calByPregunta = new Map(updated.calificaciones_pregunta.map((item) => [item.pregunta_id, item]));
+      setItems(updated.preguntas.map((pregunta) => {
+        const existing = calByPregunta.get(pregunta.id);
+        return {
+          pregunta_id: pregunta.id,
+          puntaje: existing?.puntaje ?? 0,
+          feedback: existing?.feedback || "",
+        };
+      }));
+
+      await loadData();
+      toast.success(updated.entrega.estado === "calificada" ? "Autocalificación completada y entrega calificada" : "Autocalificación aplicada en preguntas cerradas");
+    } catch (err) {
+      toast.error(normalizeError(err));
+    } finally {
+      setAutoGrading(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[40vh]">
@@ -218,7 +251,11 @@ export default function TeacherTrabajoCalificar() {
                     </div>
                     <div className="text-right">
                       <span className={`text-xs px-2 py-1 rounded-full ${item.calificacion ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>
-                        {item.calificacion ? t("teacher.trabajos.gradedTag", { defaultValue: "Calificada" }) : t("teacher.trabajos.pendingTag", { defaultValue: "Pendiente" })}
+                        {item.entrega.estado === "revisada"
+                          ? "Revisada"
+                          : item.calificacion
+                            ? t("teacher.trabajos.gradedTag", { defaultValue: "Calificada" })
+                            : t("teacher.trabajos.pendingTag", { defaultValue: "Pendiente" })}
                       </span>
                       {item.calificacion && <p className="text-sm mt-1 font-semibold">{item.calificacion.puntaje}/100</p>}
                     </div>
@@ -266,6 +303,11 @@ export default function TeacherTrabajoCalificar() {
                     {t("teacher.trabajos.expectedAnswer", { defaultValue: "Respuesta esperada" })}: {pregunta.respuesta_esperada_tipo || "abierta"}
                   </p>
                   <p className="text-xs text-gray-500 mt-1">{t("teacher.trabajos.respuestas", { defaultValue: "Respuestas" })}: {answerText}</p>
+                  {(pregunta.tipo === "opcion_multiple" || pregunta.tipo === "verdadero_falso") && (
+                    <p className="text-xs text-blue-700 mt-1">
+                      Respuesta correcta: {pregunta.respuesta_correcta || "No configurada"}
+                    </p>
+                  )}
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mt-2">
                     <label className="text-sm">
@@ -301,6 +343,17 @@ export default function TeacherTrabajoCalificar() {
             <div>
               <label className="block text-sm font-medium mb-1">{t("teacher.trabajos.comment", { defaultValue: "Comentario del estudiante" })}</label>
               <p className="text-sm text-gray-700 border rounded p-2 min-h-[42px]">{detalle.entrega.comentario || "-"}</p>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium mb-1">Archivo entregado</label>
+              {detalle.entrega.archivo_url ? (
+                <a href={detalle.entrega.archivo_url} target="_blank" rel="noreferrer" className="text-sm text-blue-600 underline break-all">
+                  {detalle.entrega.archivo_url}
+                </a>
+              ) : (
+                <p className="text-sm text-gray-500">Sin archivo</p>
+              )}
             </div>
 
             <div>
@@ -341,14 +394,25 @@ export default function TeacherTrabajoCalificar() {
               </div>
             )}
 
-            <button
-              disabled={saving}
-              onClick={handleGuardar}
-              className="w-full inline-flex items-center justify-center gap-2 px-4 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
-            >
-              <Save size={14} />
-              {saving ? t("common.saving", { defaultValue: "Guardando..." }) : t("teacher.trabajos.saveGrade", { defaultValue: "Guardar calificacion" })}
-            </button>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <button
+                disabled={autoGrading}
+                onClick={handleAutoCalificar}
+                className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded bg-amber-500 text-white hover:bg-amber-600 disabled:opacity-50"
+              >
+                <WandSparkles size={14} />
+                {autoGrading ? "Autocalificando..." : "Autocalificar cerradas"}
+              </button>
+
+              <button
+                disabled={saving}
+                onClick={handleGuardar}
+                className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
+              >
+                <Save size={14} />
+                {saving ? t("common.saving", { defaultValue: "Guardando..." }) : t("teacher.trabajos.saveGrade", { defaultValue: "Guardar calificacion" })}
+              </button>
+            </div>
           </div>
         )}
       </div>

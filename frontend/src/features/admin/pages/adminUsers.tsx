@@ -1,12 +1,12 @@
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { getMe, type AuthUser } from "@/shared/lib/auth";
 import api from "@/shared/lib/api";
 import toast from "react-hot-toast";
 import {
-  Loader2, Trash2, Check, X, Search, Plus, Pencil,
-  UserPlus, ChevronDown, Shield, ShieldCheck, BadgeCheck, Clock,
+  Loader2, Trash2, Check, X, Search, Pencil,
+  UserPlus, ChevronDown, Shield, ShieldCheck, BadgeCheck, Clock, AlertTriangle,
 } from "lucide-react";
 import type { Profile, UserRole } from "@/shared/types";
 
@@ -21,11 +21,24 @@ const ROLE_STYLES: Record<string, { bg: string; text: string; dot: string }> = {
 
 const ROLES: UserRole[] = ["student", "teacher", "resource_manager", "admin", "super_admin"];
 const ASSIGNABLE_ROLES: UserRole[] = ["student", "teacher", "resource_manager", "admin"];
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+const ROLE_HELP: Record<UserRole, string> = {
+  student: "Puede acceder al contenido y completar actividades.",
+  teacher: "Puede gestionar materias, lecciones y seguimiento academico.",
+  resource_manager: "Puede administrar modelos y recursos compartidos.",
+  admin: "Puede operar usuarios, cursos y configuracion administrativa.",
+  super_admin: "Control total del sistema y de permisos administrativos.",
+};
+
+function roleLabel(role: string): string {
+  return role.replace("_", " ");
+}
 
 function RoleBadge({ role }: { role: string }) {
   const fallback = { bg: "bg-blue-50", text: "text-blue-700", dot: "bg-blue-500" };
   const s = ROLE_STYLES[role] ?? fallback;
-  const label = role.replace("_", " ");
+  const label = roleLabel(role);
   return (
     <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold capitalize ${s.bg} ${s.text}`}>
       <span className={`w-1.5 h-1.5 rounded-full ${s.dot}`} />
@@ -35,16 +48,48 @@ function RoleBadge({ role }: { role: string }) {
 }
 
 /* ── Modal wrapper ──────────────────────────────────────── */
-function Modal({ open, onClose, children }: { open: boolean; onClose: () => void; children: React.ReactNode }) {
+function Modal({
+  open,
+  onClose,
+  children,
+  panelClassName = "max-w-lg",
+  closeOnOverlay = true,
+}: {
+  open: boolean;
+  onClose: () => void;
+  children: React.ReactNode;
+  panelClassName?: string;
+  closeOnOverlay?: boolean;
+}) {
+  useEffect(() => {
+    if (!open) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [open, onClose]);
+
   if (!open) return null;
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={onClose}>
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4 overflow-hidden" onClick={(e) => e.stopPropagation()}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4" onClick={closeOnOverlay ? onClose : undefined}>
+      <div className={`bg-white rounded-2xl shadow-2xl w-full mx-4 overflow-hidden max-h-[90vh] flex flex-col ${panelClassName}`} onClick={(e) => e.stopPropagation()}>
         {children}
       </div>
     </div>
   );
 }
+
+type ConfirmIntent = "danger" | "warning";
+
+type ConfirmDialogState = {
+  open: boolean;
+  title: string;
+  description: string;
+  confirmLabel: string;
+  intent: ConfirmIntent;
+  action: null | (() => Promise<void>);
+};
 
 /* ── Main component ─────────────────────────────────────── */
 export default function AdminUsers() {
@@ -54,18 +99,38 @@ export default function AdminUsers() {
   const [users, setUsers] = useState<Profile[]>([]);
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState<string>("all");
+  const [pendingOnly, setPendingOnly] = useState(false);
   const [me, setMe] = useState<AuthUser | null>(null);
 
   // Create modal
   const [createOpen, setCreateOpen] = useState(false);
-  const [createForm, setCreateForm] = useState({ email: "", password: "", confirmPassword: "", display_name: "", role: "student" as string });
+  const [createForm, setCreateForm] = useState<{ email: string; password: string; confirmPassword: string; display_name: string; role: UserRole }>({
+    email: "",
+    password: "",
+    confirmPassword: "",
+    display_name: "",
+    role: "student",
+  });
   const [creating, setCreating] = useState(false);
 
   // Edit modal
   const [editOpen, setEditOpen] = useState(false);
   const [editUser, setEditUser] = useState<Profile | null>(null);
-  const [editForm, setEditForm] = useState({ display_name: "", phone: "", role: "" });
+  const [editForm, setEditForm] = useState<{ display_name: string; phone: string; role: UserRole }>({
+    display_name: "",
+    phone: "",
+    role: "student",
+  });
   const [saving, setSaving] = useState(false);
+  const [confirmLoading, setConfirmLoading] = useState(false);
+  const [confirmDialog, setConfirmDialog] = useState<ConfirmDialogState>({
+    open: false,
+    title: "",
+    description: "",
+    confirmLabel: "",
+    intent: "warning",
+    action: null,
+  });
 
   useEffect(() => {
     (async () => {
@@ -92,6 +157,22 @@ export default function AdminUsers() {
     return ASSIGNABLE_ROLES.filter((r) => r !== "admin");
   }, [me]);
 
+  const pendingRequests = useMemo(() => users.filter((u) => Boolean(u.requested_role)), [users]);
+
+  const createValidation = useMemo(() => {
+    const normalizedEmail = createForm.email.trim().toLowerCase();
+    const emailValid = EMAIL_REGEX.test(normalizedEmail);
+    const passwordValid = createForm.password.length >= 6;
+    const passwordsMatch = createForm.password === createForm.confirmPassword;
+    return {
+      normalizedEmail,
+      emailValid,
+      passwordValid,
+      passwordsMatch,
+      isValid: emailValid && passwordValid && passwordsMatch,
+    };
+  }, [createForm.email, createForm.password, createForm.confirmPassword]);
+
   /* ── Filtered list ──────────────────────────────────── */
   const filtered = useMemo(() => {
     const q = search.toLowerCase();
@@ -101,24 +182,33 @@ export default function AdminUsers() {
         (u.email || "").toLowerCase().includes(q) ||
         (u.role || "").toLowerCase().includes(q);
       const matchRole = roleFilter === "all" || u.role === roleFilter;
-      return matchSearch && matchRole;
+      const matchPending = !pendingOnly || Boolean(u.requested_role);
+      return matchSearch && matchRole && matchPending;
     });
-  }, [users, search, roleFilter]);
+  }, [users, search, roleFilter, pendingOnly]);
 
   /* ── Handlers ───────────────────────────────────────── */
-  const handleChangeRole = async (userId: string, newRole: string) => {
+  const openConfirmDialog = useCallback((payload: Omit<ConfirmDialogState, "open">) => {
+    setConfirmDialog({ ...payload, open: true });
+  }, []);
+
+  const closeConfirmDialog = useCallback(() => {
+    if (confirmLoading) return;
+    setConfirmDialog((prev) => ({ ...prev, open: false, action: null }));
+  }, [confirmLoading]);
+
+  const runConfirmedAction = async () => {
+    if (!confirmDialog.action) return;
+    setConfirmLoading(true);
     try {
-      await api.put(`/admin/users/${userId}/role`, { user_id: userId, new_role: newRole });
-      setUsers((prev) => prev.map((u) => (u.id === userId ? { ...u, role: newRole as UserRole } : u)));
-      toast.success(t("admin.users.success.updated"));
-    } catch {
-      toast.error(t("admin.users.errors.updateError"));
+      await confirmDialog.action();
+      setConfirmDialog((prev) => ({ ...prev, open: false, action: null }));
+    } finally {
+      setConfirmLoading(false);
     }
   };
 
   const handleApproveRole = async (userId: string) => {
-    const user = users.find((u) => u.id === userId);
-    if (user && !confirm(t("admin.users.confirmApproveRole", { email: user.email, role: user.requested_role }))) return;
     try {
       await api.post(`/admin/users/${userId}/approve-role`, {});
       setUsers((prev) => prev.map((u) => (u.id === userId ? { ...u, role: (u.requested_role || u.role) as UserRole, requested_role: null } : u)));
@@ -129,8 +219,6 @@ export default function AdminUsers() {
   };
 
   const handleRejectRole = async (userId: string) => {
-    const user = users.find((u) => u.id === userId);
-    if (user && !confirm(t("admin.users.confirmRejectRole", { email: user.email }))) return;
     try {
       await api.post(`/admin/users/${userId}/reject-role`, {});
       setUsers((prev) => prev.map((u) => (u.id === userId ? { ...u, requested_role: null } : u)));
@@ -141,8 +229,6 @@ export default function AdminUsers() {
   };
 
   const handleDelete = async (userId: string) => {
-    const user = users.find((u) => u.id === userId);
-    if (!confirm(t("admin.users.confirmDelete", { email: user?.email ?? "" }))) return;
     try {
       await api.delete(`/admin/users/${userId}`);
       setUsers((prev) => prev.filter((u) => u.id !== userId));
@@ -152,25 +238,62 @@ export default function AdminUsers() {
     }
   };
 
+  const requestApproveRole = (userId: string) => {
+    const user = users.find((u) => u.id === userId);
+    if (!user || !user.requested_role) return;
+    openConfirmDialog({
+      title: "Aprobar solicitud de rol",
+      description: `${user.email} solicito el rol ${roleLabel(user.requested_role)}.`,
+      confirmLabel: "Aprobar rol",
+      intent: "warning",
+      action: () => handleApproveRole(userId),
+    });
+  };
+
+  const requestRejectRole = (userId: string) => {
+    const user = users.find((u) => u.id === userId);
+    if (!user) return;
+    openConfirmDialog({
+      title: "Rechazar solicitud de rol",
+      description: `Se eliminara la solicitud pendiente de ${user.email}.`,
+      confirmLabel: "Rechazar solicitud",
+      intent: "warning",
+      action: () => handleRejectRole(userId),
+    });
+  };
+
+  const requestDeleteUser = (userId: string) => {
+    const user = users.find((u) => u.id === userId);
+    if (!user) return;
+    openConfirmDialog({
+      title: "Eliminar usuario",
+      description: `Esta accion eliminara a ${user.email}. No se puede deshacer.`,
+      confirmLabel: "Eliminar usuario",
+      intent: "danger",
+      action: () => handleDelete(userId),
+    });
+  };
+
   /* ── Create user ────────────────────────────────────── */
   const handleCreate = async () => {
-    if (!createForm.email) { toast.error(t("admin.users.errors.emailRequired")); return; }
-    if (!createForm.password || createForm.password.length < 6) { toast.error(t("admin.users.errors.passwordMinLength")); return; }
-    if (createForm.password !== createForm.confirmPassword) { toast.error(t("admin.users.errors.passwordMismatch")); return; }
+    if (!createValidation.normalizedEmail) { toast.error(t("admin.users.errors.emailRequired")); return; }
+    if (!createValidation.emailValid) { toast.error("Ingresa un correo valido"); return; }
+    if (!createValidation.passwordValid) { toast.error(t("admin.users.errors.passwordMinLength")); return; }
+    if (!createValidation.passwordsMatch) { toast.error(t("admin.users.errors.passwordMismatch")); return; }
 
     setCreating(true);
     try {
       const res = await api.post<{ data: Profile }>("/admin/create-admin", {
-        email: createForm.email,
+        email: createValidation.normalizedEmail,
         password: createForm.password,
-        display_name: createForm.display_name || createForm.email.split("@")[0],
+        display_name: createForm.display_name || createValidation.normalizedEmail.split("@")[0],
       });
       const newUser = res.data;
       if (newUser?.id) {
         // If role differs from default "admin", update it
-        if (createForm.role !== "admin" && createForm.role !== (newUser.role as string)) {
+        if (createForm.role !== "admin" && createForm.role !== newUser.role) {
           await api.put(`/admin/users/${newUser.id}/role`, { user_id: newUser.id, new_role: createForm.role });
-          newUser.role = createForm.role as UserRole;
+          newUser.role = createForm.role;
         }
         setUsers((prev) => [newUser, ...prev]);
       }
@@ -191,7 +314,7 @@ export default function AdminUsers() {
     setEditOpen(true);
   };
 
-  const handleSaveEdit = async () => {
+  const executeSaveEdit = async () => {
     if (!editUser) return;
     setSaving(true);
     try {
@@ -202,17 +325,33 @@ export default function AdminUsers() {
       setUsers((prev) =>
         prev.map((u) =>
           u.id === editUser.id
-            ? { ...u, display_name: editForm.display_name || u.display_name, phone: editForm.phone || u.phone, role: editForm.role as UserRole }
+            ? { ...u, display_name: editForm.display_name || u.display_name, phone: editForm.phone || u.phone, role: editForm.role }
             : u
         )
       );
       toast.success(t("admin.users.success.updated"));
       setEditOpen(false);
+      setEditUser(null);
     } catch {
       toast.error(t("admin.users.errors.updateError"));
     } finally {
       setSaving(false);
     }
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editUser) return;
+    if (editForm.role !== editUser.role) {
+      openConfirmDialog({
+        title: "Confirmar cambio de rol",
+        description: `Vas a cambiar el rol de ${editUser.email} a ${roleLabel(editForm.role)}.`,
+        confirmLabel: "Guardar cambios",
+        intent: "warning",
+        action: executeSaveEdit,
+      });
+      return;
+    }
+    await executeSaveEdit();
   };
 
   /* ── Loading ────────────────────────────────────────── */
@@ -227,7 +366,7 @@ export default function AdminUsers() {
     );
   }
 
-  const pendingCount = users.filter((u) => u.requested_role).length;
+  const pendingCount = pendingRequests.length;
 
   /* ── Render ─────────────────────────────────────────── */
   return (
@@ -287,8 +426,45 @@ export default function AdminUsers() {
         </div>
       </div>
 
+      {pendingRequests.length > 0 && (
+        <section className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4">
+          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+            <div>
+              <p className="text-sm font-semibold text-amber-900">Solicitudes pendientes de rol</p>
+              <p className="text-xs text-amber-800 mt-1">Revisa primero estas solicitudes para mantener permisos al dia.</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setPendingOnly((prev) => !prev)}
+              className="self-start rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-xs font-medium text-amber-900 hover:bg-amber-100"
+            >
+              {pendingOnly ? "Ver todos" : "Ver solo pendientes"}
+            </button>
+          </div>
+          <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            {pendingRequests.slice(0, 6).map((u) => (
+              <div key={u.id} className="rounded-xl border border-amber-200 bg-white px-3 py-2">
+                <p className="text-sm font-medium text-gray-900 truncate">{u.display_name || u.email}</p>
+                <p className="text-xs text-gray-500 truncate">{u.email}</p>
+                <p className="text-xs text-amber-700 mt-1">
+                  Solicita: <span className="font-semibold capitalize">{roleLabel(u.requested_role || "")}</span>
+                </p>
+                <div className="mt-2 flex items-center gap-2">
+                  <button onClick={() => requestApproveRole(u.id)} className="rounded-md bg-emerald-600 px-2.5 py-1 text-xs text-white hover:bg-emerald-700">
+                    Aprobar
+                  </button>
+                  <button onClick={() => requestRejectRole(u.id)} className="rounded-md border border-red-200 px-2.5 py-1 text-xs text-red-600 hover:bg-red-50">
+                    Rechazar
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
       {/* Search & filter bar */}
-      <div className="flex flex-col sm:flex-row gap-3">
+      <div className="flex flex-col sm:flex-row sm:items-center gap-3">
         <div className="relative flex-1">
           <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
           <input
@@ -306,11 +482,20 @@ export default function AdminUsers() {
           >
             <option value="all">{t("admin.users.filters.allRoles")}</option>
             {ROLES.map((r) => (
-              <option key={r} value={r} className="capitalize">{r.replace("_", " ")}</option>
+              <option key={r} value={r} className="capitalize">{roleLabel(r)}</option>
             ))}
           </select>
           <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
         </div>
+        <label className="inline-flex items-center gap-2 text-sm text-gray-600">
+          <input
+            type="checkbox"
+            checked={pendingOnly}
+            onChange={(e) => setPendingOnly(e.target.checked)}
+            className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+          />
+          Solo pendientes
+        </label>
       </div>
 
       {/* Table */}
@@ -334,7 +519,7 @@ export default function AdminUsers() {
                 </tr>
               ) : (
                 filtered.map((u) => (
-                  <tr key={u.id} className="hover:bg-gray-50/50 transition-colors">
+                  <tr key={u.id} className={`hover:bg-gray-50/50 transition-colors ${u.requested_role ? "bg-amber-50/40" : ""}`}>
                     {/* Name + avatar */}
                     <td className="px-5 py-3.5">
                       <div className="flex items-center gap-3">
@@ -359,11 +544,11 @@ export default function AdminUsers() {
                         </span>
                         {u.requested_role && (
                           <div className="flex items-center gap-1.5">
-                            <span className="text-xs text-amber-600 font-medium">{t("admin.users.pendingRole", { role: u.requested_role.replace("_", " ") })}</span>
-                            <button onClick={() => handleApproveRole(u.id)} className="p-0.5 text-emerald-600 hover:bg-emerald-50 rounded transition" title={t("admin.users.actions.approveRole")}>
+                            <span className="text-xs text-amber-600 font-medium">{t("admin.users.pendingRole", { role: roleLabel(u.requested_role) })}</span>
+                            <button onClick={() => requestApproveRole(u.id)} className="p-0.5 text-emerald-600 hover:bg-emerald-50 rounded transition" title={t("admin.users.actions.approveRole")}>
                               <Check size={13} />
                             </button>
-                            <button onClick={() => handleRejectRole(u.id)} className="p-0.5 text-red-500 hover:bg-red-50 rounded transition" title={t("admin.users.actions.rejectRole")}>
+                            <button onClick={() => requestRejectRole(u.id)} className="p-0.5 text-red-500 hover:bg-red-50 rounded transition" title={t("admin.users.actions.rejectRole")}>
                               <X size={13} />
                             </button>
                           </div>
@@ -385,7 +570,7 @@ export default function AdminUsers() {
                             </button>
                             {/* Prevent admin from deleting other admins */}
                             {(u.role !== "admin" || me?.role === "super_admin") && u.id !== me?.id && (
-                              <button onClick={() => handleDelete(u.id)} className="p-2 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition" title={t("admin.users.actions.delete")}>
+                              <button onClick={() => requestDeleteUser(u.id)} className="p-2 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition" title={t("admin.users.actions.delete")}>
                                 <Trash2 size={15} />
                               </button>
                             )}
@@ -406,19 +591,25 @@ export default function AdminUsers() {
       </div>
 
       {/* ── Create User Modal ─────────────────────────────── */}
-      <Modal open={createOpen} onClose={() => setCreateOpen(false)}>
+      <Modal open={createOpen} onClose={() => setCreateOpen(false)} panelClassName="max-w-2xl">
         <div className="px-6 py-5 border-b border-gray-100">
           <h2 className="text-lg font-semibold text-gray-900">{t("admin.users.create.title")}</h2>
+          <p className="text-sm text-gray-500 mt-1">Crea la cuenta y define el rol inicial segun el alcance operativo.</p>
         </div>
-        <div className="px-6 py-5 space-y-4">
+        <div className="px-6 py-5 space-y-4 overflow-y-auto">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">{t("admin.users.form.email")} *</label>
             <input
               type="email"
-              className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400"
+              className={`w-full border rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 ${
+                createForm.email.trim() && !createValidation.emailValid ? "border-red-300" : "border-gray-200"
+              }`}
               value={createForm.email}
               onChange={(e) => setCreateForm((p) => ({ ...p, email: e.target.value }))}
             />
+            {createForm.email.trim() && !createValidation.emailValid && (
+              <p className="mt-1 text-xs text-red-600">El formato del correo no es valido.</p>
+            )}
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">{t("admin.users.form.displayName")}</label>
@@ -434,7 +625,9 @@ export default function AdminUsers() {
               <label className="block text-sm font-medium text-gray-700 mb-1">{t("admin.users.form.password")} *</label>
               <input
                 type="password"
-                className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400"
+                className={`w-full border rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 ${
+                  createForm.password && !createValidation.passwordValid ? "border-red-300" : "border-gray-200"
+                }`}
                 value={createForm.password}
                 onChange={(e) => setCreateForm((p) => ({ ...p, password: e.target.value }))}
               />
@@ -444,10 +637,15 @@ export default function AdminUsers() {
               <label className="block text-sm font-medium text-gray-700 mb-1">{t("admin.users.form.confirmPassword")} *</label>
               <input
                 type="password"
-                className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400"
+                className={`w-full border rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 ${
+                  createForm.confirmPassword && !createValidation.passwordsMatch ? "border-red-300" : "border-gray-200"
+                }`}
                 value={createForm.confirmPassword}
                 onChange={(e) => setCreateForm((p) => ({ ...p, confirmPassword: e.target.value }))}
               />
+              {createForm.confirmPassword && !createValidation.passwordsMatch && (
+                <p className="mt-1 text-xs text-red-600">Las contrasenas no coinciden.</p>
+              )}
             </div>
           </div>
           <div>
@@ -455,10 +653,10 @@ export default function AdminUsers() {
             <select
               className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 capitalize"
               value={createForm.role}
-              onChange={(e) => setCreateForm((p) => ({ ...p, role: e.target.value }))}
+              onChange={(e) => setCreateForm((p) => ({ ...p, role: e.target.value as UserRole }))}
             >
               {allowedRoles.map((r) => (
-                <option key={r} value={r} className="capitalize">{r.replace("_", " ")}</option>
+                <option key={r} value={r} className="capitalize">{roleLabel(r)}</option>
               ))}
             </select>
             {createForm.role === "admin" && (
@@ -466,6 +664,11 @@ export default function AdminUsers() {
                 <Shield size={12} /> {t("admin.users.warnings.adminRole")}
               </p>
             )}
+          </div>
+          <div className="rounded-xl border border-blue-100 bg-blue-50 px-4 py-3">
+            <p className="text-xs uppercase tracking-wide text-blue-700 font-semibold">Resumen del rol</p>
+            <p className="text-sm font-medium text-blue-900 mt-1 capitalize">{roleLabel(createForm.role)}</p>
+            <p className="text-xs text-blue-800 mt-1">{ROLE_HELP[createForm.role]}</p>
           </div>
         </div>
         <div className="px-6 py-4 bg-gray-50 flex justify-end gap-2">
@@ -477,7 +680,7 @@ export default function AdminUsers() {
           </button>
           <button
             onClick={handleCreate}
-            disabled={creating}
+            disabled={creating || !createValidation.isValid}
             className="px-5 py-2 text-sm text-white bg-blue-600 rounded-xl hover:bg-blue-700 transition disabled:opacity-50 inline-flex items-center gap-2"
           >
             {creating && <Loader2 size={14} className="animate-spin" />}
@@ -487,12 +690,12 @@ export default function AdminUsers() {
       </Modal>
 
       {/* ── Edit User Modal ───────────────────────────────── */}
-      <Modal open={editOpen} onClose={() => setEditOpen(false)}>
+      <Modal open={editOpen} onClose={() => setEditOpen(false)} panelClassName="max-w-2xl">
         <div className="px-6 py-5 border-b border-gray-100">
           <h2 className="text-lg font-semibold text-gray-900">{t("admin.users.edit.title")}</h2>
           <p className="text-sm text-gray-400 mt-0.5">{editUser?.email}</p>
         </div>
-        <div className="px-6 py-5 space-y-4">
+        <div className="px-6 py-5 space-y-4 overflow-y-auto">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">{t("admin.users.form.displayName")}</label>
             <input
@@ -516,13 +719,13 @@ export default function AdminUsers() {
             <select
               className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 capitalize"
               value={editForm.role}
-              onChange={(e) => setEditForm((p) => ({ ...p, role: e.target.value }))}
+              onChange={(e) => setEditForm((p) => ({ ...p, role: e.target.value as UserRole }))}
               disabled={editUser?.role === "super_admin"}
             >
               {editUser?.role === "super_admin"
                 ? <option value="super_admin" className="capitalize">super admin</option>
                 : allowedRoles.map((r) => (
-                    <option key={r} value={r} className="capitalize">{r.replace("_", " ")}</option>
+                    <option key={r} value={r} className="capitalize">{roleLabel(r)}</option>
                   ))
               }
             </select>
@@ -531,6 +734,11 @@ export default function AdminUsers() {
                 <Shield size={12} /> {t("admin.users.warnings.roleChange")}
               </p>
             )}
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+            <p className="text-xs uppercase tracking-wide text-slate-600 font-semibold">Impacto del rol</p>
+            <p className="text-sm font-medium text-slate-900 mt-1 capitalize">{roleLabel(editForm.role)}</p>
+            <p className="text-xs text-slate-700 mt-1">{ROLE_HELP[editForm.role]}</p>
           </div>
         </div>
         <div className="px-6 py-4 bg-gray-50 flex justify-end gap-2">
@@ -547,6 +755,39 @@ export default function AdminUsers() {
           >
             {saving && <Loader2 size={14} className="animate-spin" />}
             {saving ? t("admin.users.saving") : t("admin.users.save")}
+          </button>
+        </div>
+      </Modal>
+
+      <Modal open={confirmDialog.open} onClose={closeConfirmDialog} panelClassName="max-w-md" closeOnOverlay={!confirmLoading}>
+        <div className="px-6 py-5 border-b border-gray-100">
+          <div className="flex items-start gap-3">
+            <div className={`mt-0.5 rounded-full p-2 ${confirmDialog.intent === "danger" ? "bg-red-100 text-red-700" : "bg-amber-100 text-amber-700"}`}>
+              <AlertTriangle size={16} />
+            </div>
+            <div>
+              <h3 className="text-base font-semibold text-gray-900">{confirmDialog.title}</h3>
+              <p className="text-sm text-gray-600 mt-1">{confirmDialog.description}</p>
+            </div>
+          </div>
+        </div>
+        <div className="px-6 py-4 bg-gray-50 flex justify-end gap-2">
+          <button
+            onClick={closeConfirmDialog}
+            disabled={confirmLoading}
+            className="px-4 py-2 text-sm text-gray-700 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 transition disabled:opacity-50"
+          >
+            Cancelar
+          </button>
+          <button
+            onClick={() => void runConfirmedAction()}
+            disabled={confirmLoading}
+            className={`px-5 py-2 text-sm text-white rounded-xl transition disabled:opacity-50 inline-flex items-center gap-2 ${
+              confirmDialog.intent === "danger" ? "bg-red-600 hover:bg-red-700" : "bg-amber-600 hover:bg-amber-700"
+            }`}
+          >
+            {confirmLoading && <Loader2 size={14} className="animate-spin" />}
+            {confirmDialog.confirmLabel}
           </button>
         </div>
       </Modal>

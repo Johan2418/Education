@@ -9,7 +9,7 @@ export interface ActividadInteractivaPayload {
   leccion_id: string;
   titulo: string;
   descripcion?: string | null;
-  proveedor: "h5p" | "genially" | "educaplay";
+  proveedor: "h5p" | "genially" | "educaplay" | "nativo";
   embed_url: string;
   regla_completitud?: "manual" | "evento" | "puntaje";
   puntaje_maximo?: number;
@@ -36,6 +36,26 @@ export interface NormalizedInteractiveEvent {
   scoreNormalizado?: number;
   tiempoDedicado?: number;
   metadata: Record<string, unknown>;
+}
+
+export interface NativeInteractiveOption {
+  id: string;
+  text: string;
+  isCorrect: boolean;
+}
+
+export interface NativeInteractiveQuestion {
+  id: string;
+  prompt: string;
+  options: NativeInteractiveOption[];
+}
+
+export interface NativeInteractiveConfig {
+  questions: NativeInteractiveQuestion[];
+  scoreThreshold: number;
+  isQuickQuiz: boolean;
+  timePerQuestionSeconds: number;
+  autoSkipOnTimeout: boolean;
 }
 
 function toObject(input: unknown): Record<string, unknown> | null {
@@ -122,7 +142,7 @@ function normalizeScore(score: number | undefined, scaled: number | undefined): 
 }
 
 export function normalizeInteractiveProviderEvent(
-  provider: "h5p" | "genially" | "educaplay",
+  provider: "h5p" | "genially" | "educaplay" | "nativo",
   rawPayload: unknown,
   eventOrigin: string,
 ): NormalizedInteractiveEvent | null {
@@ -179,13 +199,14 @@ export function normalizeInteractiveProviderEvent(
 }
 
 export function extractInteractiveAllowedOrigins(
-  provider?: "h5p" | "genially" | "educaplay",
+  provider?: "h5p" | "genially" | "educaplay" | "nativo",
   configuracion?: Record<string, unknown> | null,
 ): string[] {
   const defaults: Record<string, string[]> = {
     h5p: ["https://h5p.com", "https://h5p.org"],
     genially: ["https://genial.ly", "https://genially.com"],
     educaplay: ["https://www.educaplay.com", "https://educaplay.com"],
+    nativo: [],
   };
 
   const configured = configuracion?.allowed_origins;
@@ -238,6 +259,70 @@ export function resolveInteractiveScoreThreshold(configuracion?: Record<string, 
   const value = typeof raw === "number" ? raw : Number(raw);
   if (!Number.isFinite(value)) return 70;
   return Math.max(0, Math.min(100, value));
+}
+
+function parseQuestionOptions(rawOptions: unknown): NativeInteractiveOption[] {
+  if (!Array.isArray(rawOptions)) return [];
+  return rawOptions
+    .map((rawOption, idx) => {
+      if (typeof rawOption !== "object" || rawOption === null) return null;
+      const option = rawOption as Record<string, unknown>;
+      const text = String(option.text ?? option.texto ?? "").trim();
+      if (!text) return null;
+      const idRaw = option.id;
+      const id = typeof idRaw === "string" && idRaw.trim() ? idRaw.trim() : `opt_${idx + 1}`;
+      const isCorrect = Boolean(option.isCorrect ?? option.correcta);
+      return { id, text, isCorrect };
+    })
+    .filter((option): option is NativeInteractiveOption => option !== null);
+}
+
+export function parseNativeInteractiveConfig(configuracion?: Record<string, unknown> | null): NativeInteractiveConfig {
+  const rawQuestions = configuracion?.preguntas ?? configuracion?.questions;
+  const questions = Array.isArray(rawQuestions)
+    ? rawQuestions
+      .map((rawQuestion, idx) => {
+        if (typeof rawQuestion !== "object" || rawQuestion === null) return null;
+        const question = rawQuestion as Record<string, unknown>;
+        const prompt = String(question.prompt ?? question.enunciado ?? "").trim();
+        if (!prompt) return null;
+        const options = parseQuestionOptions(question.opciones ?? question.options);
+        if (options.length < 2 || !options.some((option) => option.isCorrect)) return null;
+        const idRaw = question.id;
+        const id = typeof idRaw === "string" && idRaw.trim() ? idRaw.trim() : `q_${idx + 1}`;
+        return { id, prompt, options };
+      })
+      .filter((question): question is NativeInteractiveQuestion => question !== null)
+    : [];
+
+  const cfg = toObject(configuracion) || {};
+  const quickQuizEnabled = readBoolean(cfg, [
+    ["modo_quiz_veloz"],
+    ["quick_quiz"],
+    ["is_quick_quiz"],
+    ["quick_quiz_mode"],
+  ]) ?? false;
+  const rawTimePerQuestion = readNumber(cfg, [
+    ["tiempo_por_pregunta_segundos"],
+    ["time_per_question_seconds"],
+    ["timePerQuestionSeconds"],
+    ["quiz_time_limit_seconds"],
+  ]);
+  const timePerQuestionSeconds = Math.max(1, Math.round(rawTimePerQuestion ?? 15));
+  const autoSkipOnTimeout = readBoolean(cfg, [
+    ["auto_saltar_timeout"],
+    ["auto_skip_on_timeout"],
+    ["skip_on_timeout"],
+    ["auto_next_on_timeout"],
+  ]) ?? true;
+
+  return {
+    questions,
+    scoreThreshold: resolveInteractiveScoreThreshold(configuracion),
+    isQuickQuiz: quickQuizEnabled,
+    timePerQuestionSeconds,
+    autoSkipOnTimeout,
+  };
 }
 
 export async function listActividadesInteractivasByLeccion(leccionId: string): Promise<ActividadInteractiva[]> {

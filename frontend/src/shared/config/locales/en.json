@@ -1,4 +1,4 @@
-{
+﻿{
   "addcontent": {
     "formTitle" : "Content form",
     "title": "Add Content",
@@ -91,7 +91,7 @@
       "deleteError": "Error deleting record",
       "deleteSuccess": "Record deleted successfully",
       "undoError": "Error undoing: {{message}}",
-      "deleteSuccessDetailed": "🗑️ Record deleted successfully",
+      "deleteSuccessDetailed": "ðŸ—‘ï¸ Record deleted successfully",
       "loadLessonsError": "Error loading lessons",
       "loadRecordsError": "Error loading records"
     },
@@ -167,7 +167,7 @@
     "shortcut": {
       "save": "Save (Ctrl/Cmd + S)",
       "close": "Close modal (Esc)",
-      "navigateSuggestions": "Navigate suggestions (↑/↓)",
+      "navigateSuggestions": "Navigate suggestions (â†‘/â†“)",
       "applySuggestion": "Apply suggestion (Enter)",
       "tabNavigate": "Navigate between fields (Tab)"
         ,
@@ -222,7 +222,7 @@
   "news": "News",
   "newsHelp": "Here you will find the latest news, new models and experiments available in QuimicaUleam.",
   "newWaterMolecule": "New 3D Water Molecule",
-  "newWaterMoleculeDesc": "Explore the molecular structure of H₂O with our new interactive model.",
+  "newWaterMoleculeDesc": "Explore the molecular structure of Hâ‚‚O with our new interactive model.",
   "updatedPeriodicTable": "Updated Periodic Table",
   "updatedPeriodicTableDesc": "Access detailed information about all chemical elements.",
   "virtualExperiments": "Virtual Experiments Available",
@@ -235,6 +235,23 @@
     "recentLessons": "Recent lessons",
     "recentLessonsHelp": "The latest lessons added to the platform",
     "noLessonsYet": "No lessons available yet",
+    "recentContent": "Recent content",
+    "recentContentHelp": "Recently added content on the platform",
+    "recentContentGuest": "Sign in to see new content",
+    "recentContentStudent": "Recently added content",
+    "recentContentTeacher": "Recently added resources",
+    "recentContentAdmin": "General content added",
+    "recentContentLoginPrompt": "Sign in to see new content",
+    "noRecentContentYet": "No recent content available yet",
+    "notificationsButton": "Notifications",
+    "markNotificationsRead": "Mark as read",
+    "loadingRecentContent": "Loading...",
+    "noNotificationsYet": "No notifications yet",
+    "contentType": {
+      "leccion": "Lesson",
+      "trabajo": "Task",
+      "recurso": "Resource"
+    },
     "noDescription": "No description",
     "sessionStarted": "Session started successfully",
     "registerOrLogin": "Register or log in"
@@ -267,9 +284,9 @@
     }
     ,
     "status": {
-      "completed": "Completed — review resources and results",
-      "inProgress": "In progress — current score {{score}}%",
-      "notStarted": "Not started — begin the lesson to make progress"
+      "completed": "Completed â€” review resources and results",
+      "inProgress": "In progress â€” current score {{score}}%",
+      "notStarted": "Not started â€” begin the lesson to make progress"
     }
   },
   "contents.loadLessonsError": "Error loading lessons",
@@ -372,8 +389,8 @@
             "ai3d": "AI 3D"
           },
           "generateDesc": {
-            "billboard": "⚡ Create a textured plane with your image (instant)",
-            "ai3d": "✨ Generate a real 3D model using Meshy.ai (1-3 minutes)"
+            "billboard": "âš¡ Create a textured plane with your image (instant)",
+            "ai3d": "âœ¨ Generate a real 3D model using Meshy.ai (1-3 minutes)"
           },
           "apiKeyLabel": "Meshy.ai API Key",
           "apiKeyGet": "get it here",
@@ -475,7 +492,7 @@
         "fileLabel": "File",
         "fileHint": "Click or drag a file",
         "fileUploading": "Uploading...",
-        "fileUploaded": "✓ File uploaded",
+        "fileUploaded": "âœ“ File uploaded",
         "fileChange": "Change",
         "cancel": "Cancel",
         "create": "Create Model",
@@ -557,9 +574,9 @@
         }
       },
       "deleteSection": {
-        "confirmUnit": "Delete unit \"{nombre}\" and all its content? This action cannot be undone.",
-        "confirmTopic": "Delete topic \"{nombre}\" and all its lessons? This action cannot be undone.",
-        "confirmLesson": "Delete lesson \"{titulo}\"? This action cannot be undone.",
+        "confirmUnit": "Delete unit \"{{nombre}}\" and all its content? This action cannot be undone.",
+        "confirmTopic": "Delete topic \"{{nombre}}\" and all its lessons? This action cannot be undone.",
+        "confirmLesson": "Delete lesson \"{{titulo}}\"? This action cannot be undone.",
         "deletedUnit": "Unit deleted",
         "deletedTopic": "Topic deleted",
         "deletedLesson": "Lesson deleted",
@@ -912,8 +929,8 @@
         "minQuestionsToPublish": "Minimum questions required to publish",
         "noExercisePages": "No pages with exercises or questions were detected",
         "progressTitle": "Creation progress",
-        "progressDetail": "Phase: {{phase}} · Page: {{page}} · Processed: {{processed}}/{{total}}",
-        "progressSummary": "Created: {{created}} · Skipped (regex): {{regex}} · Skipped (AI): {{ia}} · Failed: {{failed}}",
+        "progressDetail": "Phase: {{phase}} Â· Page: {{page}} Â· Processed: {{processed}}/{{total}}",
+        "progressSummary": "Created: {{created}} Â· Skipped (regex): {{regex}} Â· Skipped (AI): {{ia}} Â· Failed: {{failed}}",
         "loaded": "Book uploaded successfully",
         "createdBatch": "Assignments created from book",
         "createdBatchManual": "Assignments created from book and sent for manual review",
@@ -1079,16 +1096,16 @@
     "email": "Email",
     "emailPlaceholder": "user@example.com",
     "password": "Password", 
-    "passwordPlaceholder": "••••••••",
+    "passwordPlaceholder": "â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢",
     "rememberMe": "Remember me",
     "forgotPassword": "Forgot password?",
     "noAccount": "Don't have an account?",
     "submit": "Sign in",
     "loading": "Signing in...",
-    "success": "Login successful ✅",
+    "success": "Login successful âœ…",
     "errors": {
       "allFields": "Please complete all fields.",
-      "invalid": "Invalid email or password ❌"
+      "invalid": "Invalid email or password âŒ"
       ,
       "blocked": "Too many attempts. Try again later.",
       "blockedTimer": "Try again in {{count}} seconds.",
@@ -1400,7 +1417,7 @@
         "name": "Name",
         "description": "Description",
         "teacher": "Assigned teacher",
-        "noTeacher": "— Not assigned —",
+        "noTeacher": "â€” Not assigned â€”",
         "active": "Active"
       },
       "table": {
@@ -1506,7 +1523,7 @@
         "fileLabel": "File",
         "fileHint": "Click or drag a file",
         "fileUploading": "Uploading...",
-        "fileUploaded": "✓ File uploaded",
+        "fileUploaded": "âœ“ File uploaded",
         "fileChange": "Change",
         "cancel": "Cancel",
         "create": "Create Model",

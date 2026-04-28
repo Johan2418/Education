@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -176,6 +177,55 @@ func (r *Repository) ListMaterias(ctx context.Context, cursoID string, anioEscol
 	return items, err
 }
 
+func (r *Repository) ListMateriasByEstudiante(ctx context.Context, estudianteID string) ([]Materia, error) {
+	anioActivo, err := r.GetAnioEscolarActivo(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	buildBaseQuery := func() *gorm.DB {
+		return r.db.WithContext(ctx).
+			Table("internal.materia").
+			Select("DISTINCT internal.materia.*").
+			Joins("JOIN internal.estudiante_curso ON internal.estudiante_curso.curso_id = internal.materia.curso_id").
+			Where("internal.estudiante_curso.estudiante_id = ?", strings.TrimSpace(estudianteID)).
+			Where("COALESCE(internal.materia.activo, TRUE) = TRUE")
+	}
+
+	var items []Materia
+
+	// Preferred strategy: align materia year with enrollment year.
+	err = buildBaseQuery().
+		Where("((internal.estudiante_curso.anio_escolar IS NOT NULL AND internal.materia.anio_escolar = internal.estudiante_curso.anio_escolar) OR (internal.estudiante_curso.anio_escolar IS NULL AND internal.materia.anio_escolar = ?))", anioActivo).
+		Order("internal.materia.orden, internal.materia.nombre").
+		Find(&items).Error
+	if err != nil {
+		return nil, err
+	}
+	if len(items) > 0 {
+		return items, nil
+	}
+
+	// Secondary strategy: force current active academic year for enrolled courses.
+	err = buildBaseQuery().
+		Where("internal.materia.anio_escolar = ?", anioActivo).
+		Order("internal.materia.orden, internal.materia.nombre").
+		Find(&items).Error
+	if err != nil {
+		return nil, err
+	}
+	if len(items) > 0 {
+		return items, nil
+	}
+
+	// Fallback for legacy enrollments or year mismatches:
+	// return active materias for enrolled courses even when year metadata differs.
+	err = buildBaseQuery().
+		Order("internal.materia.orden, internal.materia.nombre").
+		Find(&items).Error
+	return items, err
+}
+
 func (r *Repository) GetMateria(ctx context.Context, id string) (*Materia, error) {
 	var m Materia
 	if err := r.db.WithContext(ctx).Where("id = ?", id).First(&m).Error; err != nil {
@@ -191,16 +241,42 @@ func (r *Repository) CreateMateria(ctx context.Context, req MateriaRequest, crea
 	}
 
 	m := Materia{
-		CursoID:      req.CursoID,
-		AnioEscolar:  anio,
-		Nombre:       req.Nombre,
-		Descripcion:  req.Descripcion,
-		ThumbnailURL: req.ThumbnailURL,
-		Color:        req.Color,
-		CreatedBy:    &createdBy,
+		CursoID:                 req.CursoID,
+		AnioEscolar:             anio,
+		Nombre:                  req.Nombre,
+		Descripcion:             req.Descripcion,
+		ThumbnailURL:            req.ThumbnailURL,
+		Color:                   req.Color,
+		PesoContenidosPct:       35,
+		PesoLeccionesPct:        35,
+		PesoTrabajosPct:         30,
+		PuntajeTotal:            10,
+		PuntajeMinimoAprobacion: 6,
+		CreatedBy:               &createdBy,
+	}
+	if req.PesoContenidosPct != nil {
+		m.PesoContenidosPct = *req.PesoContenidosPct
+	}
+	if req.PesoLeccionesPct != nil {
+		m.PesoLeccionesPct = *req.PesoLeccionesPct
+	}
+	if req.PesoTrabajosPct != nil {
+		m.PesoTrabajosPct = *req.PesoTrabajosPct
+	}
+	if req.PuntajeTotal != nil {
+		m.PuntajeTotal = *req.PuntajeTotal
+	}
+	if req.PuntajeMinimoAprobacion != nil {
+		m.PuntajeMinimoAprobacion = *req.PuntajeMinimoAprobacion
 	}
 	if req.Orden != nil {
 		m.Orden = *req.Orden
+	} else {
+		next, err := r.nextOrden(ctx, &Materia{}, "curso_id = ? AND anio_escolar = ?", req.CursoID, anio)
+		if err != nil {
+			return nil, err
+		}
+		m.Orden = next
 	}
 	if req.Activo != nil {
 		m.Activo = *req.Activo
@@ -233,6 +309,21 @@ func (r *Repository) UpdateMateria(ctx context.Context, id string, req MateriaRe
 	if req.Color != nil {
 		updates["color"] = *req.Color
 	}
+	if req.PesoContenidosPct != nil {
+		updates["peso_contenidos_pct"] = *req.PesoContenidosPct
+	}
+	if req.PesoLeccionesPct != nil {
+		updates["peso_lecciones_pct"] = *req.PesoLeccionesPct
+	}
+	if req.PesoTrabajosPct != nil {
+		updates["peso_trabajos_pct"] = *req.PesoTrabajosPct
+	}
+	if req.PuntajeTotal != nil {
+		updates["puntaje_total"] = *req.PuntajeTotal
+	}
+	if req.PuntajeMinimoAprobacion != nil {
+		updates["puntaje_minimo_aprobacion"] = *req.PuntajeMinimoAprobacion
+	}
 	if req.Orden != nil {
 		updates["orden"] = *req.Orden
 	}
@@ -249,6 +340,155 @@ func (r *Repository) UpdateMateria(ctx context.Context, id string, req MateriaRe
 
 func (r *Repository) DeleteMateria(ctx context.Context, id string) error {
 	return r.db.WithContext(ctx).Where("id = ?", id).Delete(&Materia{}).Error
+}
+
+type materiaCalificacionBaseRow struct {
+	EstudianteID         string   `gorm:"column:estudiante_id"`
+	EstudianteNombre     *string  `gorm:"column:estudiante_nombre"`
+	EstudianteEmail      *string  `gorm:"column:estudiante_email"`
+	PromedioContenidos10 *float64 `gorm:"column:promedio_contenidos_10"`
+	PromedioLecciones10  *float64 `gorm:"column:promedio_lecciones_10"`
+	PromedioTrabajos10   *float64 `gorm:"column:promedio_trabajos_10"`
+}
+
+func (r *Repository) ListMateriaCalificacionBaseRows(ctx context.Context, materiaID string) ([]materiaCalificacionBaseRow, error) {
+	return r.listMateriaCalificacionBaseRows(ctx, materiaID, nil)
+}
+
+func (r *Repository) GetMateriaCalificacionBaseRow(ctx context.Context, materiaID, estudianteID string) (*materiaCalificacionBaseRow, error) {
+	trimmed := strings.TrimSpace(estudianteID)
+	if trimmed == "" {
+		return nil, errors.New("estudiante_id es requerido")
+	}
+
+	rows, err := r.listMateriaCalificacionBaseRows(ctx, materiaID, &trimmed)
+	if err != nil {
+		return nil, err
+	}
+	if len(rows) == 0 {
+		return nil, nil
+	}
+	return &rows[0], nil
+}
+
+func (r *Repository) listMateriaCalificacionBaseRows(ctx context.Context, materiaID string, estudianteID *string) ([]materiaCalificacionBaseRow, error) {
+	filterStudent := ""
+	args := []interface{}{materiaID}
+	if estudianteID != nil && strings.TrimSpace(*estudianteID) != "" {
+		filterStudent = "AND ec.estudiante_id = ?"
+		args = append(args, strings.TrimSpace(*estudianteID))
+	}
+
+	query := `
+		WITH materia_cfg AS (
+			SELECT
+				m.id,
+				m.curso_id,
+				m.anio_escolar
+			FROM internal.materia m
+			WHERE m.id = ?
+		),
+		students AS (
+			SELECT DISTINCT ec.estudiante_id
+			FROM internal.estudiante_curso ec
+			JOIN materia_cfg m ON m.curso_id = ec.curso_id
+			WHERE ec.curso_id = m.curso_id
+			  AND (ec.anio_escolar = m.anio_escolar OR ec.anio_escolar IS NULL)
+			  ` + filterStudent + `
+		)
+		SELECT
+			st.estudiante_id,
+			p.display_name AS estudiante_nombre,
+			p.email AS estudiante_email,
+			contenidos.promedio_contenidos_10,
+			lecciones.promedio_lecciones_10,
+			trabajos.promedio_trabajos_10
+		FROM students st
+		CROSS JOIN materia_cfg m
+		LEFT JOIN internal.profiles p ON p.id = st.estudiante_id
+		LEFT JOIN LATERAL (
+			SELECT
+				AVG(
+					CASE
+						WHEN ps.puntuacion IS NULL THEN NULL
+						WHEN ps.puntuacion <= 10 THEN GREATEST(ps.puntuacion, 0)::double precision
+						ELSE (LEAST(GREATEST(ps.puntuacion, 0), 100) / 10.0)::double precision
+					END
+				) AS promedio_contenidos_10
+			FROM internal.progreso_seccion ps
+			JOIN internal.leccion_seccion ls ON ls.id = ps.leccion_seccion_id
+			JOIN internal.leccion l ON l.id = ls.leccion_id
+			JOIN internal.tema t ON t.id = l.tema_id
+			JOIN internal.unidad u ON u.id = t.unidad_id
+			WHERE ps.user_id = st.estudiante_id
+			  AND u.materia_id = m.id
+			  AND ls.calificable = TRUE
+			  AND ls.tipo::text <> 'prueba'
+			  AND ls.tipo::text <> 'trabajo'
+			  AND ps.puntuacion IS NOT NULL
+		) contenidos ON TRUE
+		LEFT JOIN LATERAL (
+			SELECT
+				AVG(
+					CASE
+						WHEN pr.puntaje IS NULL THEN NULL
+						WHEN pr.puntaje <= 10 THEN GREATEST(pr.puntaje, 0)::double precision
+						ELSE (LEAST(GREATEST(pr.puntaje, 0), 100) / 10.0)::double precision
+					END
+				) AS promedio_lecciones_10
+			FROM internal.progreso pr
+			JOIN internal.leccion l ON l.id = pr.leccion_id
+			JOIN internal.tema t ON t.id = l.tema_id
+			JOIN internal.unidad u ON u.id = t.unidad_id
+			WHERE pr.usuario_id = st.estudiante_id
+			  AND u.materia_id = m.id
+			  AND pr.puntaje IS NOT NULL
+		) lecciones ON TRUE
+		LEFT JOIN LATERAL (
+			SELECT
+				AVG((LEAST(GREATEST(tc.puntaje, 0), 100) / 10.0)::double precision) AS promedio_trabajos_10
+			FROM internal.trabajo_entrega te
+			JOIN internal.trabajo tr ON tr.id = te.trabajo_id
+			JOIN internal.trabajo_calificacion tc ON tc.entrega_id = te.id
+			JOIN internal.leccion l ON l.id = tr.leccion_id
+			JOIN internal.tema t ON t.id = l.tema_id
+			JOIN internal.unidad u ON u.id = t.unidad_id
+			WHERE te.estudiante_id = st.estudiante_id
+			  AND u.materia_id = m.id
+		) trabajos ON TRUE
+		ORDER BY COALESCE(p.display_name, p.email, st.estudiante_id::text) ASC
+	`
+
+	var rows []materiaCalificacionBaseRow
+	err := r.db.WithContext(ctx).Raw(query, args...).Scan(&rows).Error
+	return rows, err
+}
+
+func (r *Repository) IsTeacherAssignedToMateria(ctx context.Context, teacherID, materiaID string) (bool, error) {
+	var count int64
+	err := r.db.WithContext(ctx).
+		Table("internal.docente_materia_asignacion dma").
+		Joins("JOIN internal.materia m ON m.id = dma.materia_id").
+		Where("dma.docente_id = ? AND dma.materia_id = ? AND dma.activo = TRUE", teacherID, materiaID).
+		Where("dma.anio_escolar = m.anio_escolar").
+		Count(&count).Error
+	if err != nil && !isMissingRelationError(err, "internal.docente_materia_asignacion") {
+		return false, err
+	}
+	if count > 0 {
+		return true, nil
+	}
+
+	count = 0
+	err = r.db.WithContext(ctx).
+		Table("internal.materia m").
+		Joins("JOIN internal.curso c ON c.id = m.curso_id").
+		Where("m.id = ? AND c.teacher_id = ?", materiaID, teacherID).
+		Count(&count).Error
+	if err != nil {
+		return false, err
+	}
+	return count > 0, nil
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -278,6 +518,12 @@ func (r *Repository) CreateUnidad(ctx context.Context, req UnidadRequest, create
 	}
 	if req.Orden != nil {
 		u.Orden = *req.Orden
+	} else {
+		next, err := r.nextOrden(ctx, &Unidad{}, "materia_id = ?", req.MateriaID)
+		if err != nil {
+			return nil, err
+		}
+		u.Orden = next
 	}
 	if req.Activo != nil {
 		u.Activo = *req.Activo
@@ -336,13 +582,35 @@ func (r *Repository) GetTema(ctx context.Context, id string) (*Tema, error) {
 
 func (r *Repository) CreateTema(ctx context.Context, req TemaRequest, createdBy string) (*Tema, error) {
 	t := Tema{
-		UnidadID:    req.UnidadID,
-		Nombre:      req.Nombre,
-		Descripcion: req.Descripcion,
-		CreatedBy:   &createdBy,
+		UnidadID:                    req.UnidadID,
+		Nombre:                      req.Nombre,
+		Descripcion:                 req.Descripcion,
+		UsarSoloCalificacionLeccion: true,
+		PesoCalificacionLeccion:     100,
+		PesoCalificacionContenido:   0,
+		PuntajeMinimoAprobacion:     60,
+		CreatedBy:                   &createdBy,
+	}
+	if req.UsarSoloCalificacionLeccion != nil {
+		t.UsarSoloCalificacionLeccion = *req.UsarSoloCalificacionLeccion
+	}
+	if req.PesoCalificacionLeccion != nil {
+		t.PesoCalificacionLeccion = *req.PesoCalificacionLeccion
+	}
+	if req.PesoCalificacionContenido != nil {
+		t.PesoCalificacionContenido = *req.PesoCalificacionContenido
+	}
+	if req.PuntajeMinimoAprobacion != nil {
+		t.PuntajeMinimoAprobacion = *req.PuntajeMinimoAprobacion
 	}
 	if req.Orden != nil {
 		t.Orden = *req.Orden
+	} else {
+		next, err := r.nextOrden(ctx, &Tema{}, "unidad_id = ?", req.UnidadID)
+		if err != nil {
+			return nil, err
+		}
+		t.Orden = next
 	}
 	if req.Activo != nil {
 		t.Activo = *req.Activo
@@ -362,6 +630,18 @@ func (r *Repository) UpdateTema(ctx context.Context, id string, req TemaRequest)
 	}
 	if req.Descripcion != nil {
 		updates["descripcion"] = *req.Descripcion
+	}
+	if req.UsarSoloCalificacionLeccion != nil {
+		updates["usar_solo_calificacion_leccion"] = *req.UsarSoloCalificacionLeccion
+	}
+	if req.PesoCalificacionLeccion != nil {
+		updates["peso_calificacion_leccion"] = *req.PesoCalificacionLeccion
+	}
+	if req.PesoCalificacionContenido != nil {
+		updates["peso_calificacion_contenido"] = *req.PesoCalificacionContenido
+	}
+	if req.PuntajeMinimoAprobacion != nil {
+		updates["puntaje_minimo_aprobacion"] = *req.PuntajeMinimoAprobacion
 	}
 	if req.Orden != nil {
 		updates["orden"] = *req.Orden
@@ -426,6 +706,267 @@ func (r *Repository) ListLatestLecciones(ctx context.Context, limit int) ([]Lecc
 	return items, err
 }
 
+func (r *Repository) ListRecentContenidoForStudent(ctx context.Context, studentID string, limit int) ([]ContenidoReciente, error) {
+	studentID = strings.TrimSpace(studentID)
+	if studentID == "" {
+		return []ContenidoReciente{}, nil
+	}
+	if limit <= 0 {
+		limit = 6
+	}
+
+	materias, err := r.ListMateriasByEstudiante(ctx, studentID)
+	if err != nil {
+		return nil, err
+	}
+	if len(materias) == 0 {
+		return []ContenidoReciente{}, nil
+	}
+
+	materiaIDs := make([]string, 0, len(materias))
+	for _, materia := range materias {
+		if strings.TrimSpace(materia.ID) != "" {
+			materiaIDs = append(materiaIDs, materia.ID)
+		}
+	}
+	if len(materiaIDs) == 0 {
+		return []ContenidoReciente{}, nil
+	}
+
+	queryLimit := limit * 3
+	if queryLimit < 12 {
+		queryLimit = 12
+	}
+
+	lecciones, err := r.listRecentLeccionesContenido(ctx, queryLimit, materiaIDs)
+	if err != nil {
+		return nil, err
+	}
+	trabajos, err := r.listRecentTrabajosContenido(ctx, queryLimit, materiaIDs)
+	if err != nil {
+		return nil, err
+	}
+	recursos, err := r.listRecentRecursosContenidoByMateria(ctx, queryLimit, materiaIDs)
+	if err != nil {
+		return nil, err
+	}
+
+	return mergeRecentContenido(limit, lecciones, trabajos, recursos), nil
+}
+
+func (r *Repository) ListRecentContenidoForTeacher(ctx context.Context, limit int) ([]ContenidoReciente, error) {
+	if limit <= 0 {
+		limit = 6
+	}
+	return r.listRecentRecursosGenerales(ctx, limit, true)
+}
+
+func (r *Repository) ListRecentContenidoGlobal(ctx context.Context, limit int) ([]ContenidoReciente, error) {
+	if limit <= 0 {
+		limit = 6
+	}
+
+	queryLimit := limit * 3
+	if queryLimit < 12 {
+		queryLimit = 12
+	}
+
+	lecciones, err := r.listRecentLeccionesContenido(ctx, queryLimit, nil)
+	if err != nil {
+		return nil, err
+	}
+	trabajos, err := r.listRecentTrabajosContenido(ctx, queryLimit, nil)
+	if err != nil {
+		return nil, err
+	}
+	recursos, err := r.listRecentRecursosGenerales(ctx, queryLimit, false)
+	if err != nil {
+		return nil, err
+	}
+
+	return mergeRecentContenido(limit, lecciones, trabajos, recursos), nil
+}
+
+func (r *Repository) listRecentLeccionesContenido(ctx context.Context, limit int, materiaIDs []string) ([]ContenidoReciente, error) {
+	if limit <= 0 {
+		limit = 6
+	}
+
+	query := r.db.WithContext(ctx).
+		Table("internal.leccion l").
+		Select(`
+			l.id AS id,
+			'leccion' AS tipo,
+			l.titulo AS titulo,
+			l.descripcion AS descripcion,
+			l.created_at AS created_at,
+			l.id AS leccion_id,
+			NULL::text AS trabajo_id,
+			NULL::text AS recurso_id,
+			m.id AS materia_id,
+			m.nombre AS materia_nombre,
+			c.id AS curso_id,
+			c.nombre AS curso_nombre
+		`).
+		Joins("JOIN internal.tema t ON t.id = l.tema_id").
+		Joins("JOIN internal.unidad u ON u.id = t.unidad_id").
+		Joins("JOIN internal.materia m ON m.id = u.materia_id").
+		Joins("JOIN internal.curso c ON c.id = m.curso_id")
+
+	if len(materiaIDs) > 0 {
+		query = query.Where("m.id IN ?", materiaIDs)
+	}
+
+	var items []ContenidoReciente
+	err := query.Order("l.created_at DESC").Limit(limit).Scan(&items).Error
+	return items, err
+}
+
+func (r *Repository) listRecentTrabajosContenido(ctx context.Context, limit int, materiaIDs []string) ([]ContenidoReciente, error) {
+	if limit <= 0 {
+		limit = 6
+	}
+
+	query := r.db.WithContext(ctx).
+		Table("internal.trabajo tr").
+		Select(`
+			tr.id AS id,
+			'trabajo' AS tipo,
+			tr.titulo AS titulo,
+			tr.descripcion AS descripcion,
+			tr.created_at AS created_at,
+			l.id AS leccion_id,
+			tr.id AS trabajo_id,
+			NULL::text AS recurso_id,
+			m.id AS materia_id,
+			m.nombre AS materia_nombre,
+			c.id AS curso_id,
+			c.nombre AS curso_nombre
+		`).
+		Joins("JOIN internal.leccion l ON l.id = tr.leccion_id").
+		Joins("JOIN internal.tema t ON t.id = l.tema_id").
+		Joins("JOIN internal.unidad u ON u.id = t.unidad_id").
+		Joins("JOIN internal.materia m ON m.id = u.materia_id").
+		Joins("JOIN internal.curso c ON c.id = m.curso_id")
+
+	if len(materiaIDs) > 0 {
+		query = query.Where("m.id IN ?", materiaIDs)
+	}
+
+	var items []ContenidoReciente
+	err := query.Order("tr.created_at DESC").Limit(limit).Scan(&items).Error
+	return items, err
+}
+
+func (r *Repository) listRecentRecursosContenidoByMateria(ctx context.Context, limit int, materiaIDs []string) ([]ContenidoReciente, error) {
+	if limit <= 0 {
+		limit = 6
+	}
+	if len(materiaIDs) == 0 {
+		return []ContenidoReciente{}, nil
+	}
+
+	var raw []ContenidoReciente
+	err := r.db.WithContext(ctx).
+		Table("internal.recurso r").
+		Select(`
+			r.id AS id,
+			'recurso' AS tipo,
+			r.titulo AS titulo,
+			r.descripcion AS descripcion,
+			r.created_at AS created_at,
+			l.id AS leccion_id,
+			NULL::text AS trabajo_id,
+			r.id AS recurso_id,
+			m.id AS materia_id,
+			m.nombre AS materia_nombre,
+			c.id AS curso_id,
+			c.nombre AS curso_nombre
+		`).
+		Joins("JOIN internal.leccion_seccion ls ON ls.recurso_id = r.id").
+		Joins("JOIN internal.leccion l ON l.id = ls.leccion_id").
+		Joins("JOIN internal.tema t ON t.id = l.tema_id").
+		Joins("JOIN internal.unidad u ON u.id = t.unidad_id").
+		Joins("JOIN internal.materia m ON m.id = u.materia_id").
+		Joins("JOIN internal.curso c ON c.id = m.curso_id").
+		Where("m.id IN ?", materiaIDs).
+		Order("r.created_at DESC").
+		Limit(limit * 3).
+		Scan(&raw).Error
+	if err != nil {
+		return nil, err
+	}
+
+	items := make([]ContenidoReciente, 0, len(raw))
+	seen := make(map[string]struct{})
+	for _, item := range raw {
+		if _, exists := seen[item.ID]; exists {
+			continue
+		}
+		seen[item.ID] = struct{}{}
+		items = append(items, item)
+		if len(items) >= limit {
+			break
+		}
+	}
+	return items, nil
+}
+
+func (r *Repository) listRecentRecursosGenerales(ctx context.Context, limit int, onlyPublic bool) ([]ContenidoReciente, error) {
+	if limit <= 0 {
+		limit = 6
+	}
+
+	query := r.db.WithContext(ctx).
+		Table("internal.recurso r").
+		Select(`
+			r.id AS id,
+			'recurso' AS tipo,
+			r.titulo AS titulo,
+			r.descripcion AS descripcion,
+			r.created_at AS created_at,
+			NULL::text AS leccion_id,
+			NULL::text AS trabajo_id,
+			r.id AS recurso_id,
+			NULL::text AS materia_id,
+			NULL::text AS materia_nombre,
+			NULL::text AS curso_id,
+			NULL::text AS curso_nombre
+		`)
+	if onlyPublic {
+		query = query.Where("r.es_publico = TRUE")
+	}
+
+	var items []ContenidoReciente
+	err := query.Order("r.created_at DESC").Limit(limit).Scan(&items).Error
+	return items, err
+}
+
+func mergeRecentContenido(limit int, groups ...[]ContenidoReciente) []ContenidoReciente {
+	merged := make([]ContenidoReciente, 0)
+	seen := make(map[string]struct{})
+
+	for _, group := range groups {
+		for _, item := range group {
+			key := item.Tipo + ":" + item.ID
+			if _, exists := seen[key]; exists {
+				continue
+			}
+			seen[key] = struct{}{}
+			merged = append(merged, item)
+		}
+	}
+
+	sort.SliceStable(merged, func(i, j int) bool {
+		return merged[i].CreatedAt.After(merged[j].CreatedAt)
+	})
+
+	if limit > 0 && len(merged) > limit {
+		return merged[:limit]
+	}
+	return merged
+}
+
 func (r *Repository) GetLeccion(ctx context.Context, id string) (*Leccion, error) {
 	if strings.TrimSpace(id) == "" {
 		return nil, gorm.ErrRecordNotFound
@@ -448,6 +989,12 @@ func (r *Repository) CreateLeccion(ctx context.Context, req LeccionRequest, crea
 	}
 	if req.Orden != nil {
 		l.Orden = *req.Orden
+	} else {
+		next, err := r.nextOrden(ctx, &Leccion{}, "tema_id = ?", req.TemaID)
+		if err != nil {
+			return nil, err
+		}
+		l.Orden = next
 	}
 	if req.Activo != nil {
 		l.Activo = *req.Activo
@@ -857,12 +1404,16 @@ func (r *Repository) UpsertSeccionGatingPDF(ctx context.Context, seccionID, acto
 	if req.RequiereResponderTodas != nil {
 		item.RequiereResponderTodas = *req.RequiereResponderTodas
 	}
+	if req.CheckpointSegundos != nil {
+		item.CheckpointSegundos = req.CheckpointSegundos
+	}
 
 	updates := map[string]interface{}{
 		"habilitado":               item.Habilitado,
 		"seccion_preguntas_id":     item.SeccionPreguntasID,
 		"puntaje_minimo":           item.PuntajeMinimo,
 		"requiere_responder_todas": item.RequiereResponderTodas,
+		"checkpoint_segundos":      item.CheckpointSegundos,
 	}
 
 	if err := r.db.WithContext(ctx).Clauses(clause.OnConflict{
@@ -1143,6 +1694,7 @@ func (r *Repository) ListMisCursosDocente(ctx context.Context, docenteID string)
 		LEFT JOIN (
 			SELECT ec.curso_id, COUNT(DISTINCT ec.estudiante_id)::bigint AS total_estudiantes
 			FROM internal.estudiante_curso ec
+			WHERE ec.anio_escolar = ? OR ec.anio_escolar IS NULL
 			GROUP BY ec.curso_id
 		) est ON est.curso_id = dma.curso_id
 		LEFT JOIN (
@@ -1169,7 +1721,7 @@ func (r *Repository) ListMisCursosDocente(ctx context.Context, docenteID string)
 	`
 
 	var items []MisCursoDocente
-	err = r.db.WithContext(ctx).Raw(query, docenteID, anioActivo).Scan(&items).Error
+	err = r.db.WithContext(ctx).Raw(query, anioActivo, docenteID, anioActivo).Scan(&items).Error
 	if err != nil {
 		if !isMissingRelationError(err, "internal.docente_materia_asignacion") {
 			return nil, err
@@ -1192,6 +1744,7 @@ func (r *Repository) ListMisCursosDocente(ctx context.Context, docenteID string)
 			LEFT JOIN (
 				SELECT ec.curso_id, COUNT(DISTINCT ec.estudiante_id)::bigint AS total_estudiantes
 				FROM internal.estudiante_curso ec
+				WHERE ec.anio_escolar = ? OR ec.anio_escolar IS NULL
 				GROUP BY ec.curso_id
 			) est ON est.curso_id = c.id
 			LEFT JOIN (
@@ -1215,7 +1768,7 @@ func (r *Repository) ListMisCursosDocente(ctx context.Context, docenteID string)
 			ORDER BY c.orden ASC, m.orden ASC, m.nombre ASC
 		`
 
-		err = r.db.WithContext(ctx).Raw(legacyQuery, anioActivo, docenteID).Scan(&items).Error
+		err = r.db.WithContext(ctx).Raw(legacyQuery, anioActivo, anioActivo, docenteID).Scan(&items).Error
 		if err != nil {
 			return nil, err
 		}
@@ -1411,4 +1964,20 @@ func (r *Repository) UpdateHorarioAsignacion(ctx context.Context, horarioID stri
 
 func (r *Repository) DeleteHorarioAsignacion(ctx context.Context, horarioID string) error {
 	return r.db.WithContext(ctx).Where("id = ?", horarioID).Delete(&DocenteMateriaHorario{}).Error
+}
+
+func (r *Repository) nextOrden(ctx context.Context, model interface{}, where string, args ...interface{}) (int, error) {
+	var next int
+	err := r.db.WithContext(ctx).
+		Model(model).
+		Select("COALESCE(MAX(orden), 0) + 1").
+		Where(where, args...).
+		Scan(&next).Error
+	if err != nil {
+		return 0, err
+	}
+	if next <= 0 {
+		return 1, nil
+	}
+	return next, nil
 }
