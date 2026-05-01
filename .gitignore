@@ -39,3 +39,5 @@ tmp_recursos360_phase2_test.ps1
 tmp_recursos360_phase3_patch_results.csv
 tmp_recursos360_phase3_patch_results.json
 tmp_recursos360_phase3_patch_test.ps1
+
+.minimax

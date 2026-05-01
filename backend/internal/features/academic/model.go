@@ -375,6 +375,7 @@ type Leccion struct {
 	TemaID       string    `json:"tema_id" gorm:"column:tema_id"`
 	Titulo       string    `json:"titulo" gorm:"column:titulo"`
 	Descripcion  *string   `json:"descripcion" gorm:"column:descripcion"`
+	Nivel        *string   `json:"nivel" gorm:"column:nivel"`
 	ThumbnailURL *string   `json:"thumbnail_url" gorm:"column:thumbnail_url"`
 	Orden        int       `json:"orden" gorm:"column:orden;default:0"`
 	Activo       bool      `json:"activo" gorm:"column:activo;default:true"`
@@ -389,6 +390,7 @@ type LeccionRequest struct {
 	TemaID       string  `json:"tema_id"`
 	Titulo       string  `json:"titulo"`
 	Descripcion  *string `json:"descripcion"`
+	Nivel        *string `json:"nivel"`
 	ThumbnailURL *string `json:"thumbnail_url"`
 	Orden        *int    `json:"orden"`
 	Activo       *bool   `json:"activo"`

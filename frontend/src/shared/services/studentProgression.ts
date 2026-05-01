@@ -46,12 +46,12 @@ function buildProgressByLesson(progresos: Progreso[]): Record<string, Progreso> 
   return map;
 }
 
-async function getTema(temaId: string): Promise<Tema | null> {
+export async function getTema(temaId: string): Promise<Tema | null> {
   const response = await api.get<ApiItemResponse<Tema>>(`/temas/${temaId}`);
   return unwrapItem(response);
 }
 
-async function getUnidad(unidadId: string): Promise<Unidad | null> {
+export async function getUnidad(unidadId: string): Promise<Unidad | null> {
   const response = await api.get<ApiItemResponse<Unidad>>(`/unidades/${unidadId}`);
   return unwrapItem(response);
 }

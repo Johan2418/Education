@@ -123,8 +123,13 @@ export function HierarchyViewer({
                         )}
                         <span className="text-violet-800">{tema.nombre}</span>
                         <span className="ml-auto text-xs text-violet-500 bg-violet-50 px-1.5 py-0.5 rounded">
-                          {tema.lecciones.length} lección{tema.lecciones.length !== 1 ? "es" : ""}
+                          {tema.lecciones.filter((leccion) => leccion.nivel === "tema_contenido").length} contenido{tema.lecciones.filter((leccion) => leccion.nivel === "tema_contenido").length !== 1 ? "s" : ""} creado{tema.lecciones.filter((leccion) => leccion.nivel === "tema_contenido").length !== 1 ? "s" : ""}
                         </span>
+                        {tema.lecciones.some((leccion) => leccion.nivel !== "tema_contenido") && (
+                          <span className="rounded-full bg-indigo-50 px-1.5 py-0.5 text-xs text-indigo-700">
+                            Evaluación final
+                          </span>
+                        )}
                         {canDelete && (
                           <button
                             onClick={(e) => {
@@ -144,7 +149,7 @@ export function HierarchyViewer({
                       {expandedTemas.has(tema.id) && (
                         <div className="ml-5 space-y-1">
                           {tema.lecciones.length === 0 ? (
-                            <div className="px-2 py-1 text-xs text-gray-400 italic">Sin lecciones</div>
+                            <div className="px-2 py-1 text-xs text-gray-400 italic">Sin contenidos</div>
                           ) : (
                             tema.lecciones.map((leccion) => (
                               <div

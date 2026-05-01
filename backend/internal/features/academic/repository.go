@@ -984,6 +984,7 @@ func (r *Repository) CreateLeccion(ctx context.Context, req LeccionRequest, crea
 		TemaID:       req.TemaID,
 		Titulo:       req.Titulo,
 		Descripcion:  req.Descripcion,
+		Nivel:        req.Nivel,
 		ThumbnailURL: req.ThumbnailURL,
 		CreatedBy:    &createdBy,
 	}
@@ -1014,6 +1015,9 @@ func (r *Repository) UpdateLeccion(ctx context.Context, id string, req LeccionRe
 	}
 	if req.Descripcion != nil {
 		updates["descripcion"] = *req.Descripcion
+	}
+	if req.Nivel != nil {
+		updates["nivel"] = *req.Nivel
 	}
 	if req.ThumbnailURL != nil {
 		updates["thumbnail_url"] = *req.ThumbnailURL

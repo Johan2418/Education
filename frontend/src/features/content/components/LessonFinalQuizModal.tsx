@@ -377,21 +377,31 @@ export function LessonFinalQuizModal({ open, lesson, onClose, onSaved }: LessonF
         className="w-full max-w-4xl max-h-[92vh] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <header className="flex items-start justify-between gap-4 border-b border-slate-200 p-4">
+        <header className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 p-4">
           <div>
             <p className="text-xs uppercase tracking-[0.2em] text-indigo-700">Prueba final</p>
             <h2 className="mt-1 text-xl font-semibold text-slate-900">{lesson.titulo}</h2>
             <p className="mt-1 text-sm text-slate-600">Configura preguntas de cierre para este tema.</p>
           </div>
-          <button
-            type="button"
-            onClick={closeModal}
-            disabled={saving}
-            className="inline-flex items-center gap-1 rounded-md border border-slate-300 px-2 py-1 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-60"
-          >
-            <X size={14} />
-            Cerrar
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => void onSave()}
+              disabled={!canSave}
+              className="inline-flex items-center gap-1 rounded-md bg-indigo-600 px-3 py-1 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-60"
+            >
+              {saving ? "Guardando..." : "Guardar preguntas"}
+            </button>
+            <button
+              type="button"
+              onClick={closeModal}
+              disabled={saving}
+              className="inline-flex items-center gap-1 rounded-md border border-slate-300 px-2 py-1 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+            >
+              <X size={14} />
+              Cerrar
+            </button>
+          </div>
         </header>
 
         {loading ? (
@@ -430,6 +440,18 @@ export function LessonFinalQuizModal({ open, lesson, onClose, onSaved }: LessonF
                   className="mt-1 w-full rounded-md border border-slate-300 px-2 py-1.5"
                 />
               </label>
+            </div>
+
+            <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-4 py-3 bg-slate-50">
+              <p className="text-sm text-slate-600">Agrega preguntas para la evaluación final de este tema.</p>
+              <button
+                type="button"
+                onClick={addQuestion}
+                className="inline-flex items-center gap-1 rounded-md border border-indigo-200 bg-white px-3 py-1.5 text-sm font-medium text-indigo-700 hover:bg-indigo-50"
+              >
+                <Plus size={14} />
+                Agregar pregunta
+              </button>
             </div>
 
             <div className="max-h-[55vh] overflow-y-auto p-4 space-y-3 bg-slate-50">
@@ -556,7 +578,7 @@ export function LessonFinalQuizModal({ open, lesson, onClose, onSaved }: LessonF
                   disabled={!canSave}
                   className="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-60"
                 >
-                  {saving ? "Guardando..." : "Guardar prueba final"}
+                  {saving ? "Guardando..." : "Guardar preguntas"}
                 </button>
               </div>
             </footer>

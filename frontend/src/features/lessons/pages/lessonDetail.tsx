@@ -1,10 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+﻿import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { getMe } from "@/shared/lib/auth";
 import api from "@/shared/lib/api";
 import { getProgreso, upsertProgreso } from "@/shared/services/progresos";
-import { getStudentLessonAccess } from "@/shared/services/studentProgression";
+import { getStudentLessonAccess, getTema, getUnidad } from "@/shared/services/studentProgression";
 import toast from "react-hot-toast";
 import type {
   ActividadInteractiva,
@@ -163,6 +163,8 @@ export default function LessonDetailPage() {
   const [lessonAlreadyCompleted, setLessonAlreadyCompleted] = useState(false);
   const [studentAccessDenied, setStudentAccessDenied] = useState(false);
   const [blockedMateriaId, setBlockedMateriaId] = useState<string | null>(null);
+  const [returnPath, setReturnPath] = useState("/lessons");
+  const [returnLabel, setReturnLabel] = useState(t("common.back", { defaultValue: "Volver" }));
 
   const interactiveIframeRef = useRef<HTMLIFrameElement | null>(null);
   const videoElementRef = useRef<HTMLVideoElement | null>(null);
@@ -191,11 +193,26 @@ export default function LessonDetailPage() {
         const me = await getMe();
         if (!me) { navigate("/login"); return; }
         setCurrentRole(me.role || "");
+        setReturnPath(me.role && ["teacher", "admin", "super_admin", "resource_manager"].includes(me.role) ? "/teacher/lessons" : "/lessons");
+        setReturnLabel(t("common.back", { defaultValue: "Volver" }));
 
         const lessonRes = await api.get<{ data: Leccion }>(`/lecciones/${lessonId}`);
         setLesson(lessonRes.data);
 
         if (me.role === "student") {
+          try {
+            const topic = await getTema(lessonRes.data.tema_id);
+            if (topic) {
+              const unidad = await getUnidad(topic.unidad_id);
+              if (unidad?.materia_id) {
+                const query = new URLSearchParams({ topicId: topic.id });
+                setReturnPath(`/contents/${unidad.materia_id}?${query.toString()}`);
+                setReturnLabel(topic.nombre ? `Volver a ${topic.nombre}` : t("common.back", { defaultValue: "Volver" }));
+              }
+            }
+          } catch {
+            // leave fallback path in place if topic lookup fails
+          }
           const lessonAccess = await getStudentLessonAccess(lessonRes.data);
           if (!lessonAccess.allowed) {
             setStudentAccessDenied(true);
@@ -245,10 +262,303 @@ export default function LessonDetailPage() {
   }, [lessonId, navigate, t]);
 
   const currentSection = secciones[currentIdx];
+  const contentURL = useMemo(() => {
+    if (!currentSection) return null;
+    if (currentSection.contenido) return currentSection.contenido;
+    return currentRecurso?.archivo_url || null;
+  }, [currentRecurso, currentSection]);
+
+  const youtubeVideoId = useMemo(() => extractYouTubeVideoId(contentURL), [contentURL]);
+  const currentVideoProgress = currentSection ? videoProgressBySeccion[currentSection.id] : undefined;
+
+  const currentSectionRef = useRef<LeccionSeccion | null>(null);
+  const currentGatingRef = useRef<LeccionSeccionGatingPDF | null>(null);
+  const checkpointQuestionRef = useRef<CheckpointQuestion | null>(null);
+  const checkpointUnlockedRef = useRef(false);
+  const checkpointPromptVisibleRef = useRef(false);
+  const youtubePlayerContainerRef = useRef<HTMLDivElement | null>(null);
+  const youtubePlayerRef = useRef<any>(null);
+  const youtubeTimeMonitorRef = useRef<number | null>(null);
+  const maxAllowedYoutubeTimeRef = useRef<number>(0);
+  const currentVideoProgressRef = useRef<LeccionVideoProgreso | undefined>(undefined);
+  const [youtubeApiReady, setYoutubeApiReady] = useState(false);
+  const [youtubeApiLoadFailed, setYoutubeApiLoadFailed] = useState(false);
+  const [youtubeApiTimeoutExpired, setYoutubeApiTimeoutExpired] = useState(false);
+  const [youtubePlayerCreationFailed, setYoutubePlayerCreationFailed] = useState(false);
+
+  useEffect(() => {
+    currentSectionRef.current = currentSection ?? null;
+    currentGatingRef.current = currentGating;
+    checkpointQuestionRef.current = checkpointQuestion;
+    checkpointUnlockedRef.current = checkpointUnlocked;
+    checkpointPromptVisibleRef.current = checkpointPromptVisible;
+  }, [currentSection, currentGating, checkpointQuestion, checkpointUnlocked, checkpointPromptVisible]);
+
+  useEffect(() => {
+    currentVideoProgressRef.current = currentVideoProgress;
+  }, [currentVideoProgress]);
+
+  useEffect(() => {
+    if (!youtubeVideoId) {
+      maxAllowedYoutubeTimeRef.current = 0;
+      return;
+    }
+    maxAllowedYoutubeTimeRef.current = currentVideoProgress?.watched_seconds ?? 0;
+  }, [youtubeVideoId, currentVideoProgress?.watched_seconds]);
+
+  useEffect(() => {
+    if (!youtubeVideoId) {
+      setYoutubeApiReady(false);
+      setYoutubeApiLoadFailed(false);
+      setYoutubeApiTimeoutExpired(false);
+      setYoutubePlayerCreationFailed(false);
+      return;
+    }
+
+    if ((window as any).YT?.Player) {
+      setYoutubeApiReady(true);
+      return;
+    }
+
+    const handleYoutubeApiReady = () => setYoutubeApiReady(true);
+    const existingScript = document.getElementById("youtube-iframe-api-script");
+    if (existingScript) {
+      (window as any).onYouTubeIframeAPIReady = handleYoutubeApiReady;
+    } else {
+      const script = document.createElement("script");
+      script.id = "youtube-iframe-api-script";
+      script.src = "https://www.youtube.com/iframe_api";
+      script.async = true;
+      script.onerror = () => setYoutubeApiLoadFailed(true);
+      document.body.appendChild(script);
+      (window as any).onYouTubeIframeAPIReady = handleYoutubeApiReady;
+    }
+
+    const readyPoll = window.setInterval(() => {
+      if ((window as any).YT?.Player) {
+        setYoutubeApiReady(true);
+        window.clearInterval(readyPoll);
+      }
+    }, 250);
+
+    return () => {
+      (window as any).onYouTubeIframeAPIReady = undefined;
+      window.clearInterval(readyPoll);
+    };
+  }, [youtubeVideoId]);
+
+  useEffect(() => {
+    if (!youtubeVideoId || youtubeApiReady) return;
+    const timeoutId = window.setTimeout(() => {
+      setYoutubeApiTimeoutExpired(true);
+    }, 8000);
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [youtubeVideoId, youtubeApiReady]);
+
+  useEffect(() => {
+    if (!youtubeApiReady) return;
+    setYoutubeApiTimeoutExpired(false);
+    setYoutubeApiLoadFailed(false);
+  }, [youtubeApiReady]);
+
+  const stopYoutubeTimeMonitor = () => {
+    if (youtubeTimeMonitorRef.current !== null) {
+      window.clearInterval(youtubeTimeMonitorRef.current);
+      youtubeTimeMonitorRef.current = null;
+    }
+  };
+
+  const startYoutubeTimeMonitor = () => {
+    if (!youtubePlayerRef.current || youtubeTimeMonitorRef.current !== null) return;
+
+    youtubeTimeMonitorRef.current = window.setInterval(() => {
+      const currentSection = currentSectionRef.current;
+      const currentGating = currentGatingRef.current;
+      const checkpointQuestion = checkpointQuestionRef.current;
+      const checkpointUnlocked = checkpointUnlockedRef.current;
+      const checkpointPromptVisible = checkpointPromptVisibleRef.current;
+      if (!youtubePlayerRef.current || !currentSection || !currentGating?.habilitado || checkpointUnlocked) return;
+      const checkpointSeconds = currentGating.checkpoint_segundos;
+      if (checkpointSeconds == null || checkpointSeconds <= 0) return;
+
+      const currentTime = youtubePlayerRef.current.getCurrentTime?.();
+      if (typeof currentTime !== "number" || Number.isNaN(currentTime)) return;
+
+      const previousMax = maxAllowedYoutubeTimeRef.current;
+      const hasForwardSeek = currentTime > previousMax + 1.5;
+
+      if (hasForwardSeek) {
+        if (currentTime >= checkpointSeconds && checkpointSeconds > previousMax) {
+          maxAllowedYoutubeTimeRef.current = checkpointSeconds;
+          youtubePlayerRef.current.seekTo(checkpointSeconds, true);
+          youtubePlayerRef.current.pauseVideo?.();
+          if (checkpointQuestion) {
+            setCheckpointPromptVisible(true);
+          }
+          return;
+        }
+        youtubePlayerRef.current.seekTo(previousMax, true);
+        youtubePlayerRef.current.pauseVideo?.();
+        return;
+      }
+
+      if (currentTime > previousMax) {
+        maxAllowedYoutubeTimeRef.current = currentTime;
+      }
+
+      if (currentTime >= checkpointSeconds && !checkpointPromptVisible) {
+        maxAllowedYoutubeTimeRef.current = Math.max(maxAllowedYoutubeTimeRef.current, checkpointSeconds);
+        youtubePlayerRef.current.pauseVideo?.();
+        if (checkpointQuestion) {
+          setCheckpointPromptVisible(true);
+        }
+      }
+    }, 500);
+  };
+
+  const handleYouTubeStateChange = (event: any) => {
+    const playerState = (window as any).YT?.PlayerState;
+    if (event.data === playerState?.PLAYING) {
+      startYoutubeTimeMonitor();
+    } else if (event.data === playerState?.PAUSED || event.data === playerState?.ENDED) {
+      stopYoutubeTimeMonitor();
+    }
+  };
+
+  const handleYouTubeAutoplayBlocked = () => {
+    console.info("YouTube autoplay blocked by browser. User interaction required.");
+    toast(
+      "El navegador bloqueó la reproducción automática. Haz clic en el video para reproducirlo.",
+      { duration: 5000 }
+    );
+  };
+
+  const handleYouTubeError = (error: any) => {
+    const errorCodes: Record<number, string> = {
+      2: "URL del video inválida",
+      5: "No se puede reproducir en HTML5",
+      100: "Video no encontrado o eliminado",
+      101: "El propietario no permite embebido",
+      150: "El propietario no permite embebido",
+      153: "Falta información de origen",
+    };
+    const message = errorCodes[error.data] || `Error desconocido (código: ${error.data})`;
+    console.error("YouTube player error:", error.data, message);
+    toast.error(`Error del reproductor: ${message}`);
+  };
+
+  const youtubeEmbedUrl = youtubeVideoId
+    ? `https://www.youtube-nocookie.com/embed/${youtubeVideoId}?controls=1&disablekb=1&rel=0&modestbranding=1&origin=${encodeURIComponent(window.location.origin)}&fs=0&iv_load_policy=3&playsinline=1`
+    : null;
+
+  const isEmbeddedYouTubeSection = Boolean(youtubeVideoId);
+  const isVideoSection = currentSection?.tipo === "video" || isEmbeddedYouTubeSection;
+  const shouldRenderVideoSection = Boolean(contentURL && (currentSection?.tipo === "video" || (currentSection?.tipo === "recurso" && isEmbeddedYouTubeSection)));
+
+  const hasCheckpointConfig = Boolean(
+    isVideoSection
+    && currentGating?.habilitado
+    && currentGating?.checkpoint_segundos != null
+    && currentGating?.checkpoint_segundos > 0
+    && currentGating?.seccion_preguntas_id
+  );
+
+  const useYoutubeIframeFallback = !hasCheckpointConfig && (youtubeApiLoadFailed || youtubeApiTimeoutExpired || youtubePlayerCreationFailed);
+  const youtubeCheckpointUnavailable = hasCheckpointConfig && (youtubeApiLoadFailed || youtubeApiTimeoutExpired || youtubePlayerCreationFailed);
+
+  useEffect(() => {
+    if (!youtubeVideoId || !youtubeApiReady || !youtubePlayerContainerRef.current) return;
+    const YT = (window as any).YT;
+    if (!YT?.Player) return;
+
+    maxAllowedYoutubeTimeRef.current = 0;
+    try {
+      youtubePlayerRef.current = new YT.Player(youtubePlayerContainerRef.current, {
+        videoId: youtubeVideoId,
+        playerVars: {
+          controls: 1,
+          disablekb: 1,
+          enablejsapi: 1,
+          rel: 0,
+          modestbranding: 1,
+          origin: window.location.origin,
+          fs: 0,
+          iv_load_policy: 3,
+          playsinline: 1,
+        },
+        events: {
+          onReady: (event: any) => {
+            const progress = currentVideoProgressRef.current;
+            if (typeof progress?.watched_seconds === "number" && progress.watched_seconds > 0) {
+              const safeTime = Math.max(0, progress.watched_seconds);
+              try {
+                event.target.seekTo(safeTime, true);
+              } catch {
+                // ignore seek errors during initialization
+              }
+              maxAllowedYoutubeTimeRef.current = safeTime;
+            }
+            if (checkpointQuestionRef.current) {
+              startYoutubeTimeMonitor();
+            }
+            if (event.target?.playVideo) {
+              event.target.playVideo?.();
+              event.target.pauseVideo?.();
+            }
+            setYoutubePlayerCreationFailed(false);
+          },
+          onStateChange: handleYouTubeStateChange,
+          onError: (error: any) => {
+            handleYouTubeError(error);
+            setYoutubePlayerCreationFailed(true);
+          },
+          onAutoplayBlocked: handleYouTubeAutoplayBlocked,
+        },
+      });
+    } catch (error) {
+      console.error("YouTube player creation failed", error);
+      setYoutubePlayerCreationFailed(true);
+      youtubePlayerRef.current = null;
+    }
+
+    return () => {
+      stopYoutubeTimeMonitor();
+      if (youtubePlayerRef.current?.destroy) {
+        youtubePlayerRef.current.destroy();
+      }
+      youtubePlayerRef.current = null;
+    };
+  }, [youtubeVideoId, youtubeApiReady]);
+
+  useEffect(() => {
+    if (!youtubePlayerRef.current || !checkpointQuestion || checkpointPromptVisible || checkpointUnlocked) return;
+    const YT = (window as any).YT;
+    if (YT?.Player && youtubePlayerRef.current.getPlayerState?.() === YT.PlayerState.PLAYING) {
+      startYoutubeTimeMonitor();
+    }
+  }, [checkpointQuestion, checkpointPromptVisible, checkpointUnlocked, youtubeApiReady]);
+
+  useEffect(() => {
+    if (!youtubeVideoId) return;
+    const onBeforeUnload = () => stopYoutubeTimeMonitor();
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [youtubeVideoId]);
+
+  const onSelectHilo = async (hiloId: string) => {
+    setSelectedHiloId(hiloId);
+    try {
+      const items = await listForoMensajes(hiloId);
+      setMensajes(items);
+    } catch (err) {
+      toast.error(normalizeError(err));
+    }
+  };
 
   useEffect(() => {
     if (!lessonId || !currentSection) return;
-
     let active = true;
     (async () => {
       setCurrentRecurso(null);
@@ -380,16 +690,6 @@ export default function LessonDetailPage() {
     void syncLessonProgressIfCompleted(progSecciones);
   }, [progSecciones, secciones, lessonAlreadyCompleted]);
 
-  const onSelectHilo = async (hiloId: string) => {
-    setSelectedHiloId(hiloId);
-    try {
-      const items = await listForoMensajes(hiloId);
-      setMensajes(items);
-    } catch (err) {
-      toast.error(normalizeError(err));
-    }
-  };
-
   const onCreateHilo = async () => {
     if (!currentForo) return;
     if (!nuevoHiloTitulo.trim()) {
@@ -444,16 +744,6 @@ export default function LessonDetailPage() {
       toast.error(normalizeError(err));
     }
   };
-
-  const contentURL = useMemo(() => {
-    if (!currentSection) return null;
-    if (currentSection.contenido) return currentSection.contenido;
-    return currentRecurso?.archivo_url || null;
-  }, [currentRecurso, currentSection]);
-
-  const youtubeVideoId = useMemo(() => extractYouTubeVideoId(contentURL), [contentURL]);
-
-  const currentVideoProgress = currentSection ? videoProgressBySeccion[currentSection.id] : undefined;
   const nativeConfig = useMemo(
     () => (currentActividad?.proveedor === "nativo" ? parseNativeInteractiveConfig(currentActividad.configuracion) : null),
     [currentActividad]
@@ -542,7 +832,7 @@ export default function LessonDetailPage() {
     setCheckpointPromptVisible(false);
     setCheckpointSelectedOption("");
 
-    if (currentSection?.tipo !== "video" || !currentGating?.habilitado || !currentGating.seccion_preguntas_id) {
+    if (!isVideoSection || !currentGating?.habilitado || !currentGating.seccion_preguntas_id) {
       setCheckpointUnlocked(false);
       return;
     }
@@ -960,39 +1250,6 @@ export default function LessonDetailPage() {
     return puntuacion >= currentGating.puntaje_minimo;
   }, [currentGating, progSecciones]);
 
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-[40vh]">
-        <Loader2 size={32} className="animate-spin text-blue-600" />
-      </div>
-    );
-  }
-
-  if (studentAccessDenied) {
-    const returnPath = blockedMateriaId ? `/contents/${blockedMateriaId}` : "/contents";
-    return (
-      <div className="max-w-3xl mx-auto p-4">
-        <div className="rounded-lg border border-amber-300 bg-amber-50 p-4 text-amber-900">
-          Esta lección está bloqueada por el orden de avance configurado por tu docente.
-        </div>
-        <button
-          onClick={() => navigate(returnPath)}
-          className="mt-4 rounded-md bg-blue-600 px-4 py-2 text-white hover:bg-blue-700"
-        >
-          Volver a la materia
-        </button>
-      </div>
-    );
-  }
-
-  if (!lesson) {
-    return <div className="text-center py-8 text-gray-500">{t("lessons.notFound", { defaultValue: "Lección no encontrada" })}</div>;
-  }
-  const isForoSection = !!currentSection && (currentSection.tipo === "foro" || !!currentSection.foro_id);
-  const isVideoSection = currentSection?.tipo === "video";
-  const isQuizSection = currentSection?.tipo === "prueba";
-  const isInteractiveSection = currentSection?.tipo === "actividad_interactiva";
   const isPdfResource = !!contentURL && contentURL.toLowerCase().includes(".pdf");
   const protectedPdfURL = useMemo(
     () => (isPdfResource && contentURL ? buildProtectedPdfUrl(contentURL) : null),
@@ -1040,6 +1297,37 @@ export default function LessonDetailPage() {
     };
   }, [isPdfResource]);
 
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-[40vh]">
+        <Loader2 size={32} className="animate-spin text-blue-600" />
+      </div>
+    );
+  }
+
+  if (studentAccessDenied) {
+    const returnPath = blockedMateriaId ? `/contents/${blockedMateriaId}` : "/contents";
+    return (
+      <div className="max-w-3xl mx-auto p-4">
+        <div className="rounded-lg border border-amber-300 bg-amber-50 p-4 text-amber-900">
+          Esta lección está bloqueada por el orden de avance configurado por tu docente.
+        </div>
+        <button
+          onClick={() => navigate(returnPath)}
+          className="mt-4 rounded-md bg-blue-600 px-4 py-2 text-white hover:bg-blue-700"
+        >
+          Volver a la materia
+        </button>
+      </div>
+    );
+  }
+
+  if (!lesson) {
+    return <div className="text-center py-8 text-gray-500">{t("lessons.notFound", { defaultValue: "Lección no encontrada" })}</div>;
+  }
+  const isForoSection = !!currentSection && (currentSection.tipo === "foro" || !!currentSection.foro_id);
+  const isQuizSection = currentSection?.tipo === "prueba";
+  const isInteractiveSection = currentSection?.tipo === "actividad_interactiva";
   const currentRequisitos = currentSection?.requisitos || [];
   const blockedByRequisitos = currentRequisitos.some((id) => !progSecciones[id]?.completado);
 
@@ -1064,8 +1352,12 @@ export default function LessonDetailPage() {
 
   return (
     <div className="max-w-4xl mx-auto p-4">
-      <button onClick={() => navigate(isEditor ? "/teacher/lessons" : "/lessons")} className="text-blue-600 hover:underline mb-4 inline-block">
-        &larr; {t("common.back", { defaultValue: "Volver" })}
+      <button
+        onClick={() => navigate(returnPath)}
+        className="mb-4 inline-flex items-center gap-2 rounded-full bg-blue-600 px-4 py-2 text-white transition hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+      >
+        <ChevronLeft size={16} />
+        {returnLabel}
       </button>
 
       <h1 className="text-2xl font-bold mb-2">{lesson.titulo}</h1>
@@ -1136,25 +1428,47 @@ export default function LessonDetailPage() {
                 />
               )}
 
-              {currentSection.tipo === "video" && contentURL && (
+              {shouldRenderVideoSection && (
                 <div className="mb-4 space-y-3">
                   {youtubeVideoId ? (
                     <>
-                      <div className="aspect-video w-full overflow-hidden rounded-lg border border-slate-200 bg-black">
-                        <iframe
-                          title="YouTube player"
-                          src={`https://www.youtube.com/embed/${youtubeVideoId}`}
-                          className="h-full w-full"
-                          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                          referrerPolicy="strict-origin-when-cross-origin"
-                          allowFullScreen
-                        />
-                      </div>
+                      {youtubeCheckpointUnavailable ? (
+                        <div className="aspect-video w-full rounded-lg border border-red-300 bg-red-50 flex items-center justify-center p-4 text-center">
+                          <div>
+                            <p className="text-sm font-semibold text-red-900 mb-2">No se puede cargar el reproductor de YouTube con checkpoint.</p>
+                            <p className="text-sm text-red-900">Actualiza la página o prueba otro navegador. El checkpoint requiere la API de YouTube activa.</p>
+                          </div>
+                        </div>
+                      ) : !useYoutubeIframeFallback && youtubeApiReady ? (
+                        <div className="aspect-video w-full overflow-hidden rounded-lg border border-slate-200 bg-black" ref={youtubePlayerContainerRef} />
+                      ) : useYoutubeIframeFallback ? (
+                        <div className="aspect-video w-full overflow-hidden rounded-lg border border-slate-200 bg-black">
+                          <iframe
+                            title="YouTube video"
+                            src={youtubeEmbedUrl || undefined}
+                            className="h-full w-full"
+                            loading="lazy"
+                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                            referrerPolicy="strict-origin-when-cross-origin"
+                            allowFullScreen
+                          />
+                        </div>
+                      ) : (
+                        <div className="aspect-video w-full rounded-lg border border-slate-200 bg-black flex items-center justify-center">
+                          <span className="text-sm text-white">Cargando reproductor de YouTube...</span>
+                        </div>
+                      )}
 
                       {!isEditor && currentGating?.checkpoint_segundos && (
                         <div className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
-                          Este video usa reproductor YouTube embebido. El checkpoint en tiempo se aplica solo para video HTML5 nativo;
-                          puedes responder la seccion de preguntas vinculada para desbloquear el avance.
+                          Este video usa reproductor YouTube embebido. Si se configura un checkpoint en tiempo, el video se pausará y mostrará la pregunta asociada.
+                        </div>
+                      )}
+
+                      {useYoutubeIframeFallback && (
+                        <div className="rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-900">
+                          Este mensaje confirma que el código actualizado se está ejecutando.
+                          El reproductor de YouTube está en modo fallback porque la API de YouTube no pudo cargarse o fue bloqueada.
                         </div>
                       )}
 
@@ -1200,7 +1514,7 @@ export default function LessonDetailPage() {
                   ) : (
                     <video
                       ref={videoElementRef}
-                      src={contentURL}
+                      src={contentURL || undefined}
                       controls
                       onTimeUpdate={onVideoTimeUpdate}
                       className="w-full rounded"

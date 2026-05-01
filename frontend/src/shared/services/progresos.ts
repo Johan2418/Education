@@ -38,8 +38,9 @@ export async function listMisProgresos(): Promise<Progreso[]> {
 
 export async function getProgreso(leccionId: string): Promise<Progreso | null> {
   try {
-    const res = await api.get<ProgresoItemResponse>(`/lecciones/${leccionId}/progreso`);
-    return normalizeProgreso(res);
+    const res = await api.get<ProgresoListResponse>("/progreso");
+    const progresos = normalizeProgresos(res);
+    return progresos.find((progress) => progress.leccion_id === leccionId) ?? null;
   } catch {
     return null;
   }

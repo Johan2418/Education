@@ -6,6 +6,7 @@ import {
   FileText,
   GripVertical,
   Image as ImageIcon,
+  Loader2,
   Plus,
   Puzzle,
   Trash2,
@@ -16,9 +17,10 @@ import {
 import toast from "react-hot-toast";
 
 import api from "@/shared/lib/api";
-import type { Leccion, LeccionSeccion, Tema } from "@/shared/types";
+import { getActividadInteractiva, parseNativeInteractiveConfig } from "@/features/lessons/services/interactivas";
+import type { Leccion, LeccionSeccion, PruebaCompleta, Tema } from "@/shared/types";
 
-type BlockType = "document" | "video" | "image" | "quiz" | "interactive";
+type BlockType = "document" | "video" | "image" | "interactive";
 type InteractiveProvider = "h5p" | "genially" | "educaplay" | "nativo";
 
 interface ApiEnvelope<T> {
@@ -47,6 +49,8 @@ interface ContentBlockDraft {
   sourceFileName: string;
   sourceFileDataUrl: string;
   questions: QuestionDraft[];
+  calificable: boolean;
+  calificacionPeso: string;
   interactiveProvider: InteractiveProvider;
   interactiveEmbedUrl: string;
   videoCheckpointSeconds: string;
@@ -108,7 +112,6 @@ function createBlock(type: BlockType): ContentBlockDraft {
     document: "Documento",
     video: "Video",
     image: "Imagen",
-    quiz: "Preguntas del tema",
     interactive: "Actividad interactiva",
   };
 
@@ -121,7 +124,9 @@ function createBlock(type: BlockType): ContentBlockDraft {
     sourceUrl: "",
     sourceFileName: "",
     sourceFileDataUrl: "",
-    questions: type === "video" || type === "image" || type === "quiz" ? [createQuestion()] : [],
+    questions: type === "video" || type === "image" ? [createQuestion()] : [],
+    calificable: false,
+    calificacionPeso: "0",
     interactiveProvider: "h5p",
     interactiveEmbedUrl: "",
     videoCheckpointSeconds: type === "video" ? "45" : "",
@@ -140,6 +145,105 @@ function moveItem<T>(items: T[], from: number, to: number): T[] {
   return next;
 }
 
+function inferBlockTypeFromResourceType(resourceType: string): BlockType {
+  if (resourceType === "video") return "video";
+  if (resourceType === "imagen") return "image";
+  return "document";
+}
+
+async function fetchQuizQuestions(pruebaId: string): Promise<QuestionDraft[]> {
+  const response = await api.get<PruebaCompleta | ApiEnvelope<PruebaCompleta>>(`/pruebas/${pruebaId}/completa`);
+  const prueba = unwrapApiData(response);
+  if (!prueba || !Array.isArray(prueba.preguntas)) return [];
+  return prueba.preguntas.map((pregunta) => ({
+    id: pregunta.id,
+    prompt: pregunta.texto || "",
+    options: (pregunta.respuestas || []).map((respuesta) => ({
+      id: respuesta.id,
+      text: respuesta.texto || "",
+      isCorrect: respuesta.es_correcta ?? false,
+    })),
+  }));
+}
+
+async function getLessonSections(lessonId: string): Promise<LeccionSeccion[]> {
+  const sectionsRes = await api.get<LeccionSeccion[] | ApiEnvelope<LeccionSeccion[]>>(`/lecciones/${lessonId}/secciones`);
+  return Array.isArray(sectionsRes) ? sectionsRes : unwrapApiData(sectionsRes);
+}
+
+async function deleteLessonSections(lessonId: string): Promise<void> {
+  const sections = await getLessonSections(lessonId);
+  await Promise.all(sections.map((section) => api.delete(`/secciones/${section.id}`)));
+}
+
+async function buildBlockFromLesson(lesson: Leccion, sections: LeccionSeccion[], topic: Tema): Promise<ContentBlockDraft | null> {
+  const resourceSection = sections.find((section) => section.tipo === "recurso" && section.recurso_id);
+  const activitySection = sections.find((section) => section.tipo === "actividad_interactiva" && section.actividad_interactiva_id);
+  const quizSection = sections.find((section) => section.tipo === "prueba" && section.prueba_id);
+
+  if (resourceSection && resourceSection.recurso_id) {
+    const recursoRes = await api.get<{ data: { id: string; titulo: string; descripcion?: string; tipo: string; archivo_url?: string } }>(`/recursos/${resourceSection.recurso_id}`);
+    const recurso = unwrapApiData(recursoRes);
+    const type = inferBlockTypeFromResourceType(recurso.tipo || "documento");
+    const block = createBlock(type);
+    block.id = lesson.id;
+    block.title = lesson.titulo || recurso.titulo || block.title;
+    block.description = lesson.descripcion || recurso.descripcion || "";
+    block.sourceMode = "url";
+    block.sourceUrl = recurso.archivo_url || "";
+    block.sourceFileName = recurso.titulo || "";
+    if (quizSection && quizSection.prueba_id) {
+      block.questions = await fetchQuizQuestions(quizSection.prueba_id);
+      block.calificable = quizSection.calificable ?? true;
+      const absWeight = Number(quizSection.peso_calificacion ?? 0);
+      const topicContentWeight = Number(topic.peso_calificacion_contenido ?? 0);
+      block.calificacionPeso = topicContentWeight > 0
+        ? String((absWeight * 100) / topicContentWeight)
+        : String(absWeight);
+    }
+    return block;
+  }
+
+  if (activitySection && activitySection.actividad_interactiva_id) {
+    const block = createBlock("interactive");
+    block.id = lesson.id;
+    block.title = lesson.titulo || block.title;
+    block.description = lesson.descripcion || "";
+    block.sourceMode = "url";
+    block.interactiveEmbedUrl = "";
+
+    try {
+      const actividad = await getActividadInteractiva(activitySection.actividad_interactiva_id);
+      block.interactiveProvider = actividad.proveedor;
+      if (actividad.proveedor !== "nativo") {
+        block.interactiveEmbedUrl = actividad.embed_url || "";
+      }
+
+      if (actividad.proveedor === "nativo") {
+        const nativeConfig = parseNativeInteractiveConfig(actividad.configuracion as Record<string, unknown> | null);
+        block.questions = nativeConfig.questions.map((question) => ({
+          id: question.id,
+          prompt: question.prompt,
+          options: question.options.map((option) => ({
+            id: option.id,
+            text: option.text,
+            isCorrect: option.isCorrect,
+          })),
+        }));
+        block.nativeQuickQuizEnabled = nativeConfig.isQuickQuiz;
+        block.nativeQuickTimeSeconds = String(nativeConfig.timePerQuestionSeconds);
+        block.nativeQuickAutoSkipOnTimeout = nativeConfig.autoSkipOnTimeout;
+      }
+    } catch (error) {
+      console.warn("No se pudo cargar la actividad interactiva existente", error);
+    }
+
+    return block;
+  }
+
+  return null;
+}
+
 function blockLabel(type: BlockType): string {
   switch (type) {
     case "document":
@@ -148,8 +252,6 @@ function blockLabel(type: BlockType): string {
       return "Video con preguntas";
     case "image":
       return "Imagen con preguntas";
-    case "quiz":
-      return "Preguntas del tema";
     case "interactive":
       return "Actividad interactiva";
     default:
@@ -165,8 +267,6 @@ function blockIcon(type: BlockType) {
       return <Video size={15} />;
     case "image":
       return <ImageIcon size={15} />;
-    case "quiz":
-      return <FileQuestion size={15} />;
     case "interactive":
       return <Puzzle size={15} />;
     default:
@@ -245,20 +345,93 @@ async function createQuizForLesson(leccionId: string, title: string, questions: 
 export function TopicConfigurationModal({ open, topic, onClose, onSaved }: TopicConfigurationModalProps) {
   const [blocks, setBlocks] = useState<ContentBlockDraft[]>([]);
   const [saving, setSaving] = useState(false);
+  const [loadingBlocks, setLoadingBlocks] = useState(false);
   const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [existingLessonIds, setExistingLessonIds] = useState<Set<string>>(new Set());
+  const [usarSoloCalificacionLeccion, setUsarSoloCalificacionLeccion] = useState<boolean>(true);
+  const [pesoCalificacionLeccion, setPesoCalificacionLeccion] = useState<string>("100");
+  const [pesoCalificacionContenido, setPesoCalificacionContenido] = useState<string>("0");
 
   useEffect(() => {
-    if (!open) return;
-    setBlocks([]);
-    setDraggingId(null);
+    if (!open || !topic) return;
+
+    setUsarSoloCalificacionLeccion(topic.usar_solo_calificacion_leccion ?? true);
+    setPesoCalificacionLeccion(String(topic.peso_calificacion_leccion ?? 100));
+    setPesoCalificacionContenido(String(topic.peso_calificacion_contenido ?? 0));
+
+    const loadExistingTopicContent = async () => {
+      setLoadingBlocks(true);
+      setBlocks([]);
+      setDraggingId(null);
+      setExistingLessonIds(new Set());
+      try {
+        const leccionesRes = await api.get<Leccion[] | ApiEnvelope<Leccion[]>>(`/temas/${topic.id}/lecciones`);
+        const lecciones = Array.isArray(leccionesRes) ? leccionesRes : unwrapApiData(leccionesRes);
+        const contentBlocks: ContentBlockDraft[] = [];
+
+        for (const leccion of lecciones) {
+          const sectionsRes = await api.get<LeccionSeccion[] | ApiEnvelope<LeccionSeccion[]>>(`/lecciones/${leccion.id}/secciones`);
+          const sections = Array.isArray(sectionsRes) ? sectionsRes : unwrapApiData(sectionsRes);
+          const hasContentSection = sections.some((section) => section.tipo === "recurso" || section.tipo === "actividad_interactiva");
+          const hasOnlyEvaluationSections = sections.length > 0 && sections.every((section) => section.tipo === "prueba");
+
+          if (!hasContentSection) continue;
+
+          if (leccion.nivel !== "tema_contenido") {
+            try {
+              await api.put(`/lecciones/${leccion.id}`, {
+                nivel: "tema_contenido",
+              });
+            } catch (error) {
+              console.warn(`No se pudo normalizar nivel de lección ${leccion.id}`, error);
+            }
+          }
+
+          const block = await buildBlockFromLesson(leccion, sections, topic);
+          if (block) {
+            contentBlocks.push(block);
+          }
+        }
+
+        setBlocks(contentBlocks);
+        setExistingLessonIds(new Set(contentBlocks.map((block) => block.id)));
+      } catch (err) {
+        console.error("Error cargando contenido de tema", err);
+      } finally {
+        setLoadingBlocks(false);
+      }
+    };
+
+    void loadExistingTopicContent();
   }, [open, topic?.id]);
 
-  const canSave = useMemo(() => !saving && !!topic, [saving, topic]);
+  const canSave = useMemo(() => !saving && !loadingBlocks && !!topic, [saving, loadingBlocks, topic]);
+
+  const contenidoCalificableTotal = useMemo(
+    () => blocks.reduce((total, block) => total + (block.calificable ? Number(block.calificacionPeso) : 0), 0),
+    [blocks]
+  );
+
+  const pesoCalificacionContenidoComputed = useMemo(() => Number(pesoCalificacionContenido), [pesoCalificacionContenido]);
+
+  useEffect(() => {
+    if (blocks.some((block) => block.calificable) && usarSoloCalificacionLeccion) {
+      setUsarSoloCalificacionLeccion(false);
+    }
+  }, [blocks, usarSoloCalificacionLeccion]);
 
   if (!open || !topic) return null;
 
   const addBlock = (type: BlockType) => {
-    setBlocks((prev) => [...prev, createBlock(type)]);
+    setBlocks((prev) => {
+      const next = [...prev, createBlock(type)];
+      if (prev.length === 0 && usarSoloCalificacionLeccion) {
+        setUsarSoloCalificacionLeccion(false);
+        setPesoCalificacionLeccion("50");
+        setPesoCalificacionContenido("50");
+      }
+      return next;
+    });
   };
 
   const updateBlock = (blockId: string, updater: (prev: ContentBlockDraft) => ContentBlockDraft) => {
@@ -266,7 +439,15 @@ export function TopicConfigurationModal({ open, topic, onClose, onSaved }: Topic
   };
 
   const removeBlock = (blockId: string) => {
-    setBlocks((prev) => prev.filter((block) => block.id !== blockId));
+    setBlocks((prev) => {
+      const next = prev.filter((block) => block.id !== blockId);
+      if (next.length === 0) {
+        setUsarSoloCalificacionLeccion(true);
+        setPesoCalificacionLeccion("100");
+        setPesoCalificacionContenido("0");
+      }
+      return next;
+    });
   };
 
   const moveBlockUp = (index: number) => {
@@ -394,7 +575,14 @@ export function TopicConfigurationModal({ open, topic, onClose, onSaved }: Topic
           return;
         }
       }
-      if (block.type === "video" || block.type === "image" || block.type === "quiz") {
+      if (block.calificable) {
+        const weight = Number(block.calificacionPeso);
+        if (!Number.isFinite(weight) || weight <= 0) {
+          toast.error(`El bloque "${block.title}" requiere un peso de calificación mayor a 0.`);
+          return;
+        }
+      }
+      if (block.type === "video" || block.type === "image" || (block.type === "interactive" && block.interactiveProvider === "nativo")) {
         const questionsErr = validateQuestions(block.questions, block.title.trim() || blockLabel(block.type));
         if (questionsErr) {
           toast.error(questionsErr);
@@ -430,16 +618,68 @@ export function TopicConfigurationModal({ open, topic, onClose, onSaved }: Topic
       }
     }
 
+    if (!usarSoloCalificacionLeccion) {
+      const pesoLeccionValue = Number(pesoCalificacionLeccion);
+      const pesoContenidoValue = Number(pesoCalificacionContenido);
+
+      if (!Number.isFinite(pesoLeccionValue) || pesoLeccionValue < 0 || pesoLeccionValue > 100) {
+        toast.error("El peso de la evaluación final debe estar entre 0 y 100%.");
+        return;
+      }
+      if (!Number.isFinite(pesoContenidoValue) || pesoContenidoValue < 0 || pesoContenidoValue > 100) {
+        toast.error("El peso del contenido del tema debe estar entre 0 y 100%.");
+        return;
+      }
+      if (Math.abs(pesoLeccionValue + pesoContenidoValue - 100) > 0.1) {
+        toast.error("El peso de evaluación final y contenido debe sumar 100%.");
+        return;
+      }
+      if (contenidoCalificableTotal === 0 && pesoContenidoValue > 0) {
+        toast.error("Define bloques calificables cuya suma interna sea 100% cuando el contenido del tema tiene peso.");
+        return;
+      }
+      if (contenidoCalificableTotal !== 0 && Math.abs(contenidoCalificableTotal - 100) > 0.1) {
+        toast.error("La suma de los bloques calificables debe ser exactamente 100%.");
+        return;
+      }
+      if (pesoContenidoValue === 0 && contenidoCalificableTotal > 0) {
+        toast.error("No puede haber bloques calificables cuando el contenido del tema tiene peso 0%.");
+        return;
+      }
+    }
+
     setSaving(true);
     try {
+      await api.put(`/temas/${topic.id}`, {
+        usar_solo_calificacion_leccion: usarSoloCalificacionLeccion,
+        peso_calificacion_leccion: usarSoloCalificacionLeccion ? 100 : Number(pesoCalificacionLeccion),
+        peso_calificacion_contenido: usarSoloCalificacionLeccion ? 0 : Number(pesoCalificacionContenido),
+      });
+
       for (const [blockIndex, block] of blocks.entries()) {
-        const lessonRes = await api.post<Leccion | ApiEnvelope<Leccion>>("/lecciones", {
-          tema_id: topic.id,
-          titulo: block.title.trim(),
-          descripcion: block.description.trim() || null,
-          orden: blockIndex + 1,
-        });
-        const lesson = unwrapApiData(lessonRes);
+        let lesson: Leccion;
+        const isExistingLesson = existingLessonIds.has(block.id);
+
+        if (isExistingLesson) {
+          await api.put(`/lecciones/${block.id}`, {
+            titulo: block.title.trim(),
+            descripcion: block.description.trim() || null,
+            orden: blockIndex + 1,
+            nivel: "tema_contenido",
+          });
+          lesson = { id: block.id } as Leccion;
+          await deleteLessonSections(block.id);
+        } else {
+          const lessonRes = await api.post<Leccion | ApiEnvelope<Leccion>>("/lecciones", {
+            tema_id: topic.id,
+            titulo: block.title.trim(),
+            descripcion: block.description.trim() || null,
+            nivel: "tema_contenido",
+            orden: blockIndex + 1,
+          });
+          lesson = unwrapApiData(lessonRes);
+        }
+
         let sectionOrder = 1;
 
         if (block.type === "document" || block.type === "video" || block.type === "image") {
@@ -456,7 +696,7 @@ export function TopicConfigurationModal({ open, topic, onClose, onSaved }: Topic
           const resource = unwrapApiData(resourceRes);
           const resourceSectionRes = await api.post<LeccionSeccion | ApiEnvelope<LeccionSeccion>>("/secciones", {
             leccion_id: lesson.id,
-            tipo: block.type === "video" ? "video" : "recurso",
+            tipo: "recurso",
             recurso_id: resource.id,
             orden: sectionOrder,
             visible: true,
@@ -471,6 +711,9 @@ export function TopicConfigurationModal({ open, topic, onClose, onSaved }: Topic
               `${block.title.trim()} - Preguntas`,
               block.questions
             );
+            const pesoContenidoValue = usarSoloCalificacionLeccion ? 0 : Number(pesoCalificacionContenido);
+            const bloquePesoRelativo = block.calificable ? Number(block.calificacionPeso) : 0;
+            const pesoPorBloque = block.calificable ? (bloquePesoRelativo * pesoContenidoValue) / 100 : 0;
             const quizSectionRes = await api.post<LeccionSeccion | ApiEnvelope<LeccionSeccion>>("/secciones", {
               leccion_id: lesson.id,
               tipo: "prueba",
@@ -478,9 +721,9 @@ export function TopicConfigurationModal({ open, topic, onClose, onSaved }: Topic
               orden: sectionOrder,
               visible: true,
               es_obligatorio: true,
-              calificable: true,
+              calificable: block.calificable,
               nota_maxima: 100,
-              peso_calificacion: 1,
+              peso_calificacion: Number(pesoPorBloque.toFixed(2)),
             });
             const quizSection = unwrapApiData(quizSectionRes);
             sectionOrder += 1;
@@ -496,22 +739,6 @@ export function TopicConfigurationModal({ open, topic, onClose, onSaved }: Topic
               });
             }
           }
-        }
-
-        if (block.type === "quiz") {
-          const quizId = await createQuizForLesson(lesson.id, block.title.trim(), block.questions);
-          await api.post("/secciones", {
-            leccion_id: lesson.id,
-            tipo: "prueba",
-            prueba_id: quizId,
-            orden: sectionOrder,
-            visible: true,
-            es_obligatorio: true,
-            calificable: true,
-            nota_maxima: 100,
-            peso_calificacion: 1,
-          });
-          sectionOrder += 1;
         }
 
         if (block.type === "interactive") {
@@ -543,7 +770,7 @@ export function TopicConfigurationModal({ open, topic, onClose, onSaved }: Topic
             descripcion: block.description.trim() || null,
             proveedor: block.interactiveProvider,
             embed_url: block.interactiveProvider === "nativo" ? "" : block.interactiveEmbedUrl.trim(),
-            regla_completitud: block.interactiveProvider === "nativo" ? "puntaje" : "manual",
+            regla_completitud: block.interactiveProvider === "nativo" && block.calificable ? "puntaje" : "manual",
             puntaje_maximo: 100,
             intentos_maximos: null,
             configuracion: nativeConfig,
@@ -576,7 +803,7 @@ export function TopicConfigurationModal({ open, topic, onClose, onSaved }: Topic
       <div
         role="dialog"
         aria-modal="true"
-        className="w-full max-w-6xl max-h-[92vh] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl"
+        className="w-full max-w-6xl max-h-[92vh] overflow-auto rounded-2xl border border-slate-200 bg-white shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         <header className="flex items-start justify-between gap-4 border-b border-slate-200 p-4">
@@ -598,46 +825,132 @@ export function TopicConfigurationModal({ open, topic, onClose, onSaved }: Topic
           </button>
         </header>
 
-        <div className="grid grid-cols-1 gap-4 p-4 md:grid-cols-3">
-          <button
-            type="button"
-            onClick={() => addBlock("document")}
-            className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-medium text-slate-800 hover:bg-slate-100"
-          >
-            <FileText size={16} /> PDF / Word / PowerPoint
-          </button>
-          <button
-            type="button"
-            onClick={() => addBlock("video")}
-            className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-medium text-slate-800 hover:bg-slate-100"
-          >
-            <Video size={16} /> Video con preguntas
-          </button>
-          <button
-            type="button"
-            onClick={() => addBlock("image")}
-            className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-medium text-slate-800 hover:bg-slate-100"
-          >
-            <ImageIcon size={16} /> Imagen con preguntas
-          </button>
-          <button
-            type="button"
-            onClick={() => addBlock("quiz")}
-            className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-medium text-slate-800 hover:bg-slate-100"
-          >
-            <FileQuestion size={16} /> Preguntas del tema
-          </button>
-          <button
-            type="button"
-            onClick={() => addBlock("interactive")}
-            className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-medium text-slate-800 hover:bg-slate-100 md:col-span-2"
-          >
-            <Puzzle size={16} /> Actividad interactiva
-          </button>
+        <div className="p-4">
+          <div className="rounded-3xl border border-slate-200 bg-slate-50 p-4 shadow-sm">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="text-sm font-semibold text-slate-800">Ponderación del tema</p>
+                <p className="mt-1 text-sm text-slate-600">
+                  {blocks.length === 0
+                    ? "Este tema no tiene contenido interno. La evaluación final se considera 100%."
+                    : "Divide el porcentaje entre evaluación final y contenido calificado."
+                  }
+                </p>
+              </div>
+              <div className="inline-flex items-center gap-3 rounded-full border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700">
+                <span className="font-semibold">Total:</span>
+                <span>{blocks.length === 0 ? "100% final" : "100% final + contenido"}</span>
+              </div>
+            </div>
+
+            <div className="mt-4 grid gap-3 sm:grid-cols-[auto,1fr] sm:items-center">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                <label className="inline-flex items-center gap-2 text-sm text-slate-800">
+                  <input
+                    type="checkbox"
+                    checked={usarSoloCalificacionLeccion}
+                    disabled={blocks.length === 0}
+                    onChange={(e) => {
+                      const checked = e.target.checked;
+                      setUsarSoloCalificacionLeccion(checked);
+                      if (checked) {
+                        setPesoCalificacionLeccion("100");
+                        setPesoCalificacionContenido("0");
+                      }
+                    }}
+                    className="h-4 w-4 rounded border-slate-300 text-violet-600"
+                  />
+                  Usar solo la evaluación final de lección
+                </label>
+                <button
+                  type="button"
+                  disabled={blocks.length === 0}
+                  onClick={() => {
+                    setUsarSoloCalificacionLeccion(false);
+                    setPesoCalificacionLeccion("0");
+                    setPesoCalificacionContenido("100");
+                  }}
+                  className="inline-flex items-center justify-center rounded-md border border-slate-300 bg-white px-3 py-1 text-sm font-medium text-slate-700 hover:bg-slate-100 disabled:opacity-50"
+                >
+                  Puntaje solo de contenido
+                </button>
+              </div>
+
+              {!usarSoloCalificacionLeccion && (
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <label className="text-sm text-slate-800">
+                    Peso evaluación final (%)
+                    <input
+                      type="number"
+                      min={0}
+                      max={100}
+                      step={0.1}
+                      value={pesoCalificacionLeccion}
+                      onChange={(e) => setPesoCalificacionLeccion(e.target.value)}
+                      className="mt-1 w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm"
+                    />
+                  </label>
+                  <label className="text-sm text-slate-800">
+                    Peso contenido del tema (%)
+                    <input
+                      type="number"
+                      min={0}
+                      max={100}
+                      step={0.1}
+                      value={pesoCalificacionContenido}
+                      onChange={(e) => setPesoCalificacionContenido(e.target.value)}
+                      className="mt-1 w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm"
+                    />
+                  </label>
+                  <p className="sm:col-span-2 text-xs text-slate-500">
+                    Los bloques marcados como calificables deben sumar 100% entre sí. Ese 100% se escala al {pesoCalificacionContenidoComputed.toFixed(1)}% del tema.
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+            <button
+              type="button"
+              onClick={() => addBlock("document")}
+              className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-800 hover:bg-slate-100"
+            >
+              <FileText size={16} /> PDF / Word / PowerPoint
+            </button>
+            <button
+              type="button"
+              onClick={() => addBlock("video")}
+              className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-800 hover:bg-slate-100"
+            >
+              <Video size={16} /> Video con preguntas
+            </button>
+            <button
+              type="button"
+              onClick={() => addBlock("image")}
+              className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-800 hover:bg-slate-100"
+            >
+              <ImageIcon size={16} /> Imagen con preguntas
+            </button>
+            <button
+              type="button"
+              onClick={() => addBlock("interactive")}
+              className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-800 hover:bg-slate-100"
+            >
+              <Puzzle size={16} /> Actividad interactiva
+            </button>
+          </div>
         </div>
 
-        <div className="max-h-[52vh] overflow-y-auto border-t border-slate-100 p-4 pt-3">
-          {blocks.length === 0 ? (
+        <div className="border-t border-slate-100 p-4 pt-5">
+          {loadingBlocks ? (
+            <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-8 text-center text-sm text-slate-600">
+              <div className="flex items-center justify-center gap-2">
+                <Loader2 size={16} className="animate-spin" />
+                Cargando contenidos...
+              </div>
+            </div>
+          ) : blocks.length === 0 ? (
             <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-8 text-center text-sm text-slate-600">
               Aún no hay bloques. Agrega contenido para configurar el tema.
             </div>
@@ -873,7 +1186,7 @@ export function TopicConfigurationModal({ open, topic, onClose, onSaved }: Topic
                     </div>
                   )}
 
-                  {(block.type === "video" || block.type === "image" || block.type === "quiz" || (block.type === "interactive" && block.interactiveProvider === "nativo")) && (
+                  {(block.type === "video" || block.type === "image" || (block.type === "interactive" && block.interactiveProvider === "nativo")) && (
                     <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3">
                       {block.type === "video" && (
                         <label className="mb-3 block text-sm text-slate-800">
@@ -887,16 +1200,38 @@ export function TopicConfigurationModal({ open, topic, onClose, onSaved }: Topic
                           />
                         </label>
                       )}
-                      <div className="mb-2 flex items-center justify-between">
+                      <div className="mb-2 flex flex-wrap items-center justify-between gap-3">
                         <p className="text-sm font-semibold text-slate-800">Preguntas configurables</p>
-                        <button
-                          type="button"
-                          onClick={() => addQuestion(block.id)}
-                          className="inline-flex items-center gap-1 rounded-md bg-violet-600 px-2 py-1 text-xs font-medium text-white hover:bg-violet-700"
-                        >
-                          <Plus size={13} />
-                          Agregar pregunta
-                        </button>
+                        <div className="flex flex-wrap gap-2">
+                          <label className="inline-flex items-center gap-2 rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-700">
+                            <input
+                              type="checkbox"
+                              checked={block.calificable}
+                              onChange={(e) => updateBlock(block.id, (prev) => ({ ...prev, calificable: e.target.checked }))}
+                            />
+                            Calificable
+                          </label>
+                          <label className="inline-flex items-center gap-2 rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-700">
+                            Peso (%)
+                            <input
+                              type="number"
+                              min={0}
+                              max={100}
+                              step={0.1}
+                              value={block.calificacionPeso}
+                              onChange={(e) => updateBlock(block.id, (prev) => ({ ...prev, calificacionPeso: e.target.value }))}
+                              className="w-20 rounded-md border border-slate-300 px-1 py-0.5 text-xs"
+                            />
+                          </label>
+                          <button
+                            type="button"
+                            onClick={() => addQuestion(block.id)}
+                            className="inline-flex items-center gap-1 rounded-md bg-violet-600 px-2 py-1 text-xs font-medium text-white hover:bg-violet-700"
+                          >
+                            <Plus size={13} />
+                            Agregar pregunta
+                          </button>
+                        </div>
                       </div>
 
                       <div className="space-y-3">

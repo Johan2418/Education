@@ -7,7 +7,7 @@ import { listMisProgresos } from "@/shared/services/progresos";
 import { listMisMateriasEstudiante } from "@/shared/services/studentAcademic";
 import { evaluateStudentTopic } from "@/shared/services/studentProgression";
 import toast from "react-hot-toast";
-import { FileQuestion, Loader2, Pencil, Plus, Settings, Trash2 } from "lucide-react";
+import { Loader2, Pencil, Plus, Settings, Trash2 } from "lucide-react";
 import type { Materia, Unidad, Tema, Leccion, Progreso, Prueba } from "@/shared/types";
 import { HierarchyViewer } from "../components/HierarchyViewer";
 import { TopicConfigurationModal } from "../components/TopicConfigurationModal";
@@ -104,6 +104,8 @@ export default function ContenidoPage() {
   const [profileLoaded, setProfileLoaded] = useState(false);
   const [studentAccessDenied, setStudentAccessDenied] = useState(false);
   const [studentRoadmap, setStudentRoadmap] = useState<StudentUnitView[]>([]);
+  const [selectedStudentUnitId, setSelectedStudentUnitId] = useState<string | null>(null);
+  const [selectedStudentTopicId, setSelectedStudentTopicId] = useState<string | null>(null);
 
   const [unidadForm, setUnidadForm] = useState({
     nombre: "",
@@ -308,10 +310,9 @@ export default function ContenidoPage() {
     return items;
   }, [unidades]);
 
-  const temaSeleccionadoParaEdicion = useMemo(() => {
-    if (!editTemaForm.id) return null;
-    return temasEditorOptions.find((tema) => tema.id === editTemaForm.id) ?? null;
-  }, [editTemaForm.id, temasEditorOptions]);
+  const finalEvaluationLecciones = useMemo(() => {
+    return leccionesEditorOptions.filter((leccion) => leccion.nivel !== "tema_contenido");
+  }, [leccionesEditorOptions]);
 
   const fillUnidadEditor = (unidad: UnidadConTemas) => {
     setEditUnidadForm({
@@ -414,11 +415,11 @@ export default function ContenidoPage() {
         fillTemaEditor(firstTema);
       }
     }
-    if (leccionesEditorOptions.length === 0 && editLeccionForm.id) {
+    if (finalEvaluationLecciones.length === 0 && editLeccionForm.id) {
       setEditLeccionForm({ id: "", titulo: "", descripcion: "", orden: "0", activo: true });
     }
-    if (leccionesEditorOptions.length > 0 && (!editLeccionForm.id || !leccionesEditorOptions.some((leccion) => leccion.id === editLeccionForm.id))) {
-      const firstLeccion = leccionesEditorOptions[0];
+    if (editLeccionForm.id && finalEvaluationLecciones.length > 0 && !finalEvaluationLecciones.some((leccion) => leccion.id === editLeccionForm.id)) {
+      const firstLeccion = finalEvaluationLecciones[0];
       if (firstLeccion) {
         fillLeccionEditor(firstLeccion);
       }
@@ -427,7 +428,7 @@ export default function ContenidoPage() {
     editLeccionForm.id,
     editTemaForm.id,
     editUnidadForm.id,
-    leccionesEditorOptions,
+    finalEvaluationLecciones,
     temasEditorOptions,
     unidades,
   ]);
@@ -498,6 +499,13 @@ export default function ContenidoPage() {
     }
     if (!titulo) {
       toast.error(t("teacher.subjects.createSection.validation.lessonTitle", { defaultValue: "El título de la lección es obligatorio." }));
+      return;
+    }
+
+    const selectedTema = temasEditorOptions.find((tema) => tema.id === leccionForm.tema_id);
+    const tieneEvaluacionFinal = selectedTema?.lecciones.some((leccion) => leccion.nivel !== "tema_contenido");
+    if (tieneEvaluacionFinal) {
+      toast.error("Este tema ya tiene una evaluación final. Edita la existente.");
       return;
     }
 
@@ -687,15 +695,7 @@ export default function ContenidoPage() {
   const openTopicContentEditor = (temaId: string) => {
     const tema = temasEditorOptions.find((item) => item.id === temaId);
     if (!tema) return;
-    setTopicBeingConfigured({
-      id: tema.id,
-      unidad_id: tema.unidad_id,
-      nombre: tema.nombre,
-      descripcion: tema.descripcion,
-      orden: tema.orden,
-      created_at: tema.created_at,
-      updated_at: tema.updated_at,
-    });
+    setTopicBeingConfigured(tema);
     setIsTopicConfigOpen(true);
   };
 
@@ -720,17 +720,7 @@ export default function ContenidoPage() {
 
   const openLessonEvaluation = async (leccionId: string) => {
     try {
-      const prueba = await getPrimaryQuizForLesson(leccionId);
-      if (!prueba) {
-        if (canCreateContent) {
-          toast("Esta leccion aun no tiene prueba final. Configurala ahora.");
-          openLessonFinalQuizEditor(leccionId);
-        } else {
-          toast.error("Esta leccion no tiene una prueba final disponible todavia.");
-        }
-        return;
-      }
-      navigate(`/lesson/${leccionId}/prueba/${prueba.id}`);
+      navigate(`/lesson/${leccionId}`);
     } catch (err) {
       toast.error(normalizeError(err));
     }
@@ -858,6 +848,47 @@ export default function ContenidoPage() {
   };
 
   const isStudentView = currentRole === "student";
+  const selectedStudentUnit = useMemo(() => {
+    return studentRoadmap.find(({ unit }) => unit.id === selectedStudentUnitId) ?? null;
+  }, [studentRoadmap, selectedStudentUnitId]);
+
+  const selectedStudentTopic = useMemo(() => {
+    return selectedStudentUnit?.topics.find(({ topic }) => topic.id === selectedStudentTopicId) ?? null;
+  }, [selectedStudentTopicId, selectedStudentUnit]);
+
+  useEffect(() => {
+    if (!selectedStudentUnitId) {
+      setSelectedStudentTopicId(null);
+      return;
+    }
+
+    const unitExists = studentRoadmap.some((item) => item.unit.id === selectedStudentUnitId);
+    if (!unitExists) {
+      setSelectedStudentUnitId(null);
+      setSelectedStudentTopicId(null);
+    }
+  }, [selectedStudentUnitId, studentRoadmap]);
+
+  useEffect(() => {
+    if (!selectedStudentTopicId || !selectedStudentUnit) return;
+    const topicExists = selectedStudentUnit.topics.some((item) => item.topic.id === selectedStudentTopicId);
+    if (!topicExists) {
+      setSelectedStudentTopicId(null);
+    }
+  }, [selectedStudentTopicId, selectedStudentUnit]);
+
+  useEffect(() => {
+    const topicIdFromQuery = searchParams.get("topicId") || searchParams.get("temaId");
+    if (!topicIdFromQuery || studentRoadmap.length === 0) return;
+
+    const location = studentRoadmap.find((item) => item.topics.some(({ topic }) => topic.id === topicIdFromQuery));
+    if (!location) return;
+
+    if (selectedStudentTopicId !== topicIdFromQuery) {
+      setSelectedStudentUnitId(location.unit.id);
+      setSelectedStudentTopicId(topicIdFromQuery);
+    }
+  }, [searchParams, studentRoadmap, selectedStudentTopicId]);
 
   useEffect(() => {
     let active = true;
@@ -923,6 +954,24 @@ export default function ContenidoPage() {
     };
   }, [isStudentView, lessonProgressById, unidades]);
 
+  const selectedUnitProgress = selectedStudentUnit
+    ? Math.round((selectedStudentUnit.topics.filter((topic) => topic.completed).length / Math.max(1, selectedStudentUnit.topics.length)) * 100)
+    : 0;
+
+  const selectedTopicProgress = selectedStudentTopic
+    ? Math.round((selectedStudentTopic.topic.lecciones.filter((lesson) => lessonProgressById[lesson.id]?.completado).length / Math.max(1, selectedStudentTopic.topic.lecciones.length)) * 100)
+    : 0;
+
+  const selectedTopicLessons = selectedStudentTopic ? [...selectedStudentTopic.topic.lecciones].sort(byOrderAndName) : [];
+
+  const getUnitCoverUrl = (unit: UnidadConTemas) => {
+    return ((unit as unknown) as { background_url?: string | null }).background_url || null;
+  };
+
+  const getTopicCoverUrl = (topic: Tema) => {
+    return ((topic as unknown) as { background_url?: string | null }).background_url || null;
+  };
+
   if (loading) return <div className="text-center py-8 text-gray-500">{t("loading", { defaultValue: "Cargando..." })}</div>;
   if (studentAccessDenied) {
     return (
@@ -938,69 +987,243 @@ export default function ContenidoPage() {
 
   if (isStudentView) {
     return (
-      <div className="max-w-5xl mx-auto p-4">
+      <div className="max-w-6xl mx-auto p-4">
         <button onClick={() => navigate(backPath)} className="text-blue-600 hover:underline mb-4 inline-block">&larr; {t("common.back", { defaultValue: "Volver" })}</button>
-        <h1 className="text-2xl font-bold mb-2">{materia.nombre}</h1>
-        {materia.descripcion && <p className="text-gray-600 mb-6">{materia.descripcion}</p>}
+        <h1 className="text-3xl font-bold tracking-tight mb-2">{materia.nombre}</h1>
+        {materia.descripcion && <p className="text-gray-600 mb-6 max-w-3xl">{materia.descripcion}</p>}
 
         {studentRoadmap.length === 0 ? (
-          <p className="text-gray-500">{t("contents.noUnits", { defaultValue: "No hay unidades disponibles" })}</p>
-        ) : (
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-8 text-center text-slate-500">{t("contents.noUnits", { defaultValue: "No hay unidades disponibles" })}</div>
+        ) : selectedStudentTopic ? (
           <div className="space-y-6">
-            {studentRoadmap.map(({ unit, topics, locked: unitLocked, completed: unitCompleted }) => (
-              <section key={unit.id} className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-                <div className="flex flex-wrap items-center gap-2 mb-2">
-                  <h2 className="text-lg font-semibold">{unit.nombre}</h2>
-                  {unitCompleted && <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700">Completada</span>}
-                  {unitLocked && !unitCompleted && <span className="rounded-full bg-slate-200 px-2 py-0.5 text-xs font-medium text-slate-700">Bloqueada</span>}
+            <div className="flex flex-wrap items-center gap-3">
+              <button
+                type="button"
+                onClick={() => setSelectedStudentTopicId(null)}
+                className="text-blue-600 hover:underline text-sm"
+              >
+                &larr; Volver a temas
+              </button>
+              <div>
+                <p className="text-xs uppercase tracking-[0.3em] text-slate-500">Unidad</p>
+                <p className="text-sm text-slate-700">{selectedStudentUnit?.unit.nombre}</p>
+              </div>
+            </div>
+
+            <section className="rounded-3xl overflow-hidden border border-slate-200 shadow-sm">
+              <div className="relative h-40 overflow-hidden bg-slate-200">
+                {getTopicCoverUrl(selectedStudentTopic.topic) ? (
+                  <img
+                    src={getTopicCoverUrl(selectedStudentTopic.topic) || ""}
+                    alt="Fondo del tema"
+                    className="h-full w-full object-cover"
+                  />
+                ) : (
+                  <div className="h-full w-full bg-gradient-to-r from-indigo-600 via-violet-500 to-fuchsia-500" />
+                )}
+                <div className="absolute inset-0 bg-slate-950/30" />
+                <div className="absolute inset-x-0 bottom-0 p-4">
+                  <h2 className="text-2xl font-semibold text-white">{selectedStudentTopic.topic.nombre}</h2>
+                  {selectedStudentTopic.topic.descripcion && <p className="text-sm text-slate-100/80 mt-1">{selectedStudentTopic.topic.descripcion}</p>}
                 </div>
-                {unit.descripcion && <p className="text-sm text-slate-500 mb-3">{unit.descripcion}</p>}
+              </div>
+              <div className="p-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">{selectedStudentTopic.completed ? "Completado" : "En progreso"}</span>
+                  <span className="text-xs uppercase tracking-[0.2em] text-slate-500">Progreso del tema</span>
+                </div>
+                <div className="mt-4 rounded-full bg-slate-100 p-1">
+                  <div className="h-2 rounded-full bg-indigo-600" style={{ width: `${selectedTopicProgress}%` }} />
+                </div>
+                <p className="mt-2 text-sm text-slate-600">{selectedTopicProgress}% de contenido interno completado</p>
+              </div>
+            </section>
 
-                <div className="space-y-3">
-                  {topics.map(({ topic, locked, completed, averageScore }) => (
-                    <div key={topic.id} className={`rounded-lg border p-3 ${locked ? "border-slate-200 bg-slate-50" : "border-indigo-100 bg-indigo-50/40"}`}>
-                      <div className="flex flex-wrap items-center gap-2 mb-1">
-                        <h3 className={`font-medium ${locked ? "text-slate-600" : "text-slate-900"}`}>{topic.nombre}</h3>
-                        {completed && <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700">Completado</span>}
-                        {!completed && locked && <span className="rounded-full bg-slate-200 px-2 py-0.5 text-xs font-medium text-slate-700">Bloqueado</span>}
-                        {!completed && !locked && <span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700">Disponible</span>}
-                        {averageScore != null && <span className="rounded-full bg-violet-100 px-2 py-0.5 text-xs font-medium text-violet-700">Promedio: {averageScore}%</span>}
-                      </div>
-                      {topic.descripcion && <p className="text-sm text-slate-500 mb-2">{topic.descripcion}</p>}
-
-                      {topic.lecciones.length === 0 ? (
-                        <p className="text-xs text-slate-400">Sin evaluaciones finales en este tema.</p>
-                      ) : (
-                        <div className="space-y-1">
-                          {topic.lecciones.map((lesson) => {
-                            const progress = lessonProgressById[lesson.id];
-                            return (
-                              <button
-                                key={lesson.id}
-                                onClick={() => void openLessonEvaluation(lesson.id)}
-                                disabled={locked}
-                                className={`w-full text-left rounded-md border px-3 py-2 text-sm transition ${
-                                  locked
-                                    ? "cursor-not-allowed border-slate-200 text-slate-400 bg-slate-100"
-                                    : "border-indigo-200 text-indigo-700 bg-white hover:bg-indigo-50"
-                                }`}
-                              >
-                                <span className="font-medium">{lesson.titulo}</span>
-                                {progress?.completado && (
-                                  <span className="ml-2 text-xs text-emerald-600">
-                                    ({progress.puntaje != null ? `${Math.round(progress.puntaje)}%` : "Completada"})
-                                  </span>
-                                )}
-                              </button>
-                            );
-                          })}
+            {selectedTopicLessons.length === 0 ? (
+              <div className="rounded-3xl border border-slate-200 bg-slate-50 p-6 text-center text-slate-500">Este tema aún no tiene contenidos internos.</div>
+            ) : (
+              <div className="grid gap-4">
+                {selectedTopicLessons.map((lesson, index) => {
+                  const progress = lessonProgressById[lesson.id];
+                  const previousLesson = index === 0 ? null : selectedTopicLessons[index - 1];
+                  const isPreviousCompleted = previousLesson ? Boolean(lessonProgressById[previousLesson.id]?.completado) : true;
+                  const disabled = !isPreviousCompleted || selectedStudentTopic.locked;
+                  return (
+                    <button
+                      key={lesson.id}
+                      type="button"
+                      onClick={() => void openLessonEvaluation(lesson.id)}
+                      disabled={disabled}
+                      className={`w-full rounded-3xl border p-4 text-left transition ${
+                        disabled
+                          ? "border-slate-200 bg-slate-50 text-slate-400 cursor-not-allowed"
+                          : "border-indigo-200 bg-white text-slate-900 hover:border-indigo-300 hover:bg-indigo-50"
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <p className="text-sm text-slate-500">Paso {index + 1}</p>
+                          <h3 className="text-base font-semibold">{lesson.titulo}</h3>
                         </div>
+                        <div className="text-right">
+                          {progress?.completado ? (
+                            <span className="rounded-full bg-emerald-100 px-2 py-1 text-xs font-semibold text-emerald-700">Completado</span>
+                          ) : disabled ? (
+                            <span className="rounded-full bg-slate-200 px-2 py-1 text-xs font-semibold text-slate-700">Bloqueado</span>
+                          ) : (
+                            <span className="rounded-full bg-blue-100 px-2 py-1 text-xs font-semibold text-blue-700">Disponible</span>
+                          )}
+                        </div>
+                      </div>
+                      {progress?.puntaje != null && (
+                        <div className="mt-3 rounded-xl bg-slate-50 px-3 py-2 text-sm text-slate-600">Puntaje: {Math.round(progress.puntaje)}%</div>
                       )}
-                    </div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        ) : selectedStudentUnit ? (
+          <div className="space-y-6">
+            <div className="flex flex-wrap items-center gap-3">
+              <button
+                type="button"
+                onClick={() => setSelectedStudentUnitId(null)}
+                className="text-blue-600 hover:underline text-sm"
+              >
+                &larr; Volver a unidades
+              </button>
+              <span className="text-sm text-slate-500">Unidad seleccionada: {selectedStudentUnit.unit.nombre}</span>
+            </div>
+
+            <section className="rounded-3xl overflow-hidden border border-slate-200 shadow-sm">
+              <div className="relative h-44 overflow-hidden bg-slate-200">
+                {getUnitCoverUrl(selectedStudentUnit.unit) ? (
+                  <img
+                    src={getUnitCoverUrl(selectedStudentUnit.unit) || ""}
+                    alt="Fondo de la unidad"
+                    className="h-full w-full object-cover"
+                  />
+                ) : (
+                  <div className="h-full w-full bg-gradient-to-r from-indigo-500 via-violet-500 to-fuchsia-500" />
+                )}
+                <div className="absolute inset-0 bg-slate-950/30" />
+                <div className="absolute inset-x-0 bottom-0 p-4">
+                  <h2 className="text-2xl font-semibold text-white">{selectedStudentUnit.unit.nombre}</h2>
+                  {selectedStudentUnit.unit.descripcion && <p className="mt-1 text-sm text-slate-100/85">{selectedStudentUnit.unit.descripcion}</p>}
+                </div>
+              </div>
+              <div className="p-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">{selectedUnitProgress}% temas completados</span>
+                  <span className="text-xs uppercase tracking-[0.2em] text-slate-500">{selectedStudentUnit.completed ? "Unidad completada" : selectedStudentUnit.locked ? "Unidad bloqueada" : "Unidad disponible"}</span>
+                </div>
+                <div className="mt-4 grid gap-4 md:grid-cols-2">
+                  {selectedStudentUnit.topics.map(({ topic, locked, completed, averageScore }) => (
+                    <button
+                      key={topic.id}
+                      type="button"
+                      onClick={() => setSelectedStudentTopicId(topic.id)}
+                      disabled={locked}
+                      className={`overflow-hidden rounded-3xl border p-0 text-left shadow-sm transition ${
+                        locked
+                          ? "cursor-not-allowed border-slate-200 bg-slate-50 text-slate-400"
+                          : "border-slate-200 bg-white hover:-translate-y-0.5 hover:shadow-md"
+                      }`}
+                    >
+                      <div className="relative h-28 overflow-hidden bg-slate-200">
+                        {getTopicCoverUrl(topic) ? (
+                          <img src={getTopicCoverUrl(topic) || ""} alt="Fondo del tema" className="h-full w-full object-cover" />
+                        ) : (
+                          <div className="h-full w-full bg-gradient-to-r from-indigo-500 to-violet-500" />
+                        )}
+                        <div className="absolute inset-0 bg-slate-950/20" />
+                        {locked && (
+                          <div className="absolute inset-0 flex items-center justify-center bg-slate-950/60 text-sm font-semibold text-slate-100">
+                            Bloqueado
+                          </div>
+                        )}
+                      </div>
+                      <div className="p-4">
+                        <div className="flex items-center justify-between gap-3">
+                          <h3 className="text-base font-semibold text-slate-900">{topic.nombre}</h3>
+                          <span className={`rounded-full px-2 py-1 text-[11px] font-semibold ${completed ? "bg-emerald-100 text-emerald-700" : locked ? "bg-slate-200 text-slate-700" : "bg-blue-100 text-blue-700"}`}>
+                            {completed ? "Completado" : locked ? "Bloqueado" : "Disponible"}
+                          </span>
+                        </div>
+                        <p className="mt-2 text-sm text-slate-600 min-h-[2rem]">{topic.descripcion || "Contenido del tema"}</p>
+                        {averageScore != null && <p className="mt-3 text-xs uppercase tracking-[0.2em] text-violet-700">Promedio: {averageScore}%</p>}
+                      </div>
+                    </button>
                   ))}
                 </div>
-              </section>
-            ))}
+              </div>
+            </section>
+          </div>
+        ) : (
+          <div className="grid gap-6 md:grid-cols-2">
+            {studentRoadmap.map(({ unit, topics, locked: unitLocked, completed: unitCompleted }) => {
+              const coverUrl = getUnitCoverUrl(unit);
+              return (
+                <button
+                  key={unit.id}
+                  type="button"
+                  onClick={() => {
+                    if (!unitLocked) {
+                      setSelectedStudentUnitId(unit.id);
+                      setSelectedStudentTopicId(null);
+                    }
+                  }}
+                  disabled={unitLocked}
+                  className={`group overflow-hidden rounded-[2rem] border p-0 text-left shadow-sm transition ${
+                    unitLocked
+                      ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400"
+                      : "border-slate-200 bg-white hover:-translate-y-0.5 hover:shadow-lg"
+                  }`}
+                >
+                  <div className="relative h-40 overflow-hidden">
+                    {coverUrl ? (
+                      <img src={coverUrl} alt="Fondo de la unidad" className="h-full w-full object-cover" />
+                    ) : (
+                      <div className="h-full w-full bg-gradient-to-r from-slate-900 via-slate-700 to-slate-900" />
+                    )}
+                    <div className="absolute inset-0 bg-slate-950/25" />
+                    <div className="absolute inset-0 flex flex-col justify-between p-4">
+                      <span className="self-end rounded-full bg-white/90 px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-slate-700">
+                        {topics.length} temas
+                      </span>
+                      <div>
+                        <p className="text-sm font-semibold uppercase tracking-[0.2em] text-white/80">Unidad</p>
+                        <h2 className="text-2xl font-semibold text-white">{unit.nombre}</h2>
+                      </div>
+                    </div>
+                    {unitLocked && (
+                      <div className="absolute inset-0 bg-slate-950/60 flex items-center justify-center text-sm font-semibold text-white">
+                        Bloqueada
+                      </div>
+                    )}
+                  </div>
+                  <div className="p-4">
+                    {unit.descripcion && <p className="text-sm text-slate-600">{unit.descripcion}</p>}
+                    <div className="mt-4 flex items-center justify-between gap-3">
+                      <div className="w-full">
+                        <div className="h-2 overflow-hidden rounded-full bg-slate-100">
+                          <div
+                            className="h-full rounded-full bg-indigo-600"
+                            style={{ width: `${Math.round((topics.filter((topic) => topic.completed).length / Math.max(1, topics.length)) * 100)}%` }}
+                          />
+                        </div>
+                        <p className="mt-2 text-xs text-slate-500">
+                          {topics.filter((topic) => topic.completed).length}/{topics.length} temas completados
+                        </p>
+                      </div>
+                      {unitCompleted && <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700">Completada</span>}
+                    </div>
+                  </div>
+                </button>
+              );
+            })}
           </div>
         )}
       </div>
@@ -1410,39 +1633,6 @@ export default function ContenidoPage() {
                   <Settings size={12} />
                   Editar contenidos internos
                 </button>
-
-                <div className="mt-3 rounded-md border border-violet-100 bg-violet-50 p-2">
-                  <p className="text-[11px] font-semibold uppercase tracking-wide text-violet-700">Evaluaciones del tema</p>
-                  {!temaSeleccionadoParaEdicion || temaSeleccionadoParaEdicion.lecciones.length === 0 ? (
-                    <p className="mt-1 text-xs text-violet-700/80">Este tema no tiene evaluaciones finales creadas.</p>
-                  ) : (
-                    <div className="mt-1 space-y-1">
-                      {temaSeleccionadoParaEdicion.lecciones.map((leccion) => (
-                        <div key={leccion.id} className="rounded border border-violet-200 bg-white p-2">
-                          <p className="text-xs font-medium text-slate-800">{leccion.titulo}</p>
-                          <div className="mt-1 flex flex-wrap items-center gap-1">
-                            <button
-                              type="button"
-                              onClick={() => openLeccionEditor(leccion.id)}
-                              className="inline-flex items-center gap-1 rounded border border-indigo-200 px-2 py-0.5 text-[11px] font-medium text-indigo-700 hover:bg-indigo-50"
-                            >
-                              <Pencil size={11} />
-                              Editar evaluacion
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => openLessonFinalQuizEditor(leccion.id)}
-                              className="inline-flex items-center gap-1 rounded border border-cyan-200 px-2 py-0.5 text-[11px] font-medium text-cyan-700 hover:bg-cyan-50"
-                            >
-                              <FileQuestion size={11} />
-                              Prueba final
-                            </button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
               </div>
 
               <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
@@ -1451,19 +1641,17 @@ export default function ContenidoPage() {
                   className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm bg-white"
                   value={editLeccionForm.id}
                   onChange={(e) => {
-                    const selected = leccionesEditorOptions.find((item) => item.id === e.target.value);
+                    const selected = finalEvaluationLecciones.find((item) => item.id === e.target.value);
                     if (selected) fillLeccionEditor(selected);
+                    else setEditLeccionForm((prev) => ({ ...prev, id: "", titulo: "", descripcion: "", orden: "0", activo: true }));
                   }}
                 >
-                  {leccionesEditorOptions.length === 0 ? (
-                    <option value="">Sin lecciones</option>
-                  ) : (
-                    leccionesEditorOptions.map((leccion) => (
-                      <option key={leccion.id} value={leccion.id}>
-                        {leccion.unidadNombre} / {leccion.temaNombre} / {leccion.titulo}
-                      </option>
-                    ))
-                  )}
+                  <option value="">Selecciona una evaluación final</option>
+                  {finalEvaluationLecciones.map((leccion) => (
+                    <option key={leccion.id} value={leccion.id}>
+                      {leccion.unidadNombre} / {leccion.temaNombre} / {leccion.titulo}
+                    </option>
+                  ))}
                 </select>
                 <input
                   className="mt-2 w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm bg-white"
@@ -1516,10 +1704,10 @@ export default function ContenidoPage() {
                     type="button"
                     onClick={() => openLessonFinalQuizEditor(editLeccionForm.id)}
                     disabled={!editLeccionForm.id}
-                    className="inline-flex items-center gap-1 rounded-md border border-cyan-200 px-3 py-1.5 text-xs font-medium text-cyan-700 hover:bg-cyan-50 disabled:opacity-50"
+                    className="inline-flex items-center gap-1 rounded-md border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
                   >
-                    <FileQuestion size={12} />
-                    Prueba final
+                    <Pencil size={12} />
+                    Editar leccion
                   </button>
                 </div>
               </div>
@@ -1672,19 +1860,11 @@ export default function ContenidoPage() {
                                 <>
                                   <button
                                     type="button"
-                                    onClick={() => openLeccionEditor(l.id)}
+                                    onClick={() => openLessonFinalQuizEditor(l.id)}
                                     className="inline-flex items-center gap-1 rounded-md border border-indigo-200 px-2 py-0.5 text-xs font-medium text-indigo-700 hover:bg-indigo-50"
                                   >
                                     <Pencil size={12} />
                                     Editar
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => openLessonFinalQuizEditor(l.id)}
-                                    className="inline-flex items-center gap-1 rounded-md border border-cyan-200 px-2 py-0.5 text-xs font-medium text-cyan-700 hover:bg-cyan-50"
-                                  >
-                                    <FileQuestion size={12} />
-                                    Prueba final
                                   </button>
                                   <button
                                     onClick={() => onDeleteLeccion(l.id, l.titulo)}
