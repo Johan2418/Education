@@ -26,7 +26,7 @@ export interface CreateForoMensajePayload {
 
 export interface UpsertVideoProgresoPayload {
   leccion_seccion_id: string;
-  youtube_video_id: string;
+  youtube_video_id?: string;
   watched_seconds?: number;
   total_seconds?: number;
   porcentaje_visto?: number;

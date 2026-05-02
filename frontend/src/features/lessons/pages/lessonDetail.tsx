@@ -53,6 +53,17 @@ function normalizeError(err: unknown): string {
   return "Error inesperado";
 }
 
+interface ApiEnvelope<T> {
+  data: T;
+}
+
+function unwrapApiData<T>(payload: T | ApiEnvelope<T>): T {
+  if (typeof payload === "object" && payload !== null && "data" in payload) {
+    return (payload as ApiEnvelope<T>).data;
+  }
+  return payload as T;
+}
+
 function extractYouTubeVideoId(raw: string | null | undefined): string | null {
   if (!raw) return null;
   const input = raw.trim();
@@ -146,8 +157,11 @@ export default function LessonDetailPage() {
 
   const [videoWatchedDraft, setVideoWatchedDraft] = useState("0");
   const [videoTotalDraft, setVideoTotalDraft] = useState("0");
+  const [localVideoMaxAllowedTime, setLocalVideoMaxAllowedTime] = useState(0);
   const [savingVideoProgress, setSavingVideoProgress] = useState(false);
   const [checkpointQuestion, setCheckpointQuestion] = useState<CheckpointQuestion | null>(null);
+  const [checkpointQuestionLoading, setCheckpointQuestionLoading] = useState(false);
+  const [checkpointQuestionLoadError, setCheckpointQuestionLoadError] = useState<string | null>(null);
   const [checkpointPromptVisible, setCheckpointPromptVisible] = useState(false);
   const [checkpointSelectedOption, setCheckpointSelectedOption] = useState("");
   const [checkpointSubmitting, setCheckpointSubmitting] = useState(false);
@@ -270,6 +284,12 @@ export default function LessonDetailPage() {
 
   const youtubeVideoId = useMemo(() => extractYouTubeVideoId(contentURL), [contentURL]);
   const currentVideoProgress = currentSection ? videoProgressBySeccion[currentSection.id] : undefined;
+  const videoProgressPercent = useMemo(() => {
+    const watched = safeNumber(videoWatchedDraft);
+    const total = safeNumber(videoTotalDraft);
+    return total > 0 ? Math.min(100, Math.max(0, Math.round((watched / total) * 100))) : 0;
+  }, [videoWatchedDraft, videoTotalDraft]);
+  const showVideoProgress = useMemo(() => safeNumber(videoTotalDraft) > 0, [videoTotalDraft]);
 
   const currentSectionRef = useRef<LeccionSeccion | null>(null);
   const currentGatingRef = useRef<LeccionSeccionGatingPDF | null>(null);
@@ -278,6 +298,7 @@ export default function LessonDetailPage() {
   const checkpointPromptVisibleRef = useRef(false);
   const youtubePlayerContainerRef = useRef<HTMLDivElement | null>(null);
   const youtubePlayerRef = useRef<any>(null);
+  const lastYoutubeTimeRef = useRef<number>(0);
   const youtubeTimeMonitorRef = useRef<number | null>(null);
   const maxAllowedYoutubeTimeRef = useRef<number>(0);
   const currentVideoProgressRef = useRef<LeccionVideoProgreso | undefined>(undefined);
@@ -370,6 +391,10 @@ export default function LessonDetailPage() {
     }
   };
 
+  // YouTube uses a polling monitor to detect current playback time and
+  // enforce checkpoint blocking when the user seeks ahead. This differs from
+  // local video, which relies on the native onTimeUpdate event and a max
+  // allowed time state.
   const startYoutubeTimeMonitor = () => {
     if (!youtubePlayerRef.current || youtubeTimeMonitorRef.current !== null) return;
 
@@ -379,7 +404,7 @@ export default function LessonDetailPage() {
       const checkpointQuestion = checkpointQuestionRef.current;
       const checkpointUnlocked = checkpointUnlockedRef.current;
       const checkpointPromptVisible = checkpointPromptVisibleRef.current;
-      if (!youtubePlayerRef.current || !currentSection || !currentGating?.habilitado || checkpointUnlocked) return;
+      if (!youtubePlayerRef.current || !currentSection || !currentGating?.habilitado) return;
       const checkpointSeconds = currentGating.checkpoint_segundos;
       if (checkpointSeconds == null || checkpointSeconds <= 0) return;
 
@@ -387,42 +412,54 @@ export default function LessonDetailPage() {
       if (typeof currentTime !== "number" || Number.isNaN(currentTime)) return;
 
       const previousMax = maxAllowedYoutubeTimeRef.current;
-      const hasForwardSeek = currentTime > previousMax + 1.5;
+      const lastTime = lastYoutubeTimeRef.current;
+      const forwardJump = currentTime - lastTime;
+      const hasForwardSeek = forwardJump > 1.5;
 
       if (hasForwardSeek) {
-        if (currentTime >= checkpointSeconds && checkpointSeconds > previousMax) {
+        if (!checkpointUnlocked && currentTime >= checkpointSeconds && checkpointSeconds > previousMax) {
           maxAllowedYoutubeTimeRef.current = checkpointSeconds;
           youtubePlayerRef.current.seekTo(checkpointSeconds, true);
           youtubePlayerRef.current.pauseVideo?.();
-          if (checkpointQuestion) {
-            setCheckpointPromptVisible(true);
-          }
+          setCheckpointPromptVisible(true);
+          lastYoutubeTimeRef.current = checkpointSeconds;
           return;
         }
         youtubePlayerRef.current.seekTo(previousMax, true);
         youtubePlayerRef.current.pauseVideo?.();
+        toast("No puedes adelantar el video. Continúa viendo para desbloquear más contenido.", { duration: 3000 });
+        lastYoutubeTimeRef.current = previousMax;
         return;
       }
 
       if (currentTime > previousMax) {
         maxAllowedYoutubeTimeRef.current = currentTime;
       }
+      lastYoutubeTimeRef.current = currentTime;
 
-      if (currentTime >= checkpointSeconds && !checkpointPromptVisible) {
+      const duration = youtubePlayerRef.current.getDuration?.();
+      if (typeof duration === "number" && Number.isFinite(duration) && duration > 0) {
+        setVideoTotalDraft(String(Math.floor(duration)));
+      }
+      setVideoWatchedDraft(String(Math.floor(currentTime)));
+
+      if (!checkpointUnlocked && currentTime >= checkpointSeconds && !checkpointPromptVisible) {
         maxAllowedYoutubeTimeRef.current = Math.max(maxAllowedYoutubeTimeRef.current, checkpointSeconds);
         youtubePlayerRef.current.pauseVideo?.();
-        if (checkpointQuestion) {
-          setCheckpointPromptVisible(true);
-        }
+        setCheckpointPromptVisible(true);
       }
     }, 500);
   };
 
   const handleYouTubeStateChange = (event: any) => {
     const playerState = (window as any).YT?.PlayerState;
-    if (event.data === playerState?.PLAYING) {
+    const playingState = playerState?.PLAYING ?? 1;
+    const pausedState = playerState?.PAUSED ?? 2;
+    const endedState = playerState?.ENDED ?? 0;
+
+    if (event.data === playingState) {
       startYoutubeTimeMonitor();
-    } else if (event.data === playerState?.PAUSED || event.data === playerState?.ENDED) {
+    } else if (event.data === pausedState || event.data === endedState) {
       stopYoutubeTimeMonitor();
     }
   };
@@ -446,12 +483,13 @@ export default function LessonDetailPage() {
     };
     const message = errorCodes[error.data] || `Error desconocido (código: ${error.data})`;
     console.error("YouTube player error:", error.data, message);
-    toast.error(`Error del reproductor: ${message}`);
+    setYoutubePlayerCreationFailed(true);
+    if (error.data === 101 || error.data === 150) {
+      toast.error("Este video no permite ser embebido. Intenta ver el video directamente en YouTube.");
+    } else {
+      toast.error(`Error del reproductor: ${message}`);
+    }
   };
-
-  const youtubeEmbedUrl = youtubeVideoId
-    ? `https://www.youtube-nocookie.com/embed/${youtubeVideoId}?controls=1&disablekb=1&rel=0&modestbranding=1&origin=${encodeURIComponent(window.location.origin)}&fs=0&iv_load_policy=3&playsinline=1`
-    : null;
 
   const isEmbeddedYouTubeSection = Boolean(youtubeVideoId);
   const isVideoSection = currentSection?.tipo === "video" || isEmbeddedYouTubeSection;
@@ -462,11 +500,9 @@ export default function LessonDetailPage() {
     && currentGating?.habilitado
     && currentGating?.checkpoint_segundos != null
     && currentGating?.checkpoint_segundos > 0
-    && currentGating?.seccion_preguntas_id
   );
 
-  const useYoutubeIframeFallback = !hasCheckpointConfig && (youtubeApiLoadFailed || youtubeApiTimeoutExpired || youtubePlayerCreationFailed);
-  const youtubeCheckpointUnavailable = hasCheckpointConfig && (youtubeApiLoadFailed || youtubeApiTimeoutExpired || youtubePlayerCreationFailed);
+  // Usar la API de iframe de YouTube para controlar playback y checkpoint
 
   useEffect(() => {
     if (!youtubeVideoId || !youtubeApiReady || !youtubePlayerContainerRef.current) return;
@@ -499,14 +535,15 @@ export default function LessonDetailPage() {
                 // ignore seek errors during initialization
               }
               maxAllowedYoutubeTimeRef.current = safeTime;
+              setVideoWatchedDraft(String(Math.floor(safeTime)));
             }
-            if (checkpointQuestionRef.current) {
-              startYoutubeTimeMonitor();
+
+            const duration = event.target.getDuration?.();
+            if (typeof duration === "number" && Number.isFinite(duration) && duration > 0) {
+              setVideoTotalDraft(String(Math.floor(duration)));
             }
-            if (event.target?.playVideo) {
-              event.target.playVideo?.();
-              event.target.pauseVideo?.();
-            }
+
+            startYoutubeTimeMonitor();
             setYoutubePlayerCreationFailed(false);
           },
           onStateChange: handleYouTubeStateChange,
@@ -533,12 +570,12 @@ export default function LessonDetailPage() {
   }, [youtubeVideoId, youtubeApiReady]);
 
   useEffect(() => {
-    if (!youtubePlayerRef.current || !checkpointQuestion || checkpointPromptVisible || checkpointUnlocked) return;
+    if (!youtubePlayerRef.current || checkpointPromptVisible) return;
     const YT = (window as any).YT;
     if (YT?.Player && youtubePlayerRef.current.getPlayerState?.() === YT.PlayerState.PLAYING) {
       startYoutubeTimeMonitor();
     }
-  }, [checkpointQuestion, checkpointPromptVisible, checkpointUnlocked, youtubeApiReady]);
+  }, [checkpointPromptVisible, youtubeApiReady]);
 
   useEffect(() => {
     if (!youtubeVideoId) return;
@@ -760,41 +797,81 @@ export default function LessonDetailPage() {
     : 0;
 
   useEffect(() => {
-    if (!currentSection || !youtubeVideoId) {
-      setVideoWatchedDraft("0");
-      setVideoTotalDraft("0");
-      return;
+    if (!currentSection) return;
+    
+    if (youtubeVideoId) {
+      const existing = videoProgressBySeccion[currentSection.id];
+      setVideoWatchedDraft(String(existing?.watched_seconds ?? 0));
+      setVideoTotalDraft(String(existing?.total_seconds ?? 0));
+    } else {
+      // Video local - inicializar desde progreso guardado
+      const existing = videoProgressBySeccion[currentSection.id];
+      const watchedSeconds = existing?.watched_seconds ?? 0;
+      setVideoWatchedDraft(String(watchedSeconds));
+      setVideoTotalDraft(String(existing?.total_seconds ?? 0));
+      setLocalVideoMaxAllowedTime(watchedSeconds);
     }
-
-    const existing = videoProgressBySeccion[currentSection.id];
-    setVideoWatchedDraft(String(existing?.watched_seconds ?? 0));
-    setVideoTotalDraft(String(existing?.total_seconds ?? 0));
   }, [currentSection, youtubeVideoId, videoProgressBySeccion]);
 
+  const onLocalVideoLoadedMetadata = () => {
+    const player = videoElementRef.current;
+    if (!player) return;
+
+    // Local video initializes playback from saved progress and ensures
+    // the duration is known for the progress UI. The checkpoint flow is
+    // enforced by onTimeUpdate and localVideoMaxAllowedTime.
+    if (typeof player.duration === "number" && Number.isFinite(player.duration) && player.duration > 0) {
+      setVideoTotalDraft(String(Math.floor(player.duration)));
+    }
+
+    const startingTime = localVideoMaxAllowedTime;
+    if (startingTime > 0 && startingTime < player.duration) {
+      player.currentTime = startingTime;
+      setVideoWatchedDraft(String(Math.floor(startingTime)));
+    }
+  };
+
   const onSaveVideoProgress = async () => {
-    if (!currentSection || !youtubeVideoId) return;
+    if (!currentSection) return;
+    
     const watched = safeNumber(videoWatchedDraft);
     const total = safeNumber(videoTotalDraft);
 
     setSavingVideoProgress(true);
     try {
-      const payload = {
+      const payload: {
+        leccion_seccion_id: string;
+        watched_seconds: number;
+        total_seconds?: number;
+        porcentaje_visto?: number;
+        youtube_video_id?: string;
+      } = {
         leccion_seccion_id: currentSection.id,
-        youtube_video_id: youtubeVideoId,
         watched_seconds: watched,
         total_seconds: total > 0 ? total : undefined,
         porcentaje_visto: total > 0 ? Math.min(100, (watched / total) * 100) : undefined,
       };
+      
+      // Solo agregar youtube_video_id si es un video de YouTube
+      if (youtubeVideoId) {
+        payload.youtube_video_id = youtubeVideoId;
+      }
+      
       const updated = await upsertVideoProgreso(payload);
       setVideoProgressBySeccion((prev) => ({
         ...prev,
         [currentSection.id]: updated,
       }));
 
+      // Actualizar el máximo tiempo permitido si el usuario guardó más progreso
+      if (!youtubeVideoId && watched > localVideoMaxAllowedTime) {
+        setLocalVideoMaxAllowedTime(watched);
+      }
+
       if (!isEditor && updated.completado && !progSecciones[currentSection.id]?.completado) {
         await markSectionComplete(currentSection.id);
       }
-      toast.success("Progreso de YouTube guardado");
+      toast.success(youtubeVideoId ? "Progreso de YouTube guardado" : "Progreso de video guardado");
     } catch (err) {
       toast.error(normalizeError(err));
     } finally {
@@ -848,13 +925,22 @@ export default function LessonDetailPage() {
     if (checkpointSeconds == null || checkpointSeconds <= 0) return;
 
     const questionSection = secciones.find((section) => section.id === requiredSectionId);
-    if (!questionSection?.prueba_id) return;
+    if (!questionSection?.prueba_id) {
+      setCheckpointQuestionLoadError("No se encontró la prueba configurada para el checkpoint.");
+      setCheckpointQuestionLoading(false);
+      return;
+    }
     const pruebaId = questionSection.prueba_id;
 
     let active = true;
+    setCheckpointQuestionLoading(true);
+    setCheckpointQuestionLoadError(null);
     void (async () => {
       try {
-        const prueba = await api.get<PruebaCompleta>(`/pruebas/${pruebaId}/completa`);
+        const pruebaResponse = await api.get<PruebaCompleta | ApiEnvelope<PruebaCompleta>>(
+          `/pruebas/${pruebaId}/completa`
+        );
+        const prueba = unwrapApiData(pruebaResponse);
         const firstQuestion = prueba?.preguntas?.[0];
         const options = (firstQuestion?.respuestas || [])
           .map((respuesta) => ({
@@ -864,7 +950,13 @@ export default function LessonDetailPage() {
           }))
           .filter((option) => option.text.trim() !== "");
 
-        if (!active || !firstQuestion || options.length < 2 || !options.some((option) => option.isCorrect)) {
+        if (!active) return;
+        if (!firstQuestion) {
+          setCheckpointQuestionLoadError("No se encontró la pregunta del checkpoint.");
+          return;
+        }
+        if (options.length < 2 || !options.some((option) => option.isCorrect)) {
+          setCheckpointQuestionLoadError("La pregunta del checkpoint no tiene opciones válidas.");
           return;
         }
 
@@ -874,8 +966,12 @@ export default function LessonDetailPage() {
           prompt: firstQuestion.texto,
           options,
         });
-      } catch {
-        // keep null when the linked quiz cannot be loaded
+      } catch (error) {
+        setCheckpointQuestionLoadError(normalizeError(error));
+      } finally {
+        if (active) {
+          setCheckpointQuestionLoading(false);
+        }
       }
     })();
 
@@ -895,13 +991,37 @@ export default function LessonDetailPage() {
 
   const onVideoTimeUpdate = () => {
     if (isEditor || currentSection?.tipo !== "video" || youtubeVideoId) return;
+    
+    const player = videoElementRef.current;
+    if (!player) return;
+
+    const currentTime = player.currentTime;
+    const duration = player.duration;
+    
+    // Actualizar progreso de video y rastrear máximo tiempo visto
+    if (isFinite(currentTime) && isFinite(duration) && duration > 0) {
+      setVideoWatchedDraft(String(Math.floor(currentTime)));
+      setVideoTotalDraft(String(Math.floor(duration)));
+      
+      // Actualizar el máximo tiempo permitido basado en lo visto
+      if (currentTime > localVideoMaxAllowedTime) {
+        setLocalVideoMaxAllowedTime(currentTime);
+      }
+    }
+
+    // Verificar si el usuario intenta adelantar más allá del máximo permitido
+    if (localVideoMaxAllowedTime > 0 && currentTime > localVideoMaxAllowedTime + 1) {
+      // El usuario está tratando de adelantar - lo llevamos de vuelta
+      player.currentTime = localVideoMaxAllowedTime;
+      toast("No puedes adelantar el video. Continúa viendo para desbloquear más contenido.", { duration: 3000 });
+      return;
+    }
+
+    // Verificar checkpoint
     if (!currentGating?.habilitado || !checkpointQuestion || checkpointUnlocked || checkpointPromptVisible) return;
 
     const checkpointSeconds = currentGating.checkpoint_segundos;
     if (checkpointSeconds == null || checkpointSeconds <= 0) return;
-
-    const player = videoElementRef.current;
-    if (!player) return;
 
     if (player.currentTime >= checkpointSeconds) {
       player.pause();
@@ -940,11 +1060,17 @@ export default function LessonDetailPage() {
         setCheckpointUnlocked(true);
         setCheckpointPromptVisible(false);
         setCheckpointSelectedOption("");
+
         try {
-          await videoElementRef.current?.play();
+          if (youtubePlayerRef.current?.playVideo) {
+            youtubePlayerRef.current.playVideo();
+          } else {
+            await videoElementRef.current?.play();
+          }
         } catch {
           // no-op
         }
+
         toast.success("Checkpoint de video superado. Puedes continuar.");
       } else {
         toast.error("Respuesta incorrecta. Intenta nuevamente para desbloquear el video.");
@@ -1430,123 +1556,104 @@ export default function LessonDetailPage() {
 
               {shouldRenderVideoSection && (
                 <div className="mb-4 space-y-3">
-                  {youtubeVideoId ? (
-                    <>
-                      {youtubeCheckpointUnavailable ? (
-                        <div className="aspect-video w-full rounded-lg border border-red-300 bg-red-50 flex items-center justify-center p-4 text-center">
-                          <div>
-                            <p className="text-sm font-semibold text-red-900 mb-2">No se puede cargar el reproductor de YouTube con checkpoint.</p>
-                            <p className="text-sm text-red-900">Actualiza la página o prueba otro navegador. El checkpoint requiere la API de YouTube activa.</p>
+                  <div className="relative">
+                    {youtubeVideoId ? (
+                      <div className="aspect-video w-full overflow-hidden rounded-lg border border-slate-200 bg-black">
+                        <div ref={youtubePlayerContainerRef} className="h-full w-full" />
+
+                        {!youtubeApiReady && !youtubeApiLoadFailed && !youtubeApiTimeoutExpired && (
+                          <div className="absolute inset-0 flex items-center justify-center bg-black/70 px-4 text-center text-sm text-white">
+                            Cargando reproductor de YouTube...
                           </div>
-                        </div>
-                      ) : !useYoutubeIframeFallback && youtubeApiReady ? (
-                        <div className="aspect-video w-full overflow-hidden rounded-lg border border-slate-200 bg-black" ref={youtubePlayerContainerRef} />
-                      ) : useYoutubeIframeFallback ? (
-                        <div className="aspect-video w-full overflow-hidden rounded-lg border border-slate-200 bg-black">
-                          <iframe
-                            title="YouTube video"
-                            src={youtubeEmbedUrl || undefined}
-                            className="h-full w-full"
-                            loading="lazy"
-                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                            referrerPolicy="strict-origin-when-cross-origin"
-                            allowFullScreen
-                          />
-                        </div>
-                      ) : (
-                        <div className="aspect-video w-full rounded-lg border border-slate-200 bg-black flex items-center justify-center">
-                          <span className="text-sm text-white">Cargando reproductor de YouTube...</span>
-                        </div>
-                      )}
+                        )}
 
-                      {!isEditor && currentGating?.checkpoint_segundos && (
-                        <div className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
-                          Este video usa reproductor YouTube embebido. Si se configura un checkpoint en tiempo, el video se pausará y mostrará la pregunta asociada.
-                        </div>
-                      )}
-
-                      {useYoutubeIframeFallback && (
-                        <div className="rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-900">
-                          Este mensaje confirma que el código actualizado se está ejecutando.
-                          El reproductor de YouTube está en modo fallback porque la API de YouTube no pudo cargarse o fue bloqueada.
-                        </div>
-                      )}
-
-                      <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-                        <p className="text-sm font-medium text-slate-800 mb-2">Comprobacion de visualizacion YouTube (minimo 90%)</p>
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-2 mb-2">
-                          <label className="text-sm text-slate-700">
-                            Segundos vistos
-                            <input
-                              value={videoWatchedDraft}
-                              onChange={(e) => setVideoWatchedDraft(e.target.value)}
-                              className="mt-1 w-full rounded-md border border-slate-300 px-2 py-1"
-                              inputMode="numeric"
-                            />
-                          </label>
-                          <label className="text-sm text-slate-700">
-                            Duracion total
-                            <input
-                              value={videoTotalDraft}
-                              onChange={(e) => setVideoTotalDraft(e.target.value)}
-                              className="mt-1 w-full rounded-md border border-slate-300 px-2 py-1"
-                              inputMode="numeric"
-                            />
-                          </label>
-                          <div className="text-sm text-slate-700 flex flex-col justify-end">
-                            <p>
-                              Estado: {currentVideoProgress?.completado ? "Completado" : "Pendiente"}
-                            </p>
-                            <p>
-                              Progreso: {Math.round(currentVideoProgress?.porcentaje_visto || 0)}%
-                            </p>
+                        {(youtubeApiLoadFailed || youtubeApiTimeoutExpired || youtubePlayerCreationFailed) && (
+                          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-black/80 px-4 text-center text-sm text-white">
+                            <p>No se pudo cargar el video embebido de YouTube.</p>
+                            <p>Recarga la página o abre el video directo en YouTube.</p>
                           </div>
-                        </div>
-                        <button
-                          onClick={() => void onSaveVideoProgress()}
-                          disabled={savingVideoProgress}
-                          className="px-3 py-2 rounded-md bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
-                        >
-                          {savingVideoProgress ? "Guardando..." : "Guardar progreso YouTube"}
-                        </button>
+                        )}
                       </div>
-                    </>
-                  ) : (
-                    <video
-                      ref={videoElementRef}
-                      src={contentURL || undefined}
-                      controls
-                      onTimeUpdate={onVideoTimeUpdate}
-                      className="w-full rounded"
-                    />
+                    ) : (
+                      <video
+                        ref={videoElementRef}
+                        src={contentURL || undefined}
+                        controls
+                        onLoadedMetadata={onLocalVideoLoadedMetadata}
+                        onTimeUpdate={onVideoTimeUpdate}
+                        className="w-full rounded"
+                      />
+                    )}
+
+                    {checkpointPromptVisible && (
+                      <div className="absolute inset-0 z-20 flex items-center justify-center bg-slate-950/80 p-4">
+                        <div className="w-full max-w-2xl rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl">
+                          {/* This modal is shared for both YouTube and local video checkpoints */}
+                          <p className="text-sm font-semibold text-slate-700 mb-2">
+                            Checkpoint del video (segundo {currentGating?.checkpoint_segundos}): responde para continuar
+                          </p>
+                          {checkpointQuestion ? (
+                            <>
+                              <p className="text-base text-slate-900 mb-4">{checkpointQuestion.prompt}</p>
+                              <div className="space-y-3 mb-4">
+                                {checkpointQuestion.options.map((option) => (
+                                  <label key={option.id} className="flex items-center gap-3 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-slate-900 transition hover:border-indigo-500">
+                                    <input
+                                      type="radio"
+                                      name={`checkpoint-${checkpointQuestion.seccionId}`}
+                                      checked={checkpointSelectedOption === option.id}
+                                      onChange={() => setCheckpointSelectedOption(option.id)}
+                                    />
+                                    <span>{option.text}</span>
+                                  </label>
+                                ))}
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => void onSubmitCheckpointQuestion()}
+                                disabled={checkpointSubmitting || !checkpointSelectedOption}
+                                className="inline-flex items-center justify-center rounded-full bg-indigo-700 px-5 py-3 text-sm font-semibold text-white transition hover:bg-indigo-800 disabled:cursor-not-allowed disabled:opacity-60"
+                              >
+                                {checkpointSubmitting ? "Validando..." : "Enviar respuesta y continuar"}
+                              </button>
+                            </>
+                          ) : checkpointQuestionLoading ? (
+                            <div className="text-sm text-slate-700">Cargando pregunta del checkpoint...</div>
+                          ) : checkpointQuestionLoadError ? (
+                            <div className="text-sm text-rose-700">{checkpointQuestionLoadError}</div>
+                          ) : (
+                            <div className="text-sm text-slate-700">Cargando pregunta del checkpoint...</div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {!isEditor && hasCheckpointConfig && (
+                    <div className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                      Este video tiene un checkpoint en el segundo {currentGating?.checkpoint_segundos}. Responde la pregunta para continuar viendo.
+                    </div>
                   )}
 
-                  {!isEditor && checkpointPromptVisible && checkpointQuestion && (
-                    <div className="rounded-lg border border-indigo-300 bg-indigo-50 p-4">
-                      <p className="text-sm font-semibold text-indigo-900 mb-2">
-                        Checkpoint del video (segundo {currentGating?.checkpoint_segundos}): responde para continuar
-                      </p>
-                      <p className="text-sm text-indigo-900 mb-3">{checkpointQuestion.prompt}</p>
-                      <div className="space-y-2 mb-3">
-                        {checkpointQuestion.options.map((option) => (
-                          <label key={option.id} className="flex items-center gap-2 text-sm text-indigo-900">
-                            <input
-                              type="radio"
-                              name={`checkpoint-${checkpointQuestion.seccionId}`}
-                              checked={checkpointSelectedOption === option.id}
-                              onChange={() => setCheckpointSelectedOption(option.id)}
-                            />
-                            {option.text}
-                          </label>
-                        ))}
+                  {showVideoProgress && (
+                    <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                      <p className="text-sm font-medium text-slate-800 mb-3">Progreso de visualización</p>
+                      <div className="w-full overflow-hidden rounded-full bg-slate-200 h-3 mb-3">
+                        <div
+                          className="h-full bg-blue-600 transition-all"
+                          style={{ width: `${videoProgressPercent}%` }}
+                        />
+                      </div>
+                      <div className="flex items-center justify-between text-sm text-slate-700 mb-3">
+                        <span>{videoProgressPercent}% completado</span>
+                        <span>{safeNumber(videoWatchedDraft)} / {safeNumber(videoTotalDraft)} seg</span>
                       </div>
                       <button
-                        type="button"
-                        onClick={() => void onSubmitCheckpointQuestion()}
-                        disabled={checkpointSubmitting || !checkpointSelectedOption}
-                        className="rounded-md bg-indigo-700 px-3 py-2 text-white hover:bg-indigo-800 disabled:opacity-50"
+                        onClick={() => void onSaveVideoProgress()}
+                        disabled={savingVideoProgress}
+                        className="px-3 py-2 rounded-md bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
                       >
-                        {checkpointSubmitting ? "Validando..." : "Enviar respuesta y continuar"}
+                        {savingVideoProgress ? "Guardando..." : "Guardar progreso de video"}
                       </button>
                     </div>
                   )}
