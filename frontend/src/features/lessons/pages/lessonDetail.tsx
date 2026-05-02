@@ -299,6 +299,7 @@ export default function LessonDetailPage() {
   const youtubePlayerContainerRef = useRef<HTMLDivElement | null>(null);
   const youtubePlayerRef = useRef<any>(null);
   const lastYoutubeTimeRef = useRef<number>(0);
+  const lastYoutubePollAtRef = useRef<number>(Date.now());
   const youtubeTimeMonitorRef = useRef<number | null>(null);
   const maxAllowedYoutubeTimeRef = useRef<number>(0);
   const currentVideoProgressRef = useRef<LeccionVideoProgreso | undefined>(undefined);
@@ -398,6 +399,7 @@ export default function LessonDetailPage() {
   const startYoutubeTimeMonitor = () => {
     if (!youtubePlayerRef.current || youtubeTimeMonitorRef.current !== null) return;
 
+    lastYoutubePollAtRef.current = Date.now();
     youtubeTimeMonitorRef.current = window.setInterval(() => {
       const currentSection = currentSectionRef.current;
       const currentGating = currentGatingRef.current;
@@ -413,22 +415,18 @@ export default function LessonDetailPage() {
 
       const previousMax = maxAllowedYoutubeTimeRef.current;
       const lastTime = lastYoutubeTimeRef.current;
+      const now = Date.now();
+      const elapsedSeconds = Math.min(Math.max((now - lastYoutubePollAtRef.current) / 1000, 0), 5);
+      const naturalThreshold = Math.max(1.5, elapsedSeconds + 0.75);
       const forwardJump = currentTime - lastTime;
-      const hasForwardSeek = forwardJump > 1.5;
+      const hasForwardSeek = forwardJump > naturalThreshold;
 
       if (hasForwardSeek) {
-        if (!checkpointUnlocked && currentTime >= checkpointSeconds && checkpointSeconds > previousMax) {
-          maxAllowedYoutubeTimeRef.current = checkpointSeconds;
-          youtubePlayerRef.current.seekTo(checkpointSeconds, true);
-          youtubePlayerRef.current.pauseVideo?.();
-          setCheckpointPromptVisible(true);
-          lastYoutubeTimeRef.current = checkpointSeconds;
-          return;
-        }
         youtubePlayerRef.current.seekTo(previousMax, true);
         youtubePlayerRef.current.pauseVideo?.();
         toast("No puedes adelantar el video. Continúa viendo para desbloquear más contenido.", { duration: 3000 });
         lastYoutubeTimeRef.current = previousMax;
+        lastYoutubePollAtRef.current = now;
         return;
       }
 
@@ -436,6 +434,7 @@ export default function LessonDetailPage() {
         maxAllowedYoutubeTimeRef.current = currentTime;
       }
       lastYoutubeTimeRef.current = currentTime;
+      lastYoutubePollAtRef.current = now;
 
       const duration = youtubePlayerRef.current.getDuration?.();
       if (typeof duration === "number" && Number.isFinite(duration) && duration > 0) {
