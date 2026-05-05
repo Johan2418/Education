@@ -65,6 +65,25 @@ func (h *Handler) CreatePrueba(w http.ResponseWriter, r *http.Request) {
 	shared.Created(w, item)
 }
 
+func (h *Handler) ListMisPruebasEstudiante(w http.ResponseWriter, r *http.Request) {
+	claims := middleware.GetClaims(r.Context())
+	if claims == nil {
+		shared.Error(w, http.StatusUnauthorized, "No autenticado")
+		return
+	}
+	if claims.UserRole != "student" {
+		shared.Error(w, http.StatusForbidden, "No autorizado")
+		return
+	}
+
+	items, err := h.svc.ListMisPruebasByEstudiante(r.Context(), claims.Subject)
+	if err != nil {
+		shared.Error(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	shared.Success(w, items)
+}
+
 func (h *Handler) UpdatePrueba(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "pruebaId")
 	var req PruebaRequest

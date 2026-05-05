@@ -449,8 +449,7 @@ export default function ContenidoPage() {
         descripcion: unidadForm.descripcion.trim() || null,
       });
       setUnidadForm({ nombre: "", descripcion: "" });
-      await loadHierarchy();
-      toast.success(t("teacher.subjects.createSection.created.unit", { defaultValue: "Unidad creada" }));
+      await reloadHierarchyAfterSave(t("teacher.subjects.createSection.created.unit", { defaultValue: "Unidad creada" }));
     } catch (err) {
       console.error("[onCreateUnidad] Error:", err);
       toast.error(t("teacher.subjects.createSection.errors.unit", { defaultValue: "No se pudo crear la unidad" }));
@@ -479,10 +478,9 @@ export default function ContenidoPage() {
       });
       const createdTema = unwrapApiData(createdTemaResponse);
       setTemaForm((prev) => ({ ...prev, nombre: "", descripcion: "" }));
-      await loadHierarchy();
+      await reloadHierarchyAfterSave(t("teacher.subjects.createSection.created.topic", { defaultValue: "Tema creado" }));
       setTopicBeingConfigured(createdTema);
       setIsTopicConfigOpen(true);
-      toast.success(t("teacher.subjects.createSection.created.topic", { defaultValue: "Tema creado" }));
     } catch (err) {
       console.error("[onCreateTema] Error:", err);
       toast.error(t("teacher.subjects.createSection.errors.topic", { defaultValue: "No se pudo crear el tema" }));
@@ -519,10 +517,9 @@ export default function ContenidoPage() {
       });
       const createdLeccion = unwrapApiData(createdLeccionResponse);
       setLeccionForm((prev) => ({ ...prev, titulo: "", descripcion: "", nivel: "" }));
-      await loadHierarchy();
+      await reloadHierarchyAfterSave(t("teacher.subjects.createSection.created.lesson", { defaultValue: "Lección creada" }));
       setLessonBeingQuizConfigured(createdLeccion);
       setIsLessonQuizModalOpen(true);
-      toast.success(t("teacher.subjects.createSection.created.lesson", { defaultValue: "Lección creada" }));
     } catch (err) {
       console.error("[onCreateLeccion] Error:", err);
       toast.error(t("teacher.subjects.createSection.errors.lesson", { defaultValue: "No se pudo crear la lección" }));
@@ -556,8 +553,7 @@ export default function ContenidoPage() {
         orden: Math.trunc(order),
         activo: editUnidadForm.activo,
       });
-      await loadHierarchy();
-      toast.success("Unidad actualizada");
+      await reloadHierarchyAfterSave("Unidad actualizada");
     } catch (err) {
       console.error("[onUpdateUnidad] Error:", err);
       toast.error("No se pudo actualizar la unidad");
@@ -617,8 +613,7 @@ export default function ContenidoPage() {
         orden: Math.trunc(order),
         activo: editTemaForm.activo,
       });
-      await loadHierarchy();
-      toast.success("Tema actualizado");
+      await reloadHierarchyAfterSave("Tema actualizado");
     } catch (err) {
       console.error("[onUpdateTema] Error:", err);
       toast.error("No se pudo actualizar el tema");
@@ -652,8 +647,7 @@ export default function ContenidoPage() {
         orden: Math.trunc(order),
         activo: editLeccionForm.activo,
       });
-      await loadHierarchy();
-      toast.success("Evaluacion final actualizada");
+      await reloadHierarchyAfterSave("Evaluacion final actualizada");
     } catch (err) {
       console.error("[onUpdateLeccion] Error:", err);
       toast.error("No se pudo actualizar la evaluacion final");
@@ -725,6 +719,16 @@ export default function ContenidoPage() {
       toast.error(normalizeError(err));
     }
   };
+
+  const reloadHierarchyAfterSave = useCallback(async (successMessage: string): Promise<void> => {
+    try {
+      await loadHierarchy();
+      toast.success(successMessage);
+    } catch (refreshErr) {
+      console.error("[reloadHierarchyAfterSave] Error:", refreshErr);
+      toast.success(`${successMessage}. Se guardo, pero no se pudo refrescar automaticamente.`);
+    }
+  }, [loadHierarchy]);
 
   const onDeleteUnidad = async (unidadId: string, nombre: string) => {
     if (!window.confirm(
@@ -811,8 +815,7 @@ export default function ContenidoPage() {
         descripcion: unidad.descripcion || null,
         orden: Math.trunc(order),
       });
-      await loadHierarchy();
-      toast.success("Orden de unidad actualizado");
+      await reloadHierarchyAfterSave("Orden de unidad actualizado");
     } catch (err) {
       console.error("[onSaveUnidadOrder] Error:", err);
       toast.error("No se pudo actualizar el orden de la unidad");
@@ -837,8 +840,7 @@ export default function ContenidoPage() {
         descripcion: tema.descripcion || null,
         orden: Math.trunc(order),
       });
-      await loadHierarchy();
-      toast.success("Orden de tema actualizado");
+      await reloadHierarchyAfterSave("Orden de tema actualizado");
     } catch (err) {
       console.error("[onSaveTemaOrder] Error:", err);
       toast.error("No se pudo actualizar el orden del tema");
@@ -1745,149 +1747,6 @@ export default function ContenidoPage() {
           await loadHierarchy();
         }}
       />
-
-      {unidades.length === 0 ? (
-        <p className="text-gray-500">{t("contents.noUnits", { defaultValue: "No hay unidades disponibles" })}</p>
-      ) : (
-        <div className="space-y-6">
-          {unidades.map((u) => (
-            <div key={u.id} className="bg-white rounded-lg shadow p-4">
-              <div className="flex flex-wrap items-start justify-between gap-2 mb-2">
-                <h2 className="text-lg font-semibold">{u.nombre}</h2>
-                {canCreateContent && (
-                  <div className="flex items-center gap-2">
-                    <label className="text-xs text-slate-500">
-                      Orden
-                      <input
-                        type="number"
-                        min={0}
-                        value={unidadOrderDraft[u.id] ?? String(u.orden ?? 0)}
-                        onChange={(e) => setUnidadOrderDraft((prev) => ({ ...prev, [u.id]: e.target.value }))}
-                        className="ml-1 w-16 rounded border border-slate-300 px-1 py-0.5 text-xs"
-                      />
-                    </label>
-                    <button
-                      type="button"
-                      onClick={() => void onSaveUnidadOrder(u)}
-                      disabled={savingUnidadOrder === u.id}
-                      className="rounded border border-slate-300 px-2 py-1 text-xs text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-                    >
-                      {savingUnidadOrder === u.id ? "Guardando..." : "Guardar orden"}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => openUnidadEditor(u.id)}
-                      className="rounded border border-indigo-200 px-2 py-1 text-xs text-indigo-700 hover:bg-indigo-50 inline-flex items-center gap-1"
-                    >
-                      <Pencil size={12} />
-                      Editar
-                    </button>
-                    <button
-                      onClick={() => onDeleteUnidad(u.id, u.nombre)}
-                      disabled={isDeletingUnidad === u.id}
-                      className="rounded px-2 py-1 text-red-600 hover:bg-red-50 disabled:opacity-50 transition text-sm inline-flex items-center gap-1"
-                    >
-                      <Trash2 size={14} />
-                      {t("common.delete", { defaultValue: "Eliminar" })}
-                    </button>
-                  </div>
-                )}
-              </div>
-              {u.descripcion && <p className="text-sm text-gray-500 mb-3">{u.descripcion}</p>}
-              {u.temas.length === 0 ? (
-                <p className="text-sm text-gray-400">{t("contents.noTopics", { defaultValue: "Sin temas" })}</p>
-              ) : (
-                u.temas.map((tema) => (
-                  <div key={tema.id} className="ml-4 mb-3">
-                    <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
-                      <h3 className="font-medium text-gray-800">{tema.nombre}</h3>
-                      {canCreateContent && (
-                        <div className="flex items-center gap-2">
-                          <label className="text-[11px] text-slate-500">
-                            Orden
-                            <input
-                              type="number"
-                              min={0}
-                              value={temaOrderDraft[tema.id] ?? String(tema.orden ?? 0)}
-                              onChange={(e) => setTemaOrderDraft((prev) => ({ ...prev, [tema.id]: e.target.value }))}
-                              className="ml-1 w-14 rounded border border-slate-300 px-1 py-0.5 text-[11px]"
-                            />
-                          </label>
-                          <button
-                            type="button"
-                            onClick={() => void onSaveTemaOrder(tema)}
-                            disabled={savingTemaOrder === tema.id}
-                            className="rounded border border-slate-300 px-2 py-0.5 text-[11px] text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-                          >
-                            {savingTemaOrder === tema.id ? "Guardando..." : "Guardar"}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => openTemaEditor(tema.id)}
-                            className="rounded border border-indigo-200 px-2 py-0.5 text-[11px] text-indigo-700 hover:bg-indigo-50 inline-flex items-center gap-0.5"
-                          >
-                            <Pencil size={11} />
-                            Editar
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => openTopicContentEditor(tema.id)}
-                            className="rounded border border-violet-200 px-2 py-0.5 text-[11px] text-violet-700 hover:bg-violet-50 inline-flex items-center gap-0.5"
-                          >
-                            <Settings size={11} />
-                            Contenido
-                          </button>
-                          <button
-                            onClick={() => onDeleteTema(tema.id, tema.nombre)}
-                            disabled={isDeletingTema === tema.id}
-                            className="rounded px-1.5 py-0.5 text-red-600 hover:bg-red-50 disabled:opacity-50 transition text-xs inline-flex items-center gap-0.5"
-                          >
-                            <Trash2 size={12} />
-                            {t("common.delete", { defaultValue: "Eliminar" })}
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                    {tema.lecciones.length > 0 && (
-                      <ul className="mt-1 space-y-1">
-                        {tema.lecciones.map((l) => (
-                          <li key={l.id}>
-                            <div className="flex flex-wrap items-center gap-2">
-                              <button onClick={() => void openLessonEvaluation(l.id)} className="text-blue-600 hover:underline text-sm">
-                                {l.titulo}
-                              </button>
-                              {canCreateContent && (
-                                <>
-                                  <button
-                                    type="button"
-                                    onClick={() => openLessonFinalQuizEditor(l.id)}
-                                    className="inline-flex items-center gap-1 rounded-md border border-indigo-200 px-2 py-0.5 text-xs font-medium text-indigo-700 hover:bg-indigo-50"
-                                  >
-                                    <Pencil size={12} />
-                                    Editar
-                                  </button>
-                                  <button
-                                    onClick={() => onDeleteLeccion(l.id, l.titulo)}
-                                    disabled={isDeletingLeccion === l.id}
-                                    className="inline-flex items-center gap-1 rounded-md border border-red-200 px-2 py-0.5 text-xs font-medium text-red-700 hover:bg-red-50 disabled:opacity-50"
-                                  >
-                                    <Trash2 size={12} />
-                                    {t("common.delete", { defaultValue: "Eliminar" })}
-                                  </button>
-                                </>
-                              )}
-                            </div>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                  </div>
-                ))
-              )}
-            </div>
-          ))}
-        </div>
-      )}
     </div>
   );
 }

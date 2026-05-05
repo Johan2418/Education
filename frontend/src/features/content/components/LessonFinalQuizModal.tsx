@@ -358,7 +358,12 @@ export function LessonFinalQuizModal({ open, lesson, onClose, onSaved }: LessonF
       }
 
       toast.success("Prueba final guardada.");
-      await Promise.resolve(onSaved?.());
+      try {
+        await Promise.resolve(onSaved?.());
+      } catch (refreshErr) {
+        console.error("[LessonFinalQuizModal.onSave] Persistido, pero fallo el refresco:", refreshErr);
+        toast.success("Prueba guardada, pero no se pudo refrescar la vista automaticamente.");
+      }
       onClose();
     } catch (err) {
       toast.error(normalizeError(err));

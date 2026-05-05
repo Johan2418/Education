@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   ArrowDown,
   ArrowUp,
+  CheckCircle,
   FileQuestion,
   FileText,
   GripVertical,
@@ -1033,71 +1034,174 @@ export function TopicConfigurationModal({ open, topic, onClose, onSaved }: Topic
                   </div>
 
                   {(block.type === "document" || block.type === "video" || block.type === "image") && (
-                    <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3">
-                      <div className="mb-2 flex flex-wrap items-center gap-2">
+                    <div className={`mt-4 rounded-2xl border-2 p-5 shadow-md transition-all ${
+                      block.type === "image"
+                        ? "border-gradient-to-r from-pink-300 to-orange-300 bg-gradient-to-br from-pink-50 to-orange-50"
+                        : block.type === "video"
+                          ? "border-slate-300 bg-gradient-to-br from-blue-50 to-white"
+                          : "border-slate-300 bg-gradient-to-br from-slate-50 to-white"
+                    }`}>
+                      <div className="mb-4 flex items-center gap-3">
+                        <div className={`p-2.5 rounded-lg ${
+                          block.type === "image"
+                            ? "bg-gradient-to-br from-pink-200 to-orange-200"
+                            : block.type === "video"
+                              ? "bg-gradient-to-br from-blue-200 to-cyan-200"
+                              : "bg-slate-200"
+                        }`}>
+                          {block.type === "image" ? (
+                            <ImageIcon size={18} className="text-orange-700" />
+                          ) : block.type === "video" ? (
+                            <Video size={18} className="text-blue-700" />
+                          ) : (
+                            <FileText size={18} className="text-slate-700" />
+                          )}
+                        </div>
+                        <h4 className={`text-sm font-bold ${
+                          block.type === "image"
+                            ? "text-orange-900"
+                            : block.type === "video"
+                              ? "text-blue-900"
+                              : "text-slate-900"
+                        }`}>
+                          {block.type === "image" ? "Configurar Imagen" : block.type === "video" ? "Configurar Video" : "Configurar Documento"}
+                        </h4>
+                      </div>
+                      
+                      <div className={`mb-4 flex gap-2 rounded-xl p-3 ${
+                        block.type === "image"
+                          ? "bg-white/70"
+                          : "bg-white"
+                      }`}>
                         <button
                           type="button"
                           onClick={() => updateBlock(block.id, (prev) => ({ ...prev, sourceMode: "url" }))}
-                          className={`rounded-md px-2 py-1 text-xs ${
+                          className={`flex-1 rounded-lg px-4 py-2.5 text-sm font-semibold transition-all ${
                             block.sourceMode === "url"
-                              ? "bg-violet-600 text-white"
-                              : "border border-slate-300 text-slate-700 hover:bg-slate-100"
+                              ? block.type === "image"
+                                ? "bg-gradient-to-r from-pink-500 to-orange-500 text-white shadow-lg"
+                                : "bg-violet-600 text-white shadow-lg"
+                              : "border-2 border-slate-200 text-slate-700 hover:bg-slate-50"
                           }`}
                         >
-                          URL
+                          🔗 URL
                         </button>
                         <button
                           type="button"
                           onClick={() => updateBlock(block.id, (prev) => ({ ...prev, sourceMode: "file" }))}
-                          className={`rounded-md px-2 py-1 text-xs ${
+                          className={`flex-1 rounded-lg px-4 py-2.5 text-sm font-semibold transition-all ${
                             block.sourceMode === "file"
-                              ? "bg-violet-600 text-white"
-                              : "border border-slate-300 text-slate-700 hover:bg-slate-100"
+                              ? block.type === "image"
+                                ? "bg-gradient-to-r from-pink-500 to-orange-500 text-white shadow-lg"
+                                : "bg-violet-600 text-white shadow-lg"
+                              : "border-2 border-slate-200 text-slate-700 hover:bg-slate-50"
                           }`}
                         >
-                          Archivo local
+                          💾 Local
                         </button>
                       </div>
 
                       {block.sourceMode === "url" ? (
-                        <label className="text-sm text-slate-800">
-                          URL del archivo
-                          <input
-                            value={block.sourceUrl}
-                            onChange={(e) =>
-                              updateBlock(block.id, (prev) => ({
-                                ...prev,
-                                sourceUrl: e.target.value,
-                              }))
-                            }
-                            placeholder="https://..."
-                            className="mt-1 w-full rounded-md border border-slate-300 px-2 py-1.5"
-                          />
-                        </label>
+                        <div className="space-y-4">
+                          <label className="block">
+                            <span className={`text-sm font-semibold ${block.type === "image" ? "text-orange-900" : "text-slate-900"}`}>
+                              URL del {block.type === "image" ? "Archivo de Imagen" : block.type === "video" ? "Video" : "Documento"}
+                            </span>
+                            <input
+                              value={block.sourceUrl}
+                              onChange={(e) =>
+                                updateBlock(block.id, (prev) => ({
+                                  ...prev,
+                                  sourceUrl: e.target.value,
+                                }))
+                              }
+                              placeholder={block.type === "image" ? "https://ejemplo.com/imagen.jpg" : "https://..."}
+                              className={`mt-2 w-full rounded-lg border-2 px-4 py-2.5 text-sm placeholder-slate-400 transition-all focus:outline-none ${
+                                block.type === "image"
+                                  ? "border-pink-300 focus:border-orange-500 focus:ring-2 focus:ring-orange-300"
+                                  : "border-slate-300 focus:border-violet-500 focus:ring-2 focus:ring-violet-300"
+                              }`}
+                            />
+                          </label>
+                          {block.type === "image" && block.sourceUrl && (
+                            <div className="mt-4 rounded-xl border-3 border-dashed border-orange-200 bg-gradient-to-b from-white to-orange-50 p-4 overflow-hidden">
+                              <p className="mb-3 text-xs font-bold uppercase tracking-wide text-orange-700">📸 Vista Previa:</p>
+                              <div className="rounded-lg bg-white p-3 shadow-inner">
+                                <img 
+                                  src={block.sourceUrl} 
+                                  alt="Preview" 
+                                  className="max-h-72 max-w-full rounded-lg object-contain shadow-md mx-auto"
+                                  onError={(e) => {
+                                    (e.target as HTMLImageElement).style.display = "none";
+                                  }}
+                                />
+                              </div>
+                            </div>
+                          )}
+                        </div>
                       ) : (
-                        <label className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-50">
-                          <Upload size={14} />
-                          Seleccionar archivo
-                          <input
-                            type="file"
-                            className="hidden"
-                            accept={
-                              block.type === "document"
-                                ? ".pdf,.doc,.docx,.ppt,.pptx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation"
-                                : block.type === "video"
-                                  ? "video/*"
-                                  : "image/*"
-                            }
-                            onChange={(e) => {
-                              const file = e.target.files?.[0] ?? null;
-                              void onFilePicked(block.id, file);
-                            }}
-                          />
-                        </label>
-                      )}
+                        <div className="space-y-4">
+                          <label className={`flex cursor-pointer items-center justify-center gap-3 rounded-xl border-3 border-dashed p-6 transition-all ${
+                            block.type === "image"
+                              ? "border-orange-300 bg-gradient-to-br from-orange-100 to-pink-100 hover:from-orange-200 hover:to-pink-200 text-orange-700"
+                              : "border-violet-300 bg-gradient-to-br from-violet-100 to-fuchsia-100 hover:from-violet-200 hover:to-fuchsia-200 text-violet-700"
+                          }`}>
+                            <div className="text-center">
+                              <Upload size={28} className="mx-auto mb-2" />
+                              <span className="font-bold text-base">Selecciona un archivo</span>
+                              <span className="block text-xs mt-1 opacity-80">o arrastra aquí</span>
+                            </div>
+                            <input
+                              type="file"
+                              className="hidden"
+                              accept={
+                                block.type === "document"
+                                  ? ".pdf,.doc,.docx,.ppt,.pptx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation"
+                                  : block.type === "video"
+                                    ? "video/*"
+                                    : "image/*"
+                              }
+                              onChange={(e) => {
+                                const file = e.target.files?.[0] ?? null;
+                                void onFilePicked(block.id, file);
+                              }}
+                            />
+                          </label>
 
-                      {block.sourceMode === "file" && block.sourceFileName && (
-                        <p className="mt-2 text-xs text-slate-600">Archivo cargado: {block.sourceFileName}</p>
+                          {block.sourceMode === "file" && block.sourceFileName && (
+                            <div className={`rounded-xl border-2 p-4 ${
+                              block.type === "image"
+                                ? "border-emerald-300 bg-gradient-to-br from-emerald-50 to-green-50"
+                                : "border-emerald-300 bg-emerald-50"
+                            }`}>
+                              <div className="flex items-center justify-between gap-3 mb-4">
+                                <div className="flex items-center gap-3">
+                                  <div className={`p-2 rounded-lg ${
+                                    block.type === "image"
+                                      ? "bg-emerald-200"
+                                      : "bg-emerald-200"
+                                  }`}>
+                                    <CheckCircle size={20} className="text-emerald-700" />
+                                  </div>
+                                  <div>
+                                    <p className="text-sm font-bold text-emerald-900">Archivo cargado exitosamente</p>
+                                    <p className="text-xs text-emerald-700">{block.sourceFileName}</p>
+                                  </div>
+                                </div>
+                              </div>
+                              {block.type === "image" && block.sourceFileDataUrl && (
+                                <div className="rounded-lg border-3 border-dashed border-emerald-200 bg-white p-4 overflow-hidden">
+                                  <p className="mb-3 text-xs font-bold uppercase tracking-wide text-slate-700">📸 Vista Previa:</p>
+                                  <img 
+                                    src={block.sourceFileDataUrl} 
+                                    alt="Preview" 
+                                    className="max-h-72 max-w-full rounded-lg object-contain shadow-md mx-auto"
+                                  />
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
                       )}
                     </div>
                   )}

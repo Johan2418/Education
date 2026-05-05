@@ -157,12 +157,18 @@ export default function AdminCursos() {
   // Bulk assign teacher by course/year
   const [bulkAssignOpen, setBulkAssignOpen] = useState(false);
   const [bulkCurso, setBulkCurso] = useState<Curso | null>(null);
+  const [assignMode, setAssignMode] = useState<"anual" | "manual">("anual");
   const [bulkTargetYear, setBulkTargetYear] = useState(getDefaultAcademicYear());
   const [bulkSourceYear, setBulkSourceYear] = useState(getPreviousAcademicYear(getDefaultAcademicYear()));
   const [bulkSourceMaterias, setBulkSourceMaterias] = useState<Materia[]>([]);
   const [bulkTeacherByMateria, setBulkTeacherByMateria] = useState<Record<string, string>>({});
   const [loadingBulkSourceMaterias, setLoadingBulkSourceMaterias] = useState(false);
   const [runningBulkAssign, setRunningBulkAssign] = useState(false);
+  const [bulkManualMaterias, setBulkManualMaterias] = useState<Materia[]>([]);
+  const [bulkManualTeacherByMateria, setBulkManualTeacherByMateria] = useState<Record<string, string>>({});
+  const [bulkManualAssignmentsByMateria, setBulkManualAssignmentsByMateria] = useState<Record<string, DocenteMateriaAsignacion>>({});
+  const [loadingBulkManualMaterias, setLoadingBulkManualMaterias] = useState(false);
+  const [runningManualAssign, setRunningManualAssign] = useState(false);
 
   // Manual subject creation per course
   const [createMateriaOpen, setCreateMateriaOpen] = useState(false);
@@ -242,23 +248,67 @@ export default function AdminCursos() {
     }
   }, [loadMateriasByCourseYear]);
 
+  const loadBulkManualData = useCallback(async (cursoID: string, targetYear: string) => {
+    setLoadingBulkManualMaterias(true);
+    try {
+      const [materias, assignmentsRes] = await Promise.all([
+        loadMateriasByCourseYear(cursoID, ""),
+        api.get<{ data: DocenteMateriaAsignacion[] }>(`/asignaciones-docente?curso_id=${encodeURIComponent(cursoID)}&anio_escolar=${encodeURIComponent(targetYear)}&solo_activas=false`),
+      ]);
+
+      const assignments = assignmentsRes.data || [];
+      const teacherByMateria: Record<string, string> = {};
+      const assignmentMap: Record<string, DocenteMateriaAsignacion> = {};
+      const validTeacherIds = new Set(teachers.map((t) => t.id));
+
+      for (const assignment of assignments) {
+        if (!assignment.materia_id) continue;
+        if (validTeacherIds.has(assignment.docente_id)) {
+          teacherByMateria[assignment.materia_id] = assignment.docente_id;
+        }
+        assignmentMap[assignment.materia_id] = assignment;
+      }
+
+      setBulkManualMaterias(materias);
+      setBulkManualTeacherByMateria(teacherByMateria);
+      setBulkManualAssignmentsByMateria(assignmentMap);
+    } catch (err) {
+      setBulkManualMaterias([]);
+      setBulkManualTeacherByMateria({});
+      setBulkManualAssignmentsByMateria({});
+      toast.error(getErrorMessage(err, "Error al cargar materias actuales y asignaciones"));
+    } finally {
+      setLoadingBulkManualMaterias(false);
+    }
+  }, [loadMateriasByCourseYear, teachers]);
+
   const openBulkAssignModal = useCallback(async (curso: Curso) => {
     const targetYear = (anioEscolarFilter || getDefaultAcademicYear()).trim();
     const sourceYear = getPreviousAcademicYear(targetYear);
 
     setBulkCurso(curso);
+    setAssignMode("anual");
     setBulkTargetYear(targetYear);
     setBulkSourceYear(sourceYear);
     setBulkSourceMaterias([]);
     setBulkTeacherByMateria({});
+    setBulkManualMaterias([]);
+    setBulkManualTeacherByMateria({});
+    setBulkManualAssignmentsByMateria({});
     setBulkAssignOpen(true);
 
-    await loadBulkSourceData(curso.id, sourceYear);
-  }, [anioEscolarFilter, loadBulkSourceData]);
+    await Promise.all([
+      loadBulkSourceData(curso.id, sourceYear),
+      loadBulkManualData(curso.id, targetYear),
+    ]);
+  }, [anioEscolarFilter, loadBulkManualData, loadBulkSourceData]);
 
-  const handleBulkTargetYearChange = (value: string) => {
+  const handleBulkTargetYearChange = async (value: string) => {
     setBulkTargetYear(value);
     setBulkSourceYear(getPreviousAcademicYear(value));
+    if (bulkCurso) {
+      await loadBulkManualData(bulkCurso.id, value.trim() || getDefaultAcademicYear());
+    }
   };
 
   const handleRunBulkAssign = async () => {
@@ -305,6 +355,9 @@ export default function AdminCursos() {
       setBulkCurso(null);
       setBulkSourceMaterias([]);
       setBulkTeacherByMateria({});
+      setBulkManualMaterias([]);
+      setBulkManualTeacherByMateria({});
+      setBulkManualAssignmentsByMateria({});
 
       await Promise.all([
         loadCatalogData(anioEscolarFilter),
@@ -314,6 +367,87 @@ export default function AdminCursos() {
       toast.error(getErrorMessage(err, "Error al clonar materias y asignar docentes"));
     } finally {
       setRunningBulkAssign(false);
+    }
+  };
+
+  const handleRunManualAssign = async () => {
+    if (!bulkCurso) return;
+
+    const destino = bulkTargetYear.trim();
+    if (!destino.match(/^\d{4}-\d{4}$/)) {
+      toast.error("El año escolar debe tener formato YYYY-YYYY");
+      return;
+    }
+    if (bulkManualMaterias.length === 0) {
+      toast.error("No hay materias actuales para asignar docentes");
+      return;
+    }
+
+    const selectedMaterias = bulkManualMaterias.filter((materia) => !!bulkManualTeacherByMateria[materia.id]);
+    if (selectedMaterias.length === 0) {
+      toast.error("Selecciona al menos una materia con docente para guardar");
+      return;
+    }
+
+    setRunningManualAssign(true);
+    try {
+      const operations = selectedMaterias.map(async (materia) => {
+        const docenteId = (bulkManualTeacherByMateria[materia.id] || "").trim();
+        const existing = bulkManualAssignmentsByMateria[materia.id];
+
+        if (existing && existing.docente_id?.trim() === docenteId && existing.activo) {
+          return existing;
+        }
+
+        if (existing) {
+          return api.put(`/asignaciones-docente/${existing.id}`, {
+            docente_id: docenteId,
+            anio_escolar: existing.anio_escolar?.trim() || destino,
+            activo: true,
+          });
+        }
+
+        return api.post("/asignaciones-docente", {
+          docente_id: docenteId,
+          materia_id: materia.id,
+          anio_escolar: destino,
+          activo: true,
+        });
+      });
+
+      const results = await Promise.allSettled(operations);
+      const success = results.filter((result) => result.status === "fulfilled").length;
+      const failed = results.length - success;
+
+      if (success > 0) {
+        toast.success(`Asignaciones manuales completadas: ${success} registradas${failed > 0 ? `, ${failed} con error` : ""}`);
+      }
+      if (failed > 0) {
+        results.forEach((result) => {
+          if (result.status === "rejected") {
+            console.error("Manual assignment save failed", result.reason);
+          }
+        });
+        toast.error(`Ocurrieron ${failed} errores al guardar asignaciones`);
+      }
+
+      setBulkAssignOpen(false);
+      setBulkCurso(null);
+      setBulkSourceMaterias([]);
+      setBulkTeacherByMateria({});
+      setBulkManualMaterias([]);
+      setBulkManualTeacherByMateria({});
+      setBulkManualAssignmentsByMateria({});
+
+      await Promise.all([
+        loadCatalogData(anioEscolarFilter),
+        loadAssignments(anioEscolarFilter, onlyActiveAssignments),
+      ]);
+    } catch (err) {
+      console.error("Error manual asignacion docente", err);
+      toast.error(getErrorMessage(err, "Error al guardar asignaciones manuales"));
+    } finally {
+      setRunningManualAssign(false);
     }
   };
 
@@ -346,15 +480,31 @@ export default function AdminCursos() {
       })
     );
 
+    const allMateriasEntries = await Promise.all(
+      nextCursos.map(async (curso) => {
+        try {
+          const materiasRes = await api.get<{ data: Materia[] }>(`/cursos/${curso.id}/materias`);
+          return [curso.id, materiasRes.data || []] as [string, Materia[]];
+        } catch {
+          return [curso.id, []] as [string, Materia[]];
+        }
+      })
+    );
+
     const nextMateriasByCurso: Record<string, Materia[]> = {};
+    const nextAllMateriasByCurso: Record<string, Materia[]> = {};
+
     for (const [cursoID, materias] of materiasEntries) {
       nextMateriasByCurso[cursoID] = materias;
+    }
+    for (const [cursoID, materias] of allMateriasEntries) {
+      nextAllMateriasByCurso[cursoID] = materias;
     }
     setMateriasByCurso(nextMateriasByCurso);
 
     const flattened: MateriaOption[] = [];
     for (const curso of nextCursos) {
-      const materias = nextMateriasByCurso[curso.id] || [];
+      const materias = nextAllMateriasByCurso[curso.id] || [];
       for (const materia of materias) {
         flattened.push({
           ...materia,
@@ -526,6 +676,15 @@ export default function AdminCursos() {
     () => bulkSourceMaterias.filter((materia) => !bulkTeacherByMateria[materia.id]).length,
     [bulkSourceMaterias, bulkTeacherByMateria]
   );
+  const bulkManualSelectedMaterias = useMemo(
+    () => bulkManualMaterias.filter((materia) => !!bulkManualTeacherByMateria[materia.id]),
+    [bulkManualMaterias, bulkManualTeacherByMateria]
+  );
+  const bulkManualSelectedCount = useMemo(
+    () => bulkManualSelectedMaterias.length,
+    [bulkManualSelectedMaterias]
+  );
+  const bulkManualReady = bulkManualSelectedCount > 0;
   const bulkReady = bulkSourceMaterias.length > 0 && bulkMissingTeacherCount === 0;
 
   /* ── Course CRUD ─────────────────────────────────────── */
@@ -1265,7 +1424,7 @@ export default function AdminCursos() {
         <div className="p-6 max-h-[85vh] overflow-y-auto">
           <div className="flex items-center justify-between mb-4">
             <div>
-              <h2 className="text-lg font-semibold text-gray-900">Asignar maestro por año</h2>
+              <h2 className="text-lg font-semibold text-gray-900">Asignar maestro por materia</h2>
               <p className="text-sm text-gray-500">
                 {bulkCurso ? `Curso: ${bulkCurso.nombre}` : "Selecciona un curso"}
               </p>
@@ -1275,93 +1434,205 @@ export default function AdminCursos() {
             </button>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-3 items-end mb-4">
+          <div className="flex flex-wrap gap-2 mb-4">
+            <button
+              type="button"
+              onClick={() => setAssignMode("anual")}
+              className={`px-4 py-2 rounded-lg border ${assignMode === "anual" ? "bg-violet-700 text-white border-violet-700" : "bg-white text-gray-700 border-gray-300 hover:bg-gray-50"}`}
+            >
+              Asignación anual
+            </button>
+            <button
+              type="button"
+              onClick={() => setAssignMode("manual")}
+              className={`px-4 py-2 rounded-lg border ${assignMode === "manual" ? "bg-violet-700 text-white border-violet-700" : "bg-white text-gray-700 border-gray-300 hover:bg-gray-50"}`}
+            >
+              Asignación manual
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-end mb-4">
             <div>
               <label className="block text-sm font-medium mb-1">Año destino</label>
               <input
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
                 value={bulkTargetYear}
-                onChange={(e) => handleBulkTargetYearChange(e.target.value)}
+                onChange={(e) => void handleBulkTargetYearChange(e.target.value)}
                 placeholder="YYYY-YYYY"
               />
             </div>
 
-            <div>
-              <label className="block text-sm font-medium mb-1">Año origen</label>
-              <input
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-gray-50"
-                value={bulkSourceYear}
-                readOnly
-              />
+            {assignMode === "anual" && (
+              <div>
+                <label className="block text-sm font-medium mb-1">Año origen</label>
+                <input
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-gray-50"
+                  value={bulkSourceYear}
+                  readOnly
+                />
+              </div>
+            )}
+
+            <div className="flex flex-wrap gap-3 md:col-span-2">
+              {assignMode === "anual" ? (
+                <>
+                  <button
+                    onClick={() => bulkCurso && void loadBulkSourceData(bulkCurso.id, bulkSourceYear)}
+                    disabled={!bulkCurso || loadingBulkSourceMaterias}
+                    className="px-4 py-2 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                  >
+                    {loadingBulkSourceMaterias ? "Cargando..." : "Recargar materias origen"}
+                  </button>
+                  <button
+                    onClick={() => void handleRunBulkAssign()}
+                    disabled={!bulkCurso || loadingBulkSourceMaterias || runningBulkAssign || !bulkReady}
+                    className="px-4 py-2 rounded-lg bg-violet-700 text-white hover:bg-violet-800 disabled:opacity-50 inline-flex items-center justify-center gap-2"
+                  >
+                    {runningBulkAssign ? <Loader2 size={14} className="animate-spin" /> : <UserPlus size={14} />}
+                    Ejecutar asignación anual
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button
+                    onClick={() => bulkCurso && void loadBulkManualData(bulkCurso.id, bulkTargetYear)}
+                    disabled={!bulkCurso || loadingBulkManualMaterias}
+                    className="px-4 py-2 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                  >
+                    {loadingBulkManualMaterias ? "Cargando..." : "Recargar materias del curso"}
+                  </button>
+                  <button
+                    onClick={() => void handleRunManualAssign()}
+                    disabled={!bulkCurso || loadingBulkManualMaterias || runningManualAssign || !bulkManualReady}
+                    className="px-4 py-2 rounded-lg bg-violet-700 text-white hover:bg-violet-800 disabled:opacity-50 inline-flex items-center justify-center gap-2"
+                  >
+                    {runningManualAssign ? <Loader2 size={14} className="animate-spin" /> : <UserPlus size={14} />}
+                    Guardar asignaciones manuales
+                  </button>
+                </>
+              )}
             </div>
-
-            <button
-              onClick={() => bulkCurso && void loadBulkSourceData(bulkCurso.id, bulkSourceYear)}
-              disabled={!bulkCurso || loadingBulkSourceMaterias}
-              className="px-4 py-2 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-            >
-              {loadingBulkSourceMaterias ? "Cargando..." : "Recargar materias origen"}
-            </button>
-
-            <button
-              onClick={() => void handleRunBulkAssign()}
-              disabled={!bulkCurso || loadingBulkSourceMaterias || runningBulkAssign || !bulkReady}
-              className="px-4 py-2 rounded-lg bg-violet-700 text-white hover:bg-violet-800 disabled:opacity-50 inline-flex items-center justify-center gap-2"
-            >
-              {runningBulkAssign ? <Loader2 size={14} className="animate-spin" /> : <UserPlus size={14} />}
-              Ejecutar asignación anual
-            </button>
           </div>
 
-          <div className={`mb-4 rounded-lg border px-3 py-2 text-sm ${bulkMissingTeacherCount > 0 ? "border-amber-200 bg-amber-50 text-amber-800" : "border-emerald-200 bg-emerald-50 text-emerald-800"}`}>
-            {bulkMissingTeacherCount > 0
-              ? `Faltan ${bulkMissingTeacherCount} materia(s) por asignar docente antes de ejecutar.`
-              : "Todo listo para ejecutar la asignacion anual."}
-          </div>
-
-          {loadingBulkSourceMaterias ? (
-            <div className="py-10 text-center text-gray-500">
-              <Loader2 size={22} className="animate-spin mx-auto mb-2 text-violet-600" />
-              Cargando materias del año origen...
-            </div>
-          ) : bulkSourceMaterias.length === 0 ? (
-            <div className="text-center text-gray-500 p-8 bg-gray-50 rounded-lg border border-gray-200">
-              No se encontraron materias para {bulkSourceYear} en este curso.
+          {assignMode === "anual" ? (
+            <div className={`mb-4 rounded-lg border px-3 py-2 text-sm ${bulkMissingTeacherCount > 0 ? "border-amber-200 bg-amber-50 text-amber-800" : "border-emerald-200 bg-emerald-50 text-emerald-800"}`}>
+              {bulkMissingTeacherCount > 0
+                ? `Faltan ${bulkMissingTeacherCount} materia(s) por asignar docente antes de ejecutar.`
+                : "Todo listo para ejecutar la asignacion anual."}
             </div>
           ) : (
-            <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Materia origen</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Año origen</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Docente destino</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {bulkSourceMaterias.map((materia) => (
-                    <tr key={materia.id} className="hover:bg-gray-50">
-                      <td className="px-4 py-3 text-sm font-medium text-gray-900">{materia.nombre}</td>
-                      <td className="px-4 py-3 text-sm text-gray-700">{materia.anio_escolar || bulkSourceYear}</td>
-                      <td className="px-4 py-3">
-                        <select
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
-                          value={bulkTeacherByMateria[materia.id] || ""}
-                          onChange={(e) => setBulkTeacherByMateria((prev) => ({ ...prev, [materia.id]: e.target.value }))}
-                        >
-                          <option value="">Seleccionar docente</option>
-                          {teachers.map((teacher) => (
-                            <option key={teacher.id} value={teacher.id}>
-                              {teacher.display_name || teacher.email}
-                            </option>
-                          ))}
-                        </select>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div className={`mb-4 rounded-lg border px-3 py-2 text-sm ${bulkManualSelectedCount > 0 ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-amber-200 bg-amber-50 text-amber-800"}`}>
+              {bulkManualSelectedCount > 0
+                ? `Se guardarán ${bulkManualSelectedCount} materia(s) con docente seleccionado.`
+                : bulkManualMaterias.length > 0
+                  ? "Selecciona al menos una materia para guardar las asignaciones manuales." 
+                  : "Cargando materias del curso."}
             </div>
+          )}
+
+          {assignMode === "anual" ? (
+            loadingBulkSourceMaterias ? (
+              <div className="py-10 text-center text-gray-500">
+                <Loader2 size={22} className="animate-spin mx-auto mb-2 text-violet-600" />
+                Cargando materias del año origen...
+              </div>
+            ) : bulkSourceMaterias.length === 0 ? (
+              <div className="text-center text-gray-500 p-8 bg-gray-50 rounded-lg border border-gray-200">
+                No se encontraron materias para {bulkSourceYear} en este curso.
+              </div>
+            ) : (
+              <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Materia origen</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Año origen</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Docente destino</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {bulkSourceMaterias.map((materia) => (
+                      <tr key={materia.id} className="hover:bg-gray-50">
+                        <td className="px-4 py-3 text-sm font-medium text-gray-900">{materia.nombre}</td>
+                        <td className="px-4 py-3 text-sm text-gray-700">{materia.anio_escolar || bulkSourceYear}</td>
+                        <td className="px-4 py-3">
+                          <select
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                            value={bulkTeacherByMateria[materia.id] || ""}
+                            onChange={(e) => setBulkTeacherByMateria((prev) => ({ ...prev, [materia.id]: e.target.value }))}
+                          >
+                            <option value="">Seleccionar docente</option>
+                            {teachers.map((teacher) => (
+                              <option key={teacher.id} value={teacher.id}>
+                                {teacher.display_name || teacher.email}
+                              </option>
+                            ))}
+                          </select>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )
+          ) : (
+            loadingBulkManualMaterias ? (
+              <div className="py-10 text-center text-gray-500">
+                <Loader2 size={22} className="animate-spin mx-auto mb-2 text-violet-600" />
+                Cargando materias actuales...
+              </div>
+            ) : bulkManualMaterias.length === 0 ? (
+              <div className="text-center text-gray-500 p-8 bg-gray-50 rounded-lg border border-gray-200">
+                No se encontraron materias actuales para {bulkTargetYear} en este curso.
+              </div>
+            ) : (
+              <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Materia</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Año</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Docente</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {bulkManualMaterias.map((materia) => {
+                      const currentAssignment = bulkManualAssignmentsByMateria[materia.id];
+                      const invalidPreviousTeacher = currentAssignment && currentAssignment.docente_id && !teachers.some((teacher) => teacher.id === currentAssignment.docente_id);
+                      const invalidTeacherLabel = invalidPreviousTeacher
+                        ? currentAssignment.docente_nombre || currentAssignment.docente_email || currentAssignment.docente_id
+                        : null;
+
+                      return (
+                        <tr key={materia.id} className="hover:bg-gray-50">
+                          <td className="px-4 py-3 text-sm font-medium text-gray-900">{materia.nombre}</td>
+                          <td className="px-4 py-3 text-sm text-gray-700">{materia.anio_escolar || bulkTargetYear}</td>
+                          <td className="px-4 py-3">
+                            <select
+                              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                              value={bulkManualTeacherByMateria[materia.id] || ""}
+                              onChange={(e) => setBulkManualTeacherByMateria((prev) => ({ ...prev, [materia.id]: e.target.value }))}
+                            >
+                              <option value="">Seleccionar docente</option>
+                              {teachers.map((teacher) => (
+                                <option key={teacher.id} value={teacher.id}>
+                                  {teacher.display_name || teacher.email}
+                                </option>
+                              ))}
+                            </select>
+                            {invalidTeacherLabel && (
+                              <p className="mt-2 text-xs text-amber-700">
+                                Docente previo no disponible: {invalidTeacherLabel}
+                              </p>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )
           )}
         </div>
       </Modal>

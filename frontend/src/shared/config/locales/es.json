@@ -1067,6 +1067,19 @@
       "update": "Actualizar entrega",
       "submit": "Enviar entrega",
       "unsaved": "Tienes cambios sin guardar"
+    },
+    "dashboard": {
+      "tests": {
+        "title": "Pruebas asignadas",
+        "subtitle": "Pruebas de las materias matriculadas",
+        "loading": "Cargando pruebas...",
+        "noTests": "No tienes pruebas asignadas",
+        "test": "Prueba",
+        "subject": "Materia",
+        "lesson": "Lección",
+        "action": "Acción",
+        "viewTest": "Ver prueba"
+      }
     }
   },
   "lesson": {

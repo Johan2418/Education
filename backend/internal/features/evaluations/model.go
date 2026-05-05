@@ -38,6 +38,13 @@ type PruebaCompleta struct {
 	Preguntas []PreguntaConRespuestas `json:"preguntas" gorm:"-"`
 }
 
+type PruebaAsignada struct {
+	Prueba
+	LeccionTitulo string `json:"leccion_titulo"`
+	MateriaID     string `json:"materia_id"`
+	MateriaNombre string `json:"materia_nombre"`
+}
+
 // ─── Pregunta ───────────────────────────────────────────────
 
 type Pregunta struct {

@@ -18,6 +18,8 @@ import {
   updateLeccionSeccion,
   upsertSeccionGatingPdf,
 } from "@/features/lessons/services/recursos360";
+import NativeActivityMatchingForm from "@/features/lessons/components/nativeActivities/NativeActivityMatchingForm";
+import NativeActivityOrderingForm from "@/features/lessons/components/nativeActivities/NativeActivityOrderingForm";
 
 function roleAllowed(role?: string): boolean {
   return ["teacher", "admin", "super_admin", "resource_manager"].includes(role || "");
@@ -113,6 +115,16 @@ function readConfigBoolean(config: Record<string, unknown>, keys: string[], fall
   return fallback;
 }
 
+function readConfigString(config: Record<string, unknown>, keys: string[], fallback: string): string {
+  for (const key of keys) {
+    const raw = config[key];
+    if (typeof raw === "string" && raw.trim()) {
+      return raw.trim();
+    }
+  }
+  return fallback;
+}
+
 function readConfigNumber(config: Record<string, unknown>, keys: string[], fallback: number): number {
   for (const key of keys) {
     const raw = config[key];
@@ -123,6 +135,188 @@ function readConfigNumber(config: Record<string, unknown>, keys: string[], fallb
     }
   }
   return fallback;
+}
+
+interface MatchingPair {
+  id: string;
+  leftText: string;
+  rightText: string;
+}
+
+interface OrderingItem {
+  id: string;
+  text: string;
+}
+
+function extractMatchingPairs(config: Record<string, unknown>): MatchingPair[] {
+  // First, try to extract from dedicated 'pairs' structure
+  const rawPairs = config["pairs"] || config["pares"] || config["memory_pairs"] || config["memoryPairs"];
+  if (Array.isArray(rawPairs)) {
+    const extracted = rawPairs
+      .map((rawPair, idx) => {
+        if (typeof rawPair !== "object" || rawPair === null) return null;
+        const pair = rawPair as Record<string, unknown>;
+        const leftText = String(pair.left || pair.izquierda || pair.texto_izquierdo || pair.leftText || "").trim();
+        const rightText = String(pair.right || pair.derecha || pair.texto_derecho || pair.rightText || "").trim();
+        if (!leftText || !rightText) return null;
+        return {
+          id: String(pair.id || `pair_${idx}`),
+          leftText,
+          rightText,
+        };
+      })
+      .filter((p): p is MatchingPair => p !== null);
+    if (extracted.length > 0) return extracted;
+  }
+
+  // Fallback: extract from preguntas where a single question contains multiple options
+  const questions = config["preguntas"] || config["questions"];
+  if (!Array.isArray(questions)) return [];
+
+  // If there's exactly 1 question with multiple options, treat each option as a pair right text
+  if (questions.length === 1) {
+    const question = questions[0];
+    if (typeof question === "object" && question !== null) {
+      const q = question as Record<string, unknown>;
+      const prompt = String(q.prompt || q.enunciado || "").trim();
+      const options = q.opciones || q.options;
+      if (Array.isArray(options) && options.length > 0 && prompt) {
+        // Extract all options as right-side of pairs
+        return options
+          .map((opt, idx) => {
+            if (typeof opt !== "object" || opt === null) return null;
+            const optObj = opt as Record<string, unknown>;
+            const text = String(optObj.text || optObj.texto || "").trim();
+            if (!text) return null;
+            return {
+              id: String(optObj.id || `pair_${idx}`),
+              leftText: prompt,
+              rightText: text,
+            };
+          })
+          .filter((p): p is MatchingPair => p !== null);
+      }
+    }
+  }
+
+  return [];
+}
+
+function extractOrderingItems(config: Record<string, unknown>): OrderingItem[] {
+  const rawOrderingItems = config["ordering_items"] || config["orderingItems"] || config["items"] || config["elements"] || config["elements_to_order"];
+  if (Array.isArray(rawOrderingItems)) {
+    const items = rawOrderingItems
+      .map((rawItem, idx) => {
+        if (typeof rawItem !== "object" || rawItem === null) return null;
+        const item = rawItem as Record<string, unknown>;
+        const text = String(item.text || item.texto || item.label || item.elemento || "").trim();
+        if (!text) return null;
+        return {
+          id: String(item.id || `item_${idx + 1}`),
+          text,
+        };
+      })
+      .filter((item): item is OrderingItem => item !== null);
+
+    if (items.length > 0) {
+      return items;
+    }
+  }
+
+  const questions = config["preguntas"] || config["questions"];
+  if (!Array.isArray(questions)) return [];
+
+  if (questions.length === 1) {
+    const singleQuestion = questions[0];
+    if (typeof singleQuestion === "object" && singleQuestion !== null) {
+      const question = singleQuestion as Record<string, unknown>;
+      const options = question.opciones || question.options;
+      if (Array.isArray(options)) {
+        return options
+          .map((option, idx) => {
+            if (typeof option !== "object" || option === null) return null;
+            const optObj = option as Record<string, unknown>;
+            const text = String(optObj.text || optObj.texto || "").trim();
+            if (!text) return null;
+            return {
+              id: String(optObj.id || `item_${idx + 1}`),
+              text,
+            };
+          })
+          .filter((item): item is OrderingItem => item !== null);
+      }
+    }
+  }
+
+  return questions
+    .map((rawQuestion, idx) => {
+      if (typeof rawQuestion !== "object" || rawQuestion === null) return null;
+      const question = rawQuestion as Record<string, unknown>;
+      const text = String(question.prompt || question.enunciado || "").trim();
+      if (!text) return null;
+      return {
+        id: String(question.id || `item_${idx + 1}`),
+        text,
+      };
+    })
+    .filter((item): item is OrderingItem => item !== null);
+}
+
+function buildMatchingConfig(pairs: MatchingPair[]): Record<string, unknown> {
+  return {
+    preguntas: pairs.map((pair) => ({
+      id: `q_${pair.id}`,
+      prompt: pair.leftText,
+      enunciado: pair.leftText,
+      opciones: [{
+        id: `opt_${pair.id}_1`,
+        text: pair.rightText,
+        texto: pair.rightText,
+        isCorrect: true,
+        correcta: true,
+      }],
+      options: [{
+        id: `opt_${pair.id}_1`,
+        text: pair.rightText,
+        isCorrect: true,
+      }],
+    })),
+  };
+}
+
+function buildOrderingConfig(items: OrderingItem[], title: string): Record<string, unknown> {
+  return {
+    preguntas: [
+      {
+        id: "ordering_1",
+        prompt: title || "Ordena los elementos",
+        enunciado: title || "Ordena los elementos",
+        opciones: items.map((item) => ({
+          id: item.id,
+          text: item.text,
+          texto: item.text,
+          isCorrect: true,
+          correcta: true,
+        })),
+        options: items.map((item) => ({
+          id: item.id,
+          text: item.text,
+          isCorrect: true,
+        })),
+      },
+    ],
+    ordering_items: items.map((item) => ({
+      id: item.id,
+      text: item.text,
+    })),
+  };
+}
+
+function createOrderingItem(): OrderingItem {
+  return {
+    id: `item_${Date.now()}_${Math.random()}`,
+    text: "",
+  };
 }
 
 export default function TeacherLessonSectionsPage() {
@@ -144,6 +338,8 @@ export default function TeacherLessonSectionsPage() {
   const [actividades, setActividades] = useState<ActividadInteractiva[]>([]);
   const [selectedActividadId, setSelectedActividadId] = useState("");
   const [actividadForm, setActividadForm] = useState<ActividadFormState>(emptyActividadForm());
+  const [matchingPairs, setMatchingPairs] = useState<MatchingPair[]>([]);
+  const [orderingItems, setOrderingItems] = useState<OrderingItem[]>([]);
 
   const [sectionSettingsForm, setSectionSettingsForm] = useState({
     estado_publicacion: "borrador" as "borrador" | "programado" | "publicado" | "despublicado",
@@ -264,20 +460,62 @@ export default function TeacherLessonSectionsPage() {
 
     if (!linkedId) {
       setActividadForm(emptyActividadForm());
+      setMatchingPairs([]);
+      setOrderingItems([]);
       return;
     }
 
     const linkedActividad = actividades.find((item) => item.id === linkedId);
     if (linkedActividad) {
       setActividadForm(toActividadFormState(linkedActividad));
+      // Immediately sync matching pairs and ordering items from linked activity
+      const activityType = readConfigString(
+        linkedActividad.configuracion || {},
+        ["activityType", "tipo_actividad"],
+        ""
+      );
+      if (activityType === "matching") {
+        const pairs = extractMatchingPairs(linkedActividad.configuracion || {});
+        setMatchingPairs(pairs);
+      } else {
+        setMatchingPairs([]);
+      }
+      if (activityType === "ordering") {
+        const items = extractOrderingItems(linkedActividad.configuracion || {});
+        setOrderingItems(items.length > 0 ? items : [createOrderingItem()]);
+      } else {
+        setOrderingItems([]);
+      }
     }
   }, [currentSection?.id, currentSection?.actividad_interactiva_id]);
 
   useEffect(() => {
-    if (!selectedActividadId) return;
+    if (!selectedActividadId) {
+      setMatchingPairs([]);
+      setOrderingItems([]);
+      return;
+    }
     const selected = actividades.find((item) => item.id === selectedActividadId);
     if (selected) {
       setActividadForm(toActividadFormState(selected));
+      // Sync matching pairs if activity type is matching
+      const activityType = readConfigString(
+        selected.configuracion || {},
+        ["activityType", "tipo_actividad"],
+        ""
+      );
+      if (activityType === "matching") {
+        const pairs = extractMatchingPairs(selected.configuracion || {});
+        setMatchingPairs(pairs);
+      } else {
+        setMatchingPairs([]);
+      }
+      if (activityType === "ordering") {
+        const items = extractOrderingItems(selected.configuracion || {});
+        setOrderingItems(items.length > 0 ? items : [createOrderingItem()]);
+      } else {
+        setOrderingItems([]);
+      }
     }
   }, [selectedActividadId, actividades]);
 
@@ -329,6 +567,31 @@ export default function TeacherLessonSectionsPage() {
     ["auto_saltar_timeout", "auto_skip_on_timeout", "skip_on_timeout"],
     true,
   );
+
+  useEffect(() => {
+    // Sync matching pairs when activity type changes
+    const activityType = readConfigString(nativeActivityConfig, ["activityType", "tipo_actividad"], "");
+    if (activityType !== "matching") {
+      setMatchingPairs([]);
+    } else if (activityType === "matching") {
+      // Initialize from config if switching to matching
+      const pairs = extractMatchingPairs(nativeActivityConfig);
+      if (pairs.length > 0) {
+        setMatchingPairs(pairs);
+      }
+    }
+  }, [nativeActivityConfig]);
+
+  useEffect(() => {
+    const activityType = readConfigString(nativeActivityConfig, ["activityType", "tipo_actividad"], "");
+    if (activityType !== "ordering") {
+      setOrderingItems([]);
+      return;
+    }
+
+    const items = extractOrderingItems(nativeActivityConfig);
+    setOrderingItems(items.length > 0 ? items : [createOrderingItem()]);
+  }, [nativeActivityConfig]);
 
   const canManageInteractiveContent = canManageInteractive(currentRole);
 
@@ -619,6 +882,109 @@ export default function TeacherLessonSectionsPage() {
         auto_saltar_timeout: autoSkip,
         auto_skip_on_timeout: autoSkip,
       };
+
+      // If the UI has matching pairs in state, treat them as the source of truth
+      const validPairs = matchingPairs.filter((p) => p.leftText.trim() && p.rightText.trim());
+      const activityType = readConfigString(configuracionObj, ["activityType", "tipo_actividad"], "quiz");
+      if (validPairs.length > 0) {
+        if (validPairs.length < 2) {
+          toast.error("La actividad de emparejamiento requiere al menos 2 pares completos.");
+          return;
+        }
+        // Backend requires: 1 question with N options (N >= 2 = pairs)
+        configuracionObj = {
+          ...configuracionObj,
+          // ensure activity type flags are set so backend recognizes this as matching
+          activityType: "matching",
+          tipo_actividad: "matching",
+          native_activity_type: "matching",
+          nativeActivityType: "matching",
+          preguntas: [
+            {
+              id: "matching_1",
+              prompt: titulo || "Emparejar",
+              enunciado: titulo || "Emparejar",
+              opciones: validPairs.map((p) => ({
+                id: p.id,
+                text: p.rightText.trim(),
+                texto: p.rightText.trim(),
+                isCorrect: true,
+                correcta: true,
+              })),
+              options: validPairs.map((p) => ({
+                id: p.id,
+                text: p.rightText.trim(),
+                isCorrect: true,
+              })),
+            },
+          ],
+          // Preserve pairs for rehydration
+          pairs: validPairs.map((p) => ({
+            id: p.id,
+            left: p.leftText.trim(),
+            right: p.rightText.trim(),
+            izquierda: p.leftText.trim(),
+            derecha: p.rightText.trim(),
+            texto_izquierdo: p.leftText.trim(),
+            texto_derecho: p.rightText.trim(),
+          })),
+        };
+      } else if (activityType === "matching") {
+        // no pairs in state, but config claims matching: validate and preserve existing config
+        const cfgPairs = extractMatchingPairs(configuracionObj || {});
+        // If no pairs found via extraction, check for raw 'preguntas' to detect empty/corrupt state
+        const rawPreguntas = configuracionObj["preguntas"];
+        const hasQuestions = Array.isArray(rawPreguntas) && rawPreguntas.length > 0;
+        if (cfgPairs.length < 2 && !hasQuestions) {
+          toast.error("La actividad de emparejamiento requiere al menos 2 pares completos.");
+          return;
+        }
+        // Always rebuild config from extracted pairs or existing structure
+        if (cfgPairs.length >= 2) {
+          configuracionObj = {
+            ...configuracionObj,
+            preguntas: [
+              {
+                id: "matching_1",
+                prompt: titulo || "Emparejar",
+                enunciado: titulo || "Emparejar",
+                opciones: cfgPairs.map((p) => ({
+                  id: p.id,
+                  text: p.rightText.trim(),
+                  texto: p.rightText.trim(),
+                  isCorrect: true,
+                  correcta: true,
+                })),
+                options: cfgPairs.map((p) => ({
+                  id: p.id,
+                  text: p.rightText.trim(),
+                  isCorrect: true,
+                })),
+              },
+            ],
+            pairs: cfgPairs.map((p) => ({
+              id: p.id,
+              left: p.leftText.trim(),
+              right: p.rightText.trim(),
+              izquierda: p.leftText.trim(),
+              derecha: p.rightText.trim(),
+              texto_izquierdo: p.leftText.trim(),
+              texto_derecho: p.rightText.trim(),
+            })),
+          };
+        }
+      }
+      if (activityType === "ordering") {
+        const validItems = orderingItems.filter((item) => item.text.trim());
+        if (validItems.length < 2) {
+          toast.error("La actividad de ordenar requiere al menos 2 elementos.");
+          return;
+        }
+        configuracionObj = {
+          ...configuracionObj,
+          ...buildOrderingConfig(validItems, titulo),
+        };
+      }
     }
 
     setSavingActividadForm(true);
@@ -1045,7 +1411,7 @@ export default function TeacherLessonSectionsPage() {
                             <option value="h5p">H5P</option>
                             <option value="genially">Genially</option>
                             <option value="educaplay">Educaplay</option>
-                            <option value="nativo">Nativa (quiz interno)</option>
+                            <option value="nativo">Nativa</option>
                           </select>
                         </label>
                         <label className="text-sm text-slate-800 md:col-span-2">
@@ -1072,6 +1438,59 @@ export default function TeacherLessonSectionsPage() {
                           <div className="text-sm text-emerald-800 md:col-span-2 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2">
                             Proveedor nativo: esta actividad se renderiza dentro de la plataforma y no requiere URL de embed.
                           </div>
+                          <label className="text-sm text-slate-800 md:col-span-2">
+                            Tipo de actividad nativa
+                            <select
+                              value={readConfigString(nativeActivityConfig, ["activityType", "tipo_actividad"], "quiz")}
+                              onChange={(e) => patchActividadConfig({
+                                activityType: e.target.value,
+                                tipo_actividad: e.target.value,
+                              })}
+                              className="mt-1 w-full rounded-md border border-slate-300 px-2 py-1.5"
+                            >
+                              <option value="quiz">Quiz</option>
+                              <option value="true_false">Verdadero / Falso</option>
+                              <option value="fill_in_the_blank">Completar espacios</option>
+                              <option value="matching">Emparejar</option>
+                              <option value="ordering">Ordenar</option>
+                            </select>
+                          </label>
+                          
+                          {readConfigString(nativeActivityConfig, ["activityType", "tipo_actividad"], "") === "matching" ? (
+                            <div className="md:col-span-2 space-y-3">
+                              <p className="text-sm text-emerald-700 font-medium">Configuración de Emparejar</p>
+                              <NativeActivityMatchingForm
+                                pairs={matchingPairs}
+                                onPairsChange={(pairs) => {
+                                  setMatchingPairs(pairs);
+                                  const config = buildMatchingConfig(pairs);
+                                  patchActividadConfig(config);
+                                }}
+                                description="Crea pares de conceptos/preguntas con sus respuestas correspondientes. Los estudiantes deberán emparejar los items del lado izquierdo con los del lado derecho."
+                              />
+                            </div>
+                          ) : readConfigString(nativeActivityConfig, ["activityType", "tipo_actividad"], "") === "ordering" ? (
+                            <div className="md:col-span-2 space-y-3">
+                              <p className="text-sm text-emerald-700 font-medium">Configuración de Ordenar</p>
+                              <NativeActivityOrderingForm
+                                items={orderingItems}
+                                onItemsChange={(items) => {
+                                  setOrderingItems(items);
+                                  const config = buildOrderingConfig(
+                                    items.filter((item) => item.text.trim()),
+                                    actividadForm.titulo.trim() || "Ordena los elementos",
+                                  );
+                                  patchActividadConfig(config);
+                                }}
+                                description="Agrega los elementos en el orden correcto que luego verá el estudiante."
+                              />
+                            </div>
+                          ) : readConfigString(nativeActivityConfig, ["activityType", "tipo_actividad"], "") === "fill_in_the_blank" ? (
+                            <div className="md:col-span-2 text-sm text-slate-600">
+                              Utiliza el campo Configuración JSON para configurar campos con espacios en blanco, respuestas y banco de palabras.
+                            </div>
+                          ) : (
+                            <>
                           <label className="text-sm text-slate-800 inline-flex items-center gap-2 md:col-span-2">
                             <input
                               type="checkbox"
@@ -1112,6 +1531,8 @@ export default function TeacherLessonSectionsPage() {
                                 />
                                 Auto-saltar al terminar el tiempo
                               </label>
+                            </>
+                          )}
                             </>
                           )}
                         </>

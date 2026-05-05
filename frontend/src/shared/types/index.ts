@@ -31,6 +31,7 @@ export type {
 export type { Recurso, ModeloRA } from "./resources";
 export type {
   Prueba,
+  PruebaConLeccion,
   Pregunta,
   Respuesta,
   ResultadoPrueba,

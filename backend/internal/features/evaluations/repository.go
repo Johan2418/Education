@@ -2,6 +2,7 @@ package evaluations
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -23,6 +24,22 @@ func NewRepository(db *gorm.DB) *Repository {
 func (r *Repository) ListPruebasByLeccion(ctx context.Context, leccionID string) ([]Prueba, error) {
 	var items []Prueba
 	err := r.db.WithContext(ctx).Where("leccion_id = ?", leccionID).Order("orden").Find(&items).Error
+	return items, err
+}
+
+func (r *Repository) ListMisPruebasByEstudiante(ctx context.Context, estudianteID string) ([]PruebaAsignada, error) {
+	var items []PruebaAsignada
+	err := r.db.WithContext(ctx).
+		Table("internal.prueba p").
+		Select("p.*, l.titulo AS leccion_titulo, m.id AS materia_id, m.nombre AS materia_nombre").
+		Joins("JOIN internal.leccion l ON l.id = p.leccion_id").
+		Joins("JOIN internal.tema t ON t.id = l.tema_id").
+		Joins("JOIN internal.unidad u ON u.id = t.unidad_id").
+		Joins("JOIN internal.materia m ON m.id = u.materia_id").
+		Joins("JOIN internal.estudiante_curso ec ON ec.curso_id = m.curso_id AND ec.estudiante_id = ?", strings.TrimSpace(estudianteID)).
+		Where("COALESCE(m.activo, TRUE) = TRUE").
+		Order("p.created_at DESC").
+		Find(&items).Error
 	return items, err
 }
 

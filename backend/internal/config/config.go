@@ -11,12 +11,14 @@ import (
 )
 
 type Config struct {
-	Server      ServerConfig
-	Database    DatabaseConfig
-	JWT         JWTConfig
-	Email       EmailConfig
-	HuggingFace HuggingFaceConfig
-	LibroIA     HuggingFaceConfig
+	Server          ServerConfig
+	Database        DatabaseConfig
+	JWT             JWTConfig
+	Email           EmailConfig
+	HuggingFace     HuggingFaceConfig
+	LibroIA         HuggingFaceConfig
+	LibreOfficePath string
+	ConversionAPI   ConversionAPIConfig
 }
 
 type HuggingFaceConfig struct {
@@ -26,6 +28,14 @@ type HuggingFaceConfig struct {
 	EnableFallback bool
 	BaseURL        string
 	TimeoutSeconds int
+}
+
+type ConversionAPIConfig struct {
+	URL       string
+	APIKey    string
+	Header    string
+	Prefix    string
+	FileField string
 }
 
 type EmailConfig struct {
@@ -104,6 +114,14 @@ func Load() *Config {
 			EnableFallback: envOrDefaultBool("LIBRO_IA_ENABLE_FALLBACK", envOrDefaultBool("HUGGINGFACE_ENABLE_FALLBACK", false)),
 			BaseURL:        envOrDefault("LIBRO_IA_BASE_URL", envOrDefault("HUGGINGFACE_BASE_URL", "https://router.huggingface.co")),
 			TimeoutSeconds: envOrDefaultInt("LIBRO_IA_TIMEOUT_SECONDS", envOrDefaultInt("HUGGINGFACE_TIMEOUT_SECONDS", 30)),
+		},
+		LibreOfficePath: envOrDefault("LIBREOFFICE_PATH", ""),
+		ConversionAPI: ConversionAPIConfig{
+			URL:       envOrDefault("PPTX_CONVERSION_API_URL", ""),
+			APIKey:    envOrDefault("PPTX_CONVERSION_API_KEY", ""),
+			Header:    envOrDefault("PPTX_CONVERSION_API_KEY_HEADER", "Authorization"),
+			Prefix:    envOrDefault("PPTX_CONVERSION_API_KEY_PREFIX", "Bearer "),
+			FileField: envOrDefault("PPTX_CONVERSION_API_FILE_FIELD", "file"),
 		},
 	}
 }

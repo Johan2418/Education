@@ -1,0 +1,85 @@
+ Image nueva-implementacin-backend Building 
+#1 [internal] load local bake definitions
+#1 reading from stdin 662B 0.0s done
+#1 DONE 0.0s
+
+#2 [internal] load build definition from Dockerfile
+#2 transferring dockerfile: 724B done
+#2 DONE 0.0s
+
+#3 [internal] load metadata for docker.io/library/debian:bookworm-slim
+#3 ...
+
+#4 [internal] load metadata for docker.io/library/golang:1.26-bookworm
+#4 DONE 0.4s
+
+#3 [internal] load metadata for docker.io/library/debian:bookworm-slim
+#3 DONE 0.4s
+
+#5 [internal] load .dockerignore
+#5 transferring context: 2B done
+#5 DONE 0.0s
+
+#6 [builder 1/7] FROM docker.io/library/golang:1.26-bookworm@sha256:47ce5636e9936b2c5cbf708925578ef386b4f8872aec74a67bd13a627d242b19
+#6 resolve docker.io/library/golang:1.26-bookworm@sha256:47ce5636e9936b2c5cbf708925578ef386b4f8872aec74a67bd13a627d242b19 0.0s done
+#6 DONE 0.0s
+
+#7 [stage-1 1/4] FROM docker.io/library/debian:bookworm-slim@sha256:f9c6a2fd2ddbc23e336b6257a5245e31f996953ef06cd13a59fa0a1df2d5c252
+#7 resolve docker.io/library/debian:bookworm-slim@sha256:f9c6a2fd2ddbc23e336b6257a5245e31f996953ef06cd13a59fa0a1df2d5c252 0.0s done
+#7 DONE 0.0s
+
+#8 [internal] load build context
+#8 transferring context: 6.20kB 0.0s done
+#8 DONE 0.0s
+
+#9 [stage-1 2/4] RUN apt-get update     && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends         libreoffice-core         libreoffice-impress         libreoffice-writer         fonts-dejavu-core         fontconfig     && rm -rf /var/lib/apt/lists/*
+#9 CACHED
+
+#10 [builder 2/7] WORKDIR /src
+#10 CACHED
+
+#11 [builder 4/7] RUN go mod download
+#11 CACHED
+
+#12 [stage-1 3/4] COPY --from=builder /usr/local/bin/backend /usr/local/bin/backend
+#12 CACHED
+
+#13 [builder 3/7] COPY backend/go.mod backend/go.sum ./
+#13 CACHED
+
+#14 [builder 7/7] RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /usr/local/bin/backend ./cmd
+#14 CACHED
+
+#15 [builder 5/7] COPY backend ./backend
+#15 CACHED
+
+#16 [builder 6/7] WORKDIR /src/backend
+#16 CACHED
+
+#17 [stage-1 4/4] WORKDIR /app
+#17 CACHED
+
+#18 exporting to image
+#18 exporting layers done
+#18 exporting manifest sha256:d96180f76a0bc4c9dcf5aa321b4c10198b61556515d0143bcd2fa8bae6d7c35a done
+#18 exporting config sha256:192ace2d2bbf6d96f6a2e63478e3124b52c2b7157fee9388d47f789492905ba1
+#18 exporting config sha256:192ace2d2bbf6d96f6a2e63478e3124b52c2b7157fee9388d47f789492905ba1 done
+#18 exporting attestation manifest sha256:721e18030d105bbea3804948091342456818b52f18e8b97f9f03ac822f138ff8 0.0s done
+#18 exporting manifest list sha256:76337376402fdc92cfb72ee21858ba8abf2e9948eb4f80e6174b3aa2bbc4d3e6 0.0s done
+#18 naming to docker.io/library/nueva-implementacin-backend:latest done
+#18 unpacking to docker.io/library/nueva-implementacin-backend:latest done
+#18 DONE 0.1s
+
+#19 resolving provenance for metadata file
+#19 DONE 0.0s
+ Image nueva-implementacin-backend Built 
+ Container arcanea-db Recreate 
+ Container arcanea-db Recreated 
+ Container arcanea-backend Recreate 
+ Container arcanea-backend Recreated 
+ Container arcanea-db Starting 
+ Container arcanea-db Started 
+ Container arcanea-db Waiting 
+ Container arcanea-db Healthy 
+ Container arcanea-backend Starting 
+Error response from daemon: ports are not available: exposing port TCP 0.0.0.0:8082 -> 127.0.0.1:0: listen tcp 0.0.0.0:8082: bind: Only one usage of each socket address (protocol/network address/port) is normally permitted.

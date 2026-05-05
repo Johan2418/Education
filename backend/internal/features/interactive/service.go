@@ -436,9 +436,82 @@ func validateNativeConfig(config json.RawMessage) error {
 
 	var payload map[string]interface{}
 	if err := json.Unmarshal(config, &payload); err != nil {
-		return errors.New("configuracion invalida para proveedor nativo")
+		return errors.New("configuracion invalida para proveedor nativa")
 	}
 
+	activityType := resolveNativeActivityType(payload)
+	switch activityType {
+	case "quiz":
+		return validateNativeQuizConfig(payload)
+	case "true_false":
+		return validateNativeTrueFalseConfig(payload)
+	case "fill_in_the_blank":
+		return validateNativeFillInTheBlankConfig(payload)
+	case "ordering":
+		return validateNativeOrderingConfig(payload)
+	case "matching":
+		return validateNativeMatchingConfig(payload)
+	case "hotspot":
+		return validateNativeHotspotConfig(payload)
+	case "drag_and_drop":
+		return validateNativeDragAndDropConfig(payload)
+	case "interactive_map":
+		return validateNativeInteractiveMapConfig(payload)
+	case "word_search":
+		return validateNativeWordSearchConfig(payload)
+	case "crossword":
+		return validateNativeCrosswordConfig(payload)
+	case "memory":
+		return validateNativeMemoryConfig(payload)
+	case "simulator":
+		return validateNativeSimulatorConfig(payload)
+	case "virtual_lab":
+		return validateNativeVirtualLabConfig(payload)
+	default:
+		return errors.New("tipo de actividad nativa no soportado")
+	}
+}
+
+func resolveNativeActivityType(payload map[string]interface{}) string {
+	// First, check explicit activityType field
+	for _, key := range []string{"activityType", "tipo_actividad", "native_activity_type", "nativeActivityType"} {
+		if raw, ok := payload[key]; ok {
+			if s, ok := raw.(string); ok {
+				normalized := strings.ToLower(strings.TrimSpace(s))
+				if normalized != "" {
+					switch normalized {
+					case "quiz", "true_false", "fill_in_the_blank", "matching", "ordering", "hotspot", "drag_and_drop", "interactive_map", "word_search", "crossword", "memory", "simulator", "virtual_lab":
+						return normalized
+					}
+				}
+			}
+		}
+	}
+
+	// If any fill-in-the-blank field is present, classify as fill_in_the_blank
+	for _, key := range []string{"fill_blank_text", "fillBlankText", "fill_blank_answers", "fillBlankAnswers", "word_bank", "wordBank"} {
+		if _, exists := payload[key]; exists {
+			return "fill_in_the_blank"
+		}
+	}
+
+	// Only classify as quiz if there are valid preguntas/questions AND no fill-in fields
+	rawQuestions, ok := payload["preguntas"]
+	if !ok {
+		rawQuestions = payload["questions"]
+	}
+	if questions, ok := rawQuestions.([]interface{}); ok && len(questions) > 0 {
+		// Verify it's a real question structure, not just an empty array
+		if len(questions) > 0 {
+			return "quiz"
+		}
+	}
+
+	// Default: if nothing else matches and it has some config, assume fill_in_the_blank
+	return "fill_in_the_blank"
+}
+
+func validateNativeQuizConfig(payload map[string]interface{}) error {
 	rawQuestions, ok := payload["preguntas"]
 	if !ok {
 		rawQuestions = payload["questions"]
@@ -447,7 +520,6 @@ func validateNativeConfig(config json.RawMessage) error {
 	if !ok || len(questions) == 0 {
 		return errors.New("configuracion nativa requiere al menos una pregunta")
 	}
-
 	for _, rawQuestion := range questions {
 		questionObj, ok := rawQuestion.(map[string]interface{})
 		if !ok {
@@ -498,7 +570,397 @@ func validateNativeConfig(config json.RawMessage) error {
 			return errors.New("cada pregunta nativa requiere al menos una opcion correcta")
 		}
 	}
+	return nil
+}
 
+func validateNativeTrueFalseConfig(payload map[string]interface{}) error {
+	rawQuestions, ok := payload["preguntas"]
+	if !ok {
+		rawQuestions = payload["questions"]
+	}
+	questions, ok := rawQuestions.([]interface{})
+	if !ok || len(questions) == 0 {
+		return errors.New("configuracion nativa requiere al menos una pregunta")
+	}
+	for _, rawQuestion := range questions {
+		questionObj, ok := rawQuestion.(map[string]interface{})
+		if !ok {
+			return errors.New("configuracion nativa contiene preguntas invalidas")
+		}
+
+		prompt := asTrimmedString(questionObj["prompt"])
+		if prompt == "" {
+			prompt = asTrimmedString(questionObj["enunciado"])
+		}
+		if prompt == "" {
+			return errors.New("cada pregunta nativa debe tener prompt")
+		}
+
+		if _, ok := questionObj["correcta"]; !ok {
+			if _, ok := questionObj["isCorrect"]; !ok {
+				return errors.New("cada pregunta verdadero/falso debe incluir correcta o isCorrect")
+			}
+		}
+	}
+	return nil
+}
+
+func validateNativeFillInTheBlankConfig(payload map[string]interface{}) error {
+	// ONLY validate the two required fields:
+	// 1. fill_blank_text (or fillBlankText) with at least one ___
+	// 2. fill_blank_answers (or fillBlankAnswers) with at least one non-empty answer
+	// Everything else is optional
+
+	// Step 1: Validate text with blanks
+	prompt := asTrimmedString(payload["fill_blank_text"])
+	if prompt == "" {
+		prompt = asTrimmedString(payload["fillBlankText"])
+	}
+	if prompt == "" {
+		return errors.New("texto con espacios es requerido (fill_blank_text)")
+	}
+	if !strings.Contains(prompt, "___") {
+		return errors.New("texto con espacios debe contener al menos un espacio (___)")
+	}
+
+	// Step 2: Validate answers
+	rawAnswers := payload["fill_blank_answers"]
+	if rawAnswers == nil {
+		rawAnswers = payload["fillBlankAnswers"]
+	}
+
+	answers, ok := rawAnswers.([]interface{})
+	if !ok || len(answers) == 0 {
+		return errors.New("respuesta correcta por espacio es requerida (fill_blank_answers)")
+	}
+
+	// Count non-empty answers
+	validAnswers := 0
+	for _, rawAnswer := range answers {
+		if asTrimmedString(rawAnswer) != "" {
+			validAnswers++
+		}
+	}
+	if validAnswers == 0 {
+		return errors.New("al menos una respuesta debe tener texto")
+	}
+
+	return nil
+}
+
+func validateNativeOrderingConfig(payload map[string]interface{}) error {
+	rawItems := payload["items"]
+	if rawItems == nil {
+		rawItems = payload["elements"]
+	}
+	if rawItems == nil {
+		rawItems = payload["elements_to_order"]
+	}
+	if items, ok := rawItems.([]interface{}); ok && len(items) > 0 {
+		filled := 0
+		for _, rawItem := range items {
+			itemObj, ok := rawItem.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			text := asTrimmedString(itemObj["text"])
+			if text == "" {
+				text = asTrimmedString(itemObj["elemento"])
+			}
+			if text == "" {
+				text = asTrimmedString(itemObj["label"])
+			}
+			if text != "" {
+				filled++
+			}
+		}
+		if filled < 2 {
+			return errors.New("cada actividad de ordenamiento requiere al menos 2 items con texto")
+		}
+		return nil
+	}
+
+	rawQuestions, ok := payload["preguntas"]
+	if !ok {
+		rawQuestions = payload["questions"]
+	}
+	questions, ok := rawQuestions.([]interface{})
+	if !ok || len(questions) == 0 {
+		return errors.New("configuracion nativa requiere al menos una pregunta")
+	}
+	for _, rawQuestion := range questions {
+		questionObj, ok := rawQuestion.(map[string]interface{})
+		if !ok {
+			return errors.New("configuracion nativa contiene preguntas invalidas")
+		}
+
+		prompt := asTrimmedString(questionObj["prompt"])
+		if prompt == "" {
+			prompt = asTrimmedString(questionObj["enunciado"])
+		}
+		if prompt == "" {
+			return errors.New("cada pregunta nativa debe tener prompt")
+		}
+
+		rawOptions := questionObj["opciones"]
+		if rawOptions == nil {
+			rawOptions = questionObj["options"]
+		}
+		options, ok := rawOptions.([]interface{})
+		if !ok || len(options) < 2 {
+			return errors.New("cada actividad de ordenamiento requiere al menos 2 items")
+		}
+
+		filled := 0
+		for _, rawOption := range options {
+			optionObj, ok := rawOption.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			text := asTrimmedString(optionObj["texto"])
+			if text == "" {
+				text = asTrimmedString(optionObj["text"])
+			}
+			if text != "" {
+				filled++
+			}
+		}
+		if filled < 2 {
+			return errors.New("cada actividad de ordenamiento requiere al menos 2 items con texto")
+		}
+	}
+	return nil
+}
+
+func validateNativeMatchingConfig(payload map[string]interface{}) error {
+	rawQuestions, ok := payload["preguntas"]
+	if !ok {
+		rawQuestions = payload["questions"]
+	}
+	questions, ok := rawQuestions.([]interface{})
+	if !ok || len(questions) == 0 {
+		return errors.New("configuracion nativa requiere al menos una pregunta")
+	}
+	for _, rawQuestion := range questions {
+		questionObj, ok := rawQuestion.(map[string]interface{})
+		if !ok {
+			return errors.New("configuracion nativa contiene preguntas invalidas")
+		}
+
+		prompt := asTrimmedString(questionObj["prompt"])
+		if prompt == "" {
+			prompt = asTrimmedString(questionObj["enunciado"])
+		}
+		if prompt == "" {
+			return errors.New("cada pregunta nativa debe tener prompt")
+		}
+
+		rawOptions := questionObj["opciones"]
+		if rawOptions == nil {
+			rawOptions = questionObj["options"]
+		}
+		options, ok := rawOptions.([]interface{})
+		if !ok || len(options) < 2 {
+			return errors.New("cada actividad de emparejamiento requiere al menos 2 pares")
+		}
+
+		filled := 0
+		for _, rawOption := range options {
+			optionObj, ok := rawOption.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			text := asTrimmedString(optionObj["texto"])
+			if text == "" {
+				text = asTrimmedString(optionObj["text"])
+			}
+			if text != "" {
+				filled++
+			}
+		}
+		if filled < 2 {
+			return errors.New("cada actividad de emparejamiento requiere al menos 2 pares con texto")
+		}
+	}
+	return nil
+}
+
+func validateNativeHotspotConfig(payload map[string]interface{}) error {
+	imageURL := asTrimmedString(payload["imagen_url"])
+	if imageURL == "" {
+		imageURL = asTrimmedString(payload["image_url"])
+	}
+	if imageURL == "" {
+		return errors.New("configuracion hotspot requiere image_url o imagen_url")
+	}
+	rawHotspots := payload["hotspots"]
+	if rawHotspots == nil {
+		rawHotspots = payload["puntos"]
+	}
+	hotspots, ok := rawHotspots.([]interface{})
+	if !ok || len(hotspots) == 0 {
+		return errors.New("configuracion hotspot requiere al menos un punto")
+	}
+	for _, rawHotspot := range hotspots {
+		hotspotObj, ok := rawHotspot.(map[string]interface{})
+		if !ok {
+			return errors.New("hotspot invalido")
+		}
+		if asTrimmedString(hotspotObj["id"]) == "" && asTrimmedString(hotspotObj["text"]) == "" {
+			return errors.New("cada hotspot requiere id o texto")
+		}
+	}
+	return nil
+}
+
+func validateNativeDragAndDropConfig(payload map[string]interface{}) error {
+	rawCategories := payload["drag_categories"]
+	if rawCategories == nil {
+		rawCategories = payload["categories"]
+	}
+	categories, ok := rawCategories.([]interface{})
+	if !ok || len(categories) == 0 {
+		return errors.New("configuracion drag_and_drop requiere al menos una categoria")
+	}
+	for _, rawCategory := range categories {
+		category, ok := rawCategory.(map[string]interface{})
+		if !ok {
+			return errors.New("categoria de drag_and_drop invalida")
+		}
+		if asTrimmedString(category["id"]) == "" && asTrimmedString(category["label"]) == "" {
+			return errors.New("cada categoria requiere id o label")
+		}
+	}
+
+	rawItems := payload["drag_items"]
+	if rawItems == nil {
+		rawItems = payload["items"]
+	}
+	items, ok := rawItems.([]interface{})
+	if !ok || len(items) == 0 {
+		return errors.New("configuracion drag_and_drop requiere al menos un item")
+	}
+	for _, rawItem := range items {
+		item, ok := rawItem.(map[string]interface{})
+		if !ok {
+			return errors.New("item de drag_and_drop invalido")
+		}
+		if asTrimmedString(item["id"]) == "" && asTrimmedString(item["label"]) == "" {
+			return errors.New("cada item requiere id o label")
+		}
+	}
+	return nil
+}
+
+func validateNativeInteractiveMapConfig(payload map[string]interface{}) error {
+	imageURL := asTrimmedString(payload["map_image_url"])
+	if imageURL == "" {
+		imageURL = asTrimmedString(payload["image_url"])
+	}
+	if imageURL == "" {
+		return errors.New("configuracion interactive_map requiere map_image_url o image_url")
+	}
+
+	rawMarkers := payload["markers"]
+	if rawMarkers == nil {
+		rawMarkers = payload["puntos"]
+	}
+	markers, ok := rawMarkers.([]interface{})
+	if !ok || len(markers) == 0 {
+		return errors.New("configuracion interactive_map requiere al menos un marcador")
+	}
+	for _, rawMarker := range markers {
+		marker, ok := rawMarker.(map[string]interface{})
+		if !ok {
+			return errors.New("marcador interactive_map invalido")
+		}
+		if asTrimmedString(marker["id"]) == "" && asTrimmedString(marker["label"]) == "" {
+			return errors.New("cada marcador requiere id o label")
+		}
+	}
+	return nil
+}
+
+func validateNativeWordSearchConfig(payload map[string]interface{}) error {
+	rawWords := payload["words"]
+	if rawWords == nil {
+		rawWords = payload["palabras"]
+	}
+	words, ok := rawWords.([]interface{})
+	if !ok || len(words) == 0 {
+		return errors.New("configuracion word_search requiere al menos una palabra")
+	}
+	for _, rawWord := range words {
+		if asTrimmedString(rawWord) == "" {
+			return errors.New("cada palabra en word_search debe ser valida")
+		}
+	}
+	return nil
+}
+
+func validateNativeCrosswordConfig(payload map[string]interface{}) error {
+	rawClues := payload["clues"]
+	if rawClues == nil {
+		rawClues = payload["pistas"]
+	}
+	clues, ok := rawClues.([]interface{})
+	if !ok || len(clues) == 0 {
+		return errors.New("configuracion crossword requiere al menos una pista")
+	}
+	for _, rawClue := range clues {
+		clue, ok := rawClue.(map[string]interface{})
+		if !ok {
+			return errors.New("pista crossword invalida")
+		}
+		if asTrimmedString(clue["text"]) == "" && asTrimmedString(clue["texto"]) == "" {
+			return errors.New("cada pista crossword requiere texto")
+		}
+	}
+	return nil
+}
+
+func validateNativeMemoryConfig(payload map[string]interface{}) error {
+	rawPairs := payload["pairs"]
+	if rawPairs == nil {
+		rawPairs = payload["pares"]
+	}
+	pairs, ok := rawPairs.([]interface{})
+	if !ok || len(pairs) == 0 {
+		return errors.New("configuracion memory requiere al menos un par")
+	}
+	for _, rawPair := range pairs {
+		pair, ok := rawPair.(map[string]interface{})
+		if !ok {
+			return errors.New("par memory invalido")
+		}
+		if asTrimmedString(pair["id"]) == "" && asTrimmedString(pair["text"]) == "" && asTrimmedString(pair["texto"]) == "" {
+			return errors.New("cada par memory requiere id o texto")
+		}
+	}
+	return nil
+}
+
+func validateNativeSimulatorConfig(payload map[string]interface{}) error {
+	rawVariables := payload["variables"]
+	if rawVariables == nil {
+		rawVariables = payload["variables"]
+	}
+	variables, ok := rawVariables.([]interface{})
+	if !ok || len(variables) == 0 {
+		return errors.New("configuracion simulator requiere al menos una variable")
+	}
+	return nil
+}
+
+func validateNativeVirtualLabConfig(payload map[string]interface{}) error {
+	rawAssets := payload["assets"]
+	if rawAssets == nil {
+		rawAssets = payload["recursos"]
+	}
+	assets, ok := rawAssets.([]interface{})
+	if !ok || len(assets) == 0 {
+		return errors.New("configuracion virtual_lab requiere al menos un recurso")
+	}
 	return nil
 }
 

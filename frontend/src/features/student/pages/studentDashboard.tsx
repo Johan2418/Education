@@ -4,8 +4,9 @@ import { useTranslation } from "react-i18next";
 import { getMe } from "@/shared/lib/auth";
 import toast from "react-hot-toast";
 import { BookOpen, Award, Clock, TrendingUp, ArrowRight, Sparkles } from "lucide-react";
-import type { MateriaCalificacionEstudianteResponse, Progreso } from "@/shared/types";
+import type { MateriaCalificacionEstudianteResponse, PruebaConLeccion, Progreso } from "@/shared/types";
 import { getStudentDashboardStats } from "@/features/student/services/dashboard";
+import { listMisPruebasEstudiante } from "@/features/pruebas/services/pruebas";
 
 export default function StudentDashboard({ highContrast = false }: { highContrast?: boolean }) {
   const { t } = useTranslation();
@@ -20,6 +21,8 @@ export default function StudentDashboard({ highContrast = false }: { highContras
   const [materiasAprobadas, setMateriasAprobadas] = useState<number>(0);
   const [materiasReprobadas, setMateriasReprobadas] = useState<number>(0);
   const [materiasNoCompletadas, setMateriasNoCompletadas] = useState<number>(0);
+  const [assignedPruebas, setAssignedPruebas] = useState<PruebaConLeccion[]>([]);
+  const [pruebasLoading, setPruebasLoading] = useState<boolean>(true);
 
   useEffect(() => {
     (async () => {
@@ -42,6 +45,18 @@ export default function StudentDashboard({ highContrast = false }: { highContras
         toast.error(t("dashboard.loadError", { defaultValue: "Error al cargar dashboard" }));
       } finally {
         setLoading(false);
+      }
+    })();
+
+    (async () => {
+      setPruebasLoading(true);
+      try {
+        const pruebas = await listMisPruebasEstudiante();
+        setAssignedPruebas(pruebas);
+      } catch (error) {
+        console.error("Error loading assigned pruebas", error);
+      } finally {
+        setPruebasLoading(false);
       }
     })();
   }, [navigate, t]);
@@ -242,6 +257,52 @@ export default function StudentDashboard({ highContrast = false }: { highContras
               </div>
             </section>
           )}
+
+          <section className={`mt-8 rounded-2xl shadow-md p-6 animate-fade-in-up ${highContrast ? "bg-black border border-yellow-500" : "bg-white"}`}>
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-4">
+              <div>
+                <h3 className={`font-bold text-lg ${highContrast ? "text-yellow-200" : "text-gray-900"}`}>{t("student.dashboard.tests.title", { defaultValue: "Pruebas asignadas" })}</h3>
+                <p className={`text-sm ${highContrast ? "text-yellow-300" : "text-gray-500"}`}>{t("student.dashboard.tests.subtitle", { defaultValue: "Pruebas de las materias matriculadas" })}</p>
+              </div>
+            </div>
+
+            {pruebasLoading ? (
+              <div className={`py-6 ${highContrast ? "text-yellow-300" : "text-gray-500"}`}>{t("student.dashboard.tests.loading", { defaultValue: "Cargando pruebas..." })}</div>
+            ) : assignedPruebas.length === 0 ? (
+              <div className={`py-6 ${highContrast ? "text-yellow-300" : "text-gray-500"}`}>{t("student.dashboard.tests.noTests", { defaultValue: "No tienes pruebas asignadas" })}</div>
+            ) : (
+              <div className="overflow-auto">
+                <table className="w-full text-sm">
+                  <thead className={highContrast ? "text-yellow-300 border-b border-yellow-700" : "text-slate-700 border-b"}>
+                    <tr>
+                      <th className="text-left py-2 pr-3">{t("student.dashboard.tests.test", { defaultValue: "Prueba" })}</th>
+                      <th className="text-left py-2 pr-3">{t("student.dashboard.tests.subject", { defaultValue: "Materia" })}</th>
+                      <th className="text-left py-2 pr-3">{t("student.dashboard.tests.lesson", { defaultValue: "Lección" })}</th>
+                      <th className="text-left py-2 pr-3">{t("student.dashboard.tests.action", { defaultValue: "Acción" })}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {assignedPruebas.map((prueba) => (
+                      <tr key={prueba.id} className={highContrast ? "border-b border-yellow-900/40" : "border-b border-slate-100"}>
+                        <td className="py-2 pr-3 font-medium">{prueba.titulo}</td>
+                        <td className="py-2 pr-3">{prueba.materia_nombre || "—"}</td>
+                        <td className="py-2 pr-3">{prueba.leccion_titulo || "—"}</td>
+                        <td className="py-2 pr-3">
+                          <button
+                            type="button"
+                            onClick={() => navigate(`/pruebas/${prueba.id}`)}
+                            className={`inline-flex items-center rounded-full px-3 py-1.5 text-xs font-semibold transition ${highContrast ? "bg-yellow-300 text-black hover:bg-yellow-400" : "bg-indigo-600 text-white hover:bg-indigo-700"}`}
+                          >
+                            {t("student.dashboard.tests.viewTest", { defaultValue: "Ver prueba" })}
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
 
           {progresos.length === 0 && (
             <div className={`mt-8 rounded-2xl shadow-md p-10 text-center animate-fade-in-up ${highContrast ? "bg-black border border-yellow-500" : "bg-white"}`} style={{ animationDelay: "600ms" }}>

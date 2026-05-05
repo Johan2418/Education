@@ -1078,6 +1078,19 @@
       "update": "Update submission",
       "submit": "Submit",
       "unsaved": "You have unsaved changes"
+    },
+    "dashboard": {
+      "tests": {
+        "title": "Assigned tests",
+        "subtitle": "Tests from your enrolled subjects",
+        "loading": "Loading tests...",
+        "noTests": "You have no assigned tests",
+        "test": "Test",
+        "subject": "Subject",
+        "lesson": "Lesson",
+        "action": "Action",
+        "viewTest": "View test"
+      }
     }
   },
   "lesson": {

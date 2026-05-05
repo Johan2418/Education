@@ -1,17 +1,41 @@
 package resources
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"fmt"
+	"io"
+	"mime/multipart"
+	"net/http"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
+
+	"github.com/arcanea/backend/internal/config"
 )
 
 type Service struct {
-	repo *Repository
+	repo                   *Repository
+	libreOfficePath        string
+	conversionAPIUrl       string
+	conversionAPIKey       string
+	conversionAPIHeader    string
+	conversionAPIPrefix    string
+	conversionAPIFileField string
 }
 
-func NewService(repo *Repository) *Service {
-	return &Service{repo: repo}
+func NewService(repo *Repository, libreOfficePath string, conversionAPIConfig config.ConversionAPIConfig) *Service {
+	return &Service{
+		repo:                   repo,
+		libreOfficePath:        strings.TrimSpace(libreOfficePath),
+		conversionAPIUrl:       strings.TrimSpace(conversionAPIConfig.URL),
+		conversionAPIKey:       strings.TrimSpace(conversionAPIConfig.APIKey),
+		conversionAPIHeader:    strings.TrimSpace(conversionAPIConfig.Header),
+		conversionAPIPrefix:    conversionAPIConfig.Prefix,
+		conversionAPIFileField: strings.TrimSpace(conversionAPIConfig.FileField),
+	}
 }
 
 // ─── Recurso ────────────────────────────────────────────────
@@ -37,6 +61,120 @@ func (s *Service) UpdateRecurso(ctx context.Context, id string, req RecursoReque
 
 func (s *Service) DeleteRecurso(ctx context.Context, id string) error {
 	return s.repo.DeleteRecurso(ctx, id)
+}
+
+func (s *Service) ConvertPptxToPdf(ctx context.Context, pptxBytes []byte) ([]byte, error) {
+	if s.conversionAPIUrl != "" {
+		pdf, err := s.convertPptxToPdfRemote(ctx, pptxBytes)
+		if err == nil {
+			return pdf, nil
+		}
+		return nil, fmt.Errorf("no se pudo convertir PPTX con servicio externo: %w", err)
+	}
+
+	tmpDir, err := os.MkdirTemp("", "pptx-convert-*")
+	if err != nil {
+		return nil, fmt.Errorf("no se pudo crear directorio temporal: %w", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	inputPath := filepath.Join(tmpDir, "input.pptx")
+	outputPath := filepath.Join(tmpDir, "input.pdf")
+
+	if err := os.WriteFile(inputPath, pptxBytes, 0o600); err != nil {
+		return nil, fmt.Errorf("no se pudo escribir el archivo PPTX temporal: %w", err)
+	}
+
+	binary, err := s.findLibreOfficeExecutable()
+	if err != nil {
+		return nil, err
+	}
+
+	cmd := exec.CommandContext(ctx, binary, "--headless", "--convert-to", "pdf", "--outdir", tmpDir, inputPath)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return nil, fmt.Errorf("error al convertir PPTX con LibreOffice (%s): %w: %s", binary, err, string(output))
+	}
+
+	pdfBytes, err := os.ReadFile(outputPath)
+	if err != nil {
+		return nil, fmt.Errorf("no se pudo leer el PDF generado: %w", err)
+	}
+
+	return pdfBytes, nil
+}
+
+func (s *Service) convertPptxToPdfRemote(ctx context.Context, pptxBytes []byte) ([]byte, error) {
+	if s.conversionAPIFileField == "" {
+		s.conversionAPIFileField = "file"
+	}
+
+	payload := &bytes.Buffer{}
+	writer := multipart.NewWriter(payload)
+	_ = writer.WriteField("input_format", "pptx")
+	_ = writer.WriteField("output_format", "pdf")
+
+	filePart, err := writer.CreateFormFile(s.conversionAPIFileField, "presentation.pptx")
+	if err != nil {
+		return nil, fmt.Errorf("error preparando el archivo para conversión: %w", err)
+	}
+	if _, err := filePart.Write(pptxBytes); err != nil {
+		return nil, fmt.Errorf("error escribiendo el contenido del PPTX: %w", err)
+	}
+
+	if err := writer.Close(); err != nil {
+		return nil, fmt.Errorf("error cerrando formulario de conversión: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, s.conversionAPIUrl, payload)
+	if err != nil {
+		return nil, fmt.Errorf("error creando petición de conversión externa: %w", err)
+	}
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	if s.conversionAPIKey != "" {
+		headerName := s.conversionAPIHeader
+		if headerName == "" {
+			headerName = "Authorization"
+		}
+		req.Header.Set(headerName, fmt.Sprintf("%s%s", s.conversionAPIPrefix, s.conversionAPIKey))
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("error al llamar al servicio de conversión externa: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("error leyendo la respuesta del servicio de conversión externa: %w", err)
+	}
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("servicio de conversión externa respondió %d: %s", resp.StatusCode, string(respBody))
+	}
+
+	return respBody, nil
+}
+
+func (s *Service) findLibreOfficeExecutable() (string, error) {
+	candidates := []string{}
+	if s.libreOfficePath != "" {
+		candidates = append(candidates, s.libreOfficePath)
+	}
+	candidates = append(candidates, "soffice", "libreoffice")
+
+	for _, candidate := range candidates {
+		if candidate == "" {
+			continue
+		}
+		resolved, err := exec.LookPath(candidate)
+		if err == nil {
+			return resolved, nil
+		}
+	}
+
+	return "", errors.New("no se encontró LibreOffice en el sistema. Instala LibreOffice y asegúrate de que el binario 'soffice' esté en el PATH o configura LIBREOFFICE_PATH con la ruta completa al ejecutable")
 }
 
 // ─── Recurso Personal ───────────────────────────────────────

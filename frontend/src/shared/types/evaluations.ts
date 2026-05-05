@@ -15,6 +15,12 @@ export interface Prueba {
   updated_at: string;
 }
 
+export interface PruebaConLeccion extends Prueba {
+  leccion_titulo?: string;
+  materia_id?: string;
+  materia_nombre?: string;
+}
+
 export interface Pregunta {
   id: string;
   prueba_id: string;

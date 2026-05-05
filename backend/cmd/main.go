@@ -61,7 +61,7 @@ func main() {
 	acadH := academic.NewHandler(acadSvc)
 
 	resRepo := resources.NewRepository(db)
-	resSvc := resources.NewService(resRepo)
+	resSvc := resources.NewService(resRepo, cfg.LibreOfficePath, cfg.ConversionAPI)
 	resH := resources.NewHandler(resSvc)
 
 	evalRepo := evaluations.NewRepository(db)
@@ -141,6 +141,7 @@ func main() {
 		// ── Academic: Materias ──────────────────────────────
 		r.Get("/cursos/{cursoId}/materias", acadH.ListMaterias)
 		r.Get("/student/materias", acadH.ListMisMateriasEstudiante)
+		r.Get("/student/pruebas", evalH.ListMisPruebasEstudiante)
 		r.Get("/student/materias/calificaciones", acadH.ListMisCalificacionesMateriasEstudiante)
 		r.Get("/materias/{materiaId}", acadH.GetMateria)
 		r.Get("/materias/{materiaId}/calificaciones", acadH.ListMateriaCalificaciones)
@@ -228,6 +229,7 @@ func main() {
 		r.Post("/recursos", resH.CreateRecurso)
 		r.Put("/recursos/{recursoId}", resH.UpdateRecurso)
 		r.Delete("/recursos/{recursoId}", resH.DeleteRecurso)
+		r.Post("/recursos/pptx-to-pdf", resH.ConvertPptxToPdf)
 
 		r.Get("/recursos-personales", resH.ListRecursosPersonales)
 		r.Get("/recursos-personales/{recursoPersonalId}", resH.GetRecursoPersonal)

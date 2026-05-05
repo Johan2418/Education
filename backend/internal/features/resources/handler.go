@@ -2,6 +2,8 @@ package resources
 
 import (
 	"errors"
+	"fmt"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -110,6 +112,33 @@ func (h *Handler) DeleteRecurso(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	shared.MessageOK(w, "Recurso eliminado")
+}
+
+func (h *Handler) ConvertPptxToPdf(w http.ResponseWriter, r *http.Request) {
+	defer r.Body.Close()
+	maxBytes := int64(100 << 20) // 100 MB
+	r.Body = http.MaxBytesReader(w, r.Body, maxBytes)
+
+	pptxBytes, err := io.ReadAll(r.Body)
+	if err != nil {
+		shared.Error(w, http.StatusBadRequest, "Error leyendo el archivo PPTX")
+		return
+	}
+	if len(pptxBytes) == 0 {
+		shared.Error(w, http.StatusBadRequest, "Archivo PPTX vacío")
+		return
+	}
+
+	pdfBytes, err := h.svc.ConvertPptxToPdf(r.Context(), pptxBytes)
+	if err != nil {
+		shared.Error(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/pdf")
+	w.Header().Set("Content-Length", fmt.Sprintf("%d", len(pdfBytes)))
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(pdfBytes)
 }
 
 func (h *Handler) ListRecursosPersonales(w http.ResponseWriter, r *http.Request) {

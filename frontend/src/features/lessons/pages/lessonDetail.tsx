@@ -1,8 +1,12 @@
-﻿import { useEffect, useMemo, useRef, useState } from "react";
+﻿import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { getMe } from "@/shared/lib/auth";
-import api from "@/shared/lib/api";
+import api, { API_BASE_URL } from "@/shared/lib/api";
+import * as pdfjsLib from "pdfjs-dist";
+import pdfWorkerSrc from "pdfjs-dist/build/pdf.worker.min.mjs?url";
+import mammoth from "mammoth";
+import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import { getProgreso, upsertProgreso } from "@/shared/services/progresos";
 import { getStudentLessonAccess, getTema, getUnidad } from "@/shared/services/studentProgression";
 import toast from "react-hot-toast";
@@ -17,7 +21,9 @@ import type {
   LeccionSeccionGatingPDF,
   LeccionVideoProgreso,
   PruebaCompleta,
+  Pregunta,
   ProgresoSeccion,
+  Respuesta,
 } from "@/shared/types";
 import {
   createForoHilo,
@@ -41,6 +47,9 @@ import {
   resolveInteractiveScoreThreshold,
   upsertIntentoActividad,
 } from "@/features/lessons/services/interactivas";
+import NativeActivityRenderer from "@/features/lessons/components/nativeActivities/NativeActivityRenderer";
+import NativeActivityMatchingPlayer from "@/features/lessons/components/nativeActivities/NativeActivityMatchingPlayer";
+import { getPruebaCompleta } from "@/features/pruebas/services/pruebas";
 import { Loader2, ChevronLeft, ChevronRight, CheckCircle, MessageSquare, SendHorizontal } from "lucide-react";
 
 function normalizeError(err: unknown): string {
@@ -51,6 +60,37 @@ function normalizeError(err: unknown): string {
     }
   }
   return "Error inesperado";
+}
+
+function getNativeActivityTypeLabel(type: string): string {
+  switch (type) {
+    case "true_false":
+      return "Verdadero / Falso";
+    case "fill_in_the_blank":
+      return "Completar espacios";
+    case "matching":
+      return "Emparejar";
+    case "ordering":
+      return "Ordenar";
+    case "hotspot":
+      return "Hotspot";
+    case "drag_and_drop":
+      return "Arrastrar y soltar";
+    case "interactive_map":
+      return "Mapa interactivo";
+    case "word_search":
+      return "Sopa de letras";
+    case "crossword":
+      return "Crucigrama";
+    case "memory":
+      return "Memoria";
+    case "simulator":
+      return "Simulador";
+    case "virtual_lab":
+      return "Laboratorio virtual";
+    default:
+      return "Quiz";
+  }
 }
 
 interface ApiEnvelope<T> {
@@ -101,6 +141,44 @@ function safeNumber(input: string): number {
   return Math.round(n);
 }
 
+async function fetchResourceArrayBuffer(resourceUrl: string): Promise<ArrayBuffer> {
+  if (resourceUrl.startsWith("data:")) {
+    const [, base64Data] = resourceUrl.split(",", 2);
+    if (!base64Data) throw new Error("URL de datos inválida");
+    const binaryString = atob(base64Data);
+    const buffer = new Uint8Array(binaryString.length);
+    for (let i = 0; i < binaryString.length; i += 1) {
+      buffer[i] = binaryString.charCodeAt(i);
+    }
+    return buffer.buffer;
+  }
+
+  const token = localStorage.getItem("token");
+  const headers: HeadersInit = token ? { Authorization: `Bearer ${token}` } : {};
+  const response = await fetch(resourceUrl, { headers });
+  if (!response.ok) {
+    const message = `Error al descargar el recurso: ${response.status}`;
+    throw new Error(message);
+  }
+  return response.arrayBuffer();
+}
+
+function inferResourceExtension(rawUrl: string | null | undefined): string | null {
+  if (!rawUrl) return null;
+  if (rawUrl.startsWith("data:")) {
+    const parts = rawUrl.slice(5).split(";");
+    const mimeType = parts[0] ?? "";
+    if (mimeType.includes("pdf")) return "pdf";
+    if (mimeType.includes("word") || mimeType.includes("msword") || mimeType.includes("officedocument.wordprocessingml.document")) return "docx";
+    if (mimeType.includes("powerpoint") || mimeType.includes("presentationml.presentation")) return "pptx";
+    return null;
+  }
+
+  const path = rawUrl.split("?")[0]?.split("#")[0] ?? "";
+  const ext = path.split(".").pop()?.toLowerCase() ?? "";
+  return ext || null;
+}
+
 function buildProtectedPdfUrl(rawUrl: string): string {
   const hashFlags = "toolbar=0&navpanes=0&scrollbar=0&view=FitH";
   try {
@@ -112,6 +190,290 @@ function buildProtectedPdfUrl(rawUrl: string): string {
     return `${rawUrl}${joiner}${hashFlags}`;
   }
 }
+
+function extractFileNameFromUrl(rawUrl: string | null | undefined, fallback: string): string {
+  if (!rawUrl) return fallback;
+  try {
+    const parsed = new URL(rawUrl, window.location.origin);
+    const parts = parsed.pathname
+      .split("/")
+      .filter((part) => part.length > 0);
+    if (parts.length > 0) {
+      return parts[parts.length - 1] ?? fallback;
+    }
+  } catch {
+    // ignore invalid URL
+  }
+
+  const candidate = (((rawUrl ?? "").split("?")[0] || "")
+    .split("#")[0] || "")
+    .split("/")
+    .filter((part) => part.length > 0)
+    .pop();
+  return candidate ?? fallback;
+}
+
+function wrapText(text: string, maxChars = 90): string[] {
+  const words = text.split(" ");
+  const lines: string[] = [];
+  let currentLine = "";
+
+  for (const word of words) {
+    if ((currentLine + word).length > maxChars) {
+      if (currentLine.trim()) {
+        lines.push(currentLine.trim());
+      }
+      currentLine = `${word} `;
+    } else {
+      currentLine += `${word} `;
+    }
+  }
+
+  if (currentLine.trim()) {
+    lines.push(currentLine.trim());
+  }
+
+  return lines;
+}
+
+function extractTextFromPptxSlide(slide: any): string[] {
+  if (!slide || typeof slide !== "object") return [];
+
+  const lines: string[] = [];
+  const pageElements = Array.isArray(slide.pageElements) ? slide.pageElements : [];
+
+  for (const element of pageElements) {
+    if (element.shape) {
+      lines.push(...getSlideTextFromPptxShape(element.shape));
+    }
+    if (element.group?.children) {
+      for (const child of element.group.children) {
+        if (child.shape) {
+          lines.push(...getSlideTextFromPptxShape(child.shape));
+        }
+      }
+    }
+  }
+
+  return lines.filter(Boolean);
+}
+
+async function waitForVfCanvas(container: HTMLElement, timeout = 4000): Promise<HTMLCanvasElement> {
+  const start = Date.now();
+  while (Date.now() - start < timeout) {
+    const canvas = container.querySelector("canvas");
+    if (canvas instanceof HTMLCanvasElement) {
+      return canvas;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  throw new Error("No se encontró el canvas para renderizar la diapositiva PPTX.");
+}
+
+async function createPdfFromPptxPresentation(pptxBlob: Blob): Promise<{ pdfBytes: Uint8Array; slideCount: number }> {
+  const parserModule = await import("pptx-parser");
+  const parse = parserModule.default ?? parserModule;
+  const vfRenderer = parserModule.vf;
+  if (typeof vfRenderer !== "function") {
+    throw new Error("No se encontró el renderer VF para PPTX.");
+  }
+
+  const pptJson = await parse(pptxBlob, { flattenGroup: true });
+  const slideCount = Array.isArray(pptJson?.slides) ? pptJson.slides.length : 0;
+  if (slideCount === 0) {
+    throw new Error("No se encontraron diapositivas en la presentación.");
+  }
+
+  const width = pptJson.pageSize?.width?.value ?? 1024;
+  const height = pptJson.pageSize?.height?.value ?? 768;
+  const vfJson = await vfRenderer(pptJson, { width, height });
+  const tmpJsonUrl = URL.createObjectURL(new Blob([JSON.stringify(vfJson)], { type: "application/json" }));
+
+  const container = document.createElement("div");
+  container.style.position = "fixed";
+  container.style.left = "-9999px";
+  container.style.top = "0";
+  container.style.width = `${width}px`;
+  container.style.height = `${height}px`;
+  container.style.overflow = "hidden";
+  container.style.pointerEvents = "none";
+  container.style.opacity = "0";
+  document.body.appendChild(container);
+
+  try {
+    const launcher = await import("@vf.js/launcher");
+    const createVF = launcher.createVF;
+    if (typeof createVF !== "function") {
+      throw new Error("No se pudo cargar @vf.js/launcher para renderizar PPTX.");
+    }
+
+    return await new Promise<{ pdfBytes: Uint8Array; slideCount: number }>((resolve, reject) => {
+      let player: any = null;
+      let currentSlideIndex = 0;
+      const images: string[] = [];
+      let disposed = false;
+
+      const cleanup = () => {
+        if (!disposed) {
+          disposed = true;
+          if (player?.dispose) {
+            try {
+              player.dispose(true);
+            } catch {
+              // ignore
+            }
+          }
+          URL.revokeObjectURL(tmpJsonUrl);
+          if (container.parentElement) {
+            container.parentElement.removeChild(container);
+          }
+        }
+      };
+
+      const captureSlide = async () => {
+        try {
+          const canvas = await waitForVfCanvas(container);
+          const imageDataUrl = canvas.toDataURL("image/png");
+          images.push(imageDataUrl);
+
+          if (images.length >= slideCount) {
+            const pdfDoc = await PDFDocument.create();
+            for (const imageUrl of images) {
+              const pngImage = await pdfDoc.embedPng(imageUrl);
+              const page = pdfDoc.addPage([pngImage.width, pngImage.height]);
+              page.drawImage(pngImage, {
+                x: 0,
+                y: 0,
+                width: pngImage.width,
+                height: pngImage.height,
+              });
+            }
+            const pdfBytes = await pdfDoc.save();
+            cleanup();
+            resolve({ pdfBytes, slideCount });
+            return;
+          }
+
+          currentSlideIndex += 1;
+          player.switchToSceneIndex(currentSlideIndex);
+        } catch (err) {
+          cleanup();
+          reject(err);
+        }
+      };
+
+      const config = {
+        version: "2.0.12",
+        container,
+        width,
+        height,
+        resolution: window.devicePixelRatio || 1,
+        platform: { from: "debug", role: 1 },
+        usePlayer: true,
+        forceCanvas: true,
+        debugEengineJson: "https://vf-cdn.yunkc.cn/vf/v2.0.12.json",
+        debugVFPath: "https://vf-cdn.yunkc.cn/vf/",
+        debug: false,
+      };
+
+      createVF(config, (createdPlayer: any) => {
+        player = createdPlayer;
+        player.onError = (err: any) => {
+          cleanup();
+          reject(err);
+        };
+        player.onDispose = () => {
+          cleanup();
+        };
+        player.onSceneCreate = () => {
+          void captureSlide();
+        };
+        player.play(tmpJsonUrl);
+      });
+    });
+  } finally {
+    if (container.parentElement) {
+      container.parentElement.removeChild(container);
+    }
+  }
+}
+
+function getSlideTextFromPptxShape(shape: any): string[] {
+  if (!shape || typeof shape !== "object") return [];
+  const paragraphs = shape.text?.paragraphs ?? shape.text?.textSpans ?? [];
+  if (!Array.isArray(paragraphs)) return [];
+  return paragraphs
+    .map((paragraph: any) => {
+      const spans = paragraph?.textSpans ?? [paragraph];
+      if (!Array.isArray(spans)) return "";
+      return spans
+        .map((span: any) => span?.textRun?.content ?? span?.content ?? "")
+        .filter(Boolean)
+        .join("");
+    })
+    .filter(Boolean);
+}
+
+function renderPptxElement(element: any, index: number): any {
+  if (!element || typeof element !== "object") {
+    return <div key={index} className="text-sm text-slate-600">Contenido de diapositiva no disponible</div>;
+  }
+
+  if (element.image?.contentUrl) {
+    return (
+      <div key={index} className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+        <div className="mb-2 text-xs uppercase tracking-wide text-slate-500">Imagen</div>
+        <img
+          src={element.image.contentUrl}
+          alt={element.name || `Diapositiva ${index + 1} imagen`}
+          className="w-full rounded-md border border-slate-200 object-contain"
+        />
+      </div>
+    );
+  }
+
+  if (element.shape) {
+    const lines = getSlideTextFromPptxShape(element.shape);
+    if (lines.length > 0) {
+      return (
+        <div key={index} className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+          <div className="mb-2 text-xs uppercase tracking-wide text-slate-500">Texto</div>
+          <div className="space-y-2 text-sm text-slate-700">
+            {lines.map((line, lineIndex) => (
+              <p key={lineIndex} className="leading-relaxed">
+                {line}
+              </p>
+            ))}
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div key={index} className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">
+        <div className="mb-2 text-xs uppercase tracking-wide text-slate-500">Forma</div>
+        <div>{element.shape.shapeType || element.shape.name || "Elemento de forma"}</div>
+      </div>
+    );
+  }
+
+  if (element.group?.children) {
+    return (
+      <div key={index} className="space-y-3">
+        {element.group.children.map((child: any, childIndex: number) => renderPptxElement(child, childIndex))}
+      </div>
+    );
+  }
+
+  return (
+    <div key={index} className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">
+      <div className="mb-2 text-xs uppercase tracking-wide text-slate-500">Elemento desconocido</div>
+      <pre className="whitespace-pre-wrap break-words text-xs">{JSON.stringify(element, null, 2)}</pre>
+    </div>
+  );
+}
+
+pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerSrc;
 
 interface CheckpointQuestionOption {
   id: string;
@@ -166,9 +528,39 @@ export default function LessonDetailPage() {
   const [checkpointSelectedOption, setCheckpointSelectedOption] = useState("");
   const [checkpointSubmitting, setCheckpointSubmitting] = useState(false);
   const [checkpointUnlocked, setCheckpointUnlocked] = useState(false);
+  const [pdfDoc, setPdfDoc] = useState<pdfjsLib.PDFDocumentProxy | null>(null);
+  const [pdfLoading, setPdfLoading] = useState(false);
+  const [pdfLoadError, setPdfLoadError] = useState<string | null>(null);
+  const [pdfPageCount, setPdfPageCount] = useState(0);
+  const [pdfCurrentPage, setPdfCurrentPage] = useState(1);
+  const [pdfPagesSeen, setPdfPagesSeen] = useState<Set<number>>(new Set());
+  const [pptxPdfUrl, setPptxPdfUrl] = useState<string | null>(null);
+  const pdfCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const [docxHtml, setDocxHtml] = useState<string | null>(null);
+  const [docxLoading, setDocxLoading] = useState(false);
+  const [docxLoadError, setDocxLoadError] = useState<string | null>(null);
+  const [docxScrollComplete, setDocxScrollComplete] = useState(false);
+  const [docxHasInteracted, setDocxHasInteracted] = useState(false);
+  const [imageLoaded, setImageLoaded] = useState(false);
+  const [imageQuestion, setImageQuestion] = useState<(Pregunta & { respuestas: Respuesta[] }) | null>(null);
+  const [imageQuestionLoading, setImageQuestionLoading] = useState(false);
+  const [imageQuestionLoadError, setImageQuestionLoadError] = useState<string | null>(null);
+  const [imageQuestionSelectedOption, setImageQuestionSelectedOption] = useState<string>("");
+  const [imageQuestionAnswered, setImageQuestionAnswered] = useState(false);
+  const [imageQuestionCorrect, setImageQuestionCorrect] = useState<boolean | null>(null);
+  const [showImageQuestionModal, setShowImageQuestionModal] = useState(false);
+  const [pptxLoading, setPptxLoading] = useState(false);
+  const [pptxLoadError, setPptxLoadError] = useState<string | null>(null);
+  const [pptxSlides, setPptxSlides] = useState<any[]>([]);
+  const [pptxSlideCount, setPptxSlideCount] = useState(0);
+  const [pptxCurrentSlideIndex, setPptxCurrentSlideIndex] = useState(0);
+  const [pptxSlidesViewed, setPptxSlidesViewed] = useState<Set<number>>(new Set());
+  const docxViewerRef = useRef<HTMLDivElement | null>(null);
   const [nativeAnswers, setNativeAnswers] = useState<Record<string, string>>({});
+  const [nativeOrderingState, setNativeOrderingState] = useState<Record<string, string[]>>({});
   const [nativeSubmitting, setNativeSubmitting] = useState(false);
   const [nativeFeedback, setNativeFeedback] = useState<string | null>(null);
+  const [nativeScore, setNativeScore] = useState<number | null>(null);
   const [nativeQuickQuestionIdx, setNativeQuickQuestionIdx] = useState(0);
   const [nativeQuickRemainingSeconds, setNativeQuickRemainingSeconds] = useState(0);
   const [nativeTimedOutQuestions, setNativeTimedOutQuestions] = useState<Record<string, boolean>>({});
@@ -284,18 +676,27 @@ export default function LessonDetailPage() {
 
   const youtubeVideoId = useMemo(() => extractYouTubeVideoId(contentURL), [contentURL]);
   const currentVideoProgress = currentSection ? videoProgressBySeccion[currentSection.id] : undefined;
+  const videoSectionAlreadyCompleted = Boolean(currentVideoProgress?.completado);
   const videoProgressPercent = useMemo(() => {
     const watched = safeNumber(videoWatchedDraft);
     const total = safeNumber(videoTotalDraft);
-    return total > 0 ? Math.min(100, Math.max(0, Math.round((watched / total) * 100))) : 0;
+    if (total <= 0) return 0;
+    const effectiveTotal = Math.max(1, total - 2);
+    const effectiveWatched = Math.min(watched, effectiveTotal);
+    return Math.min(100, Math.max(0, Math.round((effectiveWatched / effectiveTotal) * 100)));
   }, [videoWatchedDraft, videoTotalDraft]);
   const showVideoProgress = useMemo(() => safeNumber(videoTotalDraft) > 0, [videoTotalDraft]);
+
+  useEffect(() => {
+    setImageLoaded(false);
+  }, [currentSection?.id, contentURL]);
 
   const currentSectionRef = useRef<LeccionSeccion | null>(null);
   const currentGatingRef = useRef<LeccionSeccionGatingPDF | null>(null);
   const checkpointQuestionRef = useRef<CheckpointQuestion | null>(null);
   const checkpointUnlockedRef = useRef(false);
   const checkpointPromptVisibleRef = useRef(false);
+  const checkpointAttemptedRef = useRef(false);
   const youtubePlayerContainerRef = useRef<HTMLDivElement | null>(null);
   const youtubePlayerRef = useRef<any>(null);
   const lastYoutubeTimeRef = useRef<number>(0);
@@ -308,6 +709,12 @@ export default function LessonDetailPage() {
   const [youtubeApiTimeoutExpired, setYoutubeApiTimeoutExpired] = useState(false);
   const [youtubePlayerCreationFailed, setYoutubePlayerCreationFailed] = useState(false);
 
+  const checkpointAnswered = useMemo(() => {
+    if (!currentGating?.habilitado || !currentGating.seccion_preguntas_id) return false;
+    const progress = progSecciones[currentGating.seccion_preguntas_id];
+    return progress != null;
+  }, [currentGating, progSecciones]);
+
   useEffect(() => {
     currentSectionRef.current = currentSection ?? null;
     currentGatingRef.current = currentGating;
@@ -315,6 +722,17 @@ export default function LessonDetailPage() {
     checkpointUnlockedRef.current = checkpointUnlocked;
     checkpointPromptVisibleRef.current = checkpointPromptVisible;
   }, [currentSection, currentGating, checkpointQuestion, checkpointUnlocked, checkpointPromptVisible]);
+
+  useEffect(() => {
+    if (checkpointAnswered) {
+      checkpointAttemptedRef.current = true;
+    }
+    if (checkpointAnswered && checkpointPromptVisible) {
+      setCheckpointPromptVisible(false);
+      setCheckpointQuestionLoading(false);
+      setCheckpointQuestionLoadError(null);
+    }
+  }, [checkpointAnswered, checkpointPromptVisible]);
 
   useEffect(() => {
     currentVideoProgressRef.current = currentVideoProgress;
@@ -421,7 +839,8 @@ export default function LessonDetailPage() {
       const forwardJump = currentTime - lastTime;
       const hasForwardSeek = forwardJump > naturalThreshold;
 
-      if (hasForwardSeek) {
+      const videoCompleted = Boolean(currentVideoProgressRef.current?.completado);
+      if (hasForwardSeek && !videoCompleted) {
         youtubePlayerRef.current.seekTo(previousMax, true);
         youtubePlayerRef.current.pauseVideo?.();
         toast("No puedes adelantar el video. Continúa viendo para desbloquear más contenido.", { duration: 3000 });
@@ -430,7 +849,7 @@ export default function LessonDetailPage() {
         return;
       }
 
-      if (currentTime > previousMax) {
+      if (!videoCompleted && currentTime > previousMax) {
         maxAllowedYoutubeTimeRef.current = currentTime;
       }
       lastYoutubeTimeRef.current = currentTime;
@@ -442,7 +861,7 @@ export default function LessonDetailPage() {
       }
       setVideoWatchedDraft(String(Math.floor(currentTime)));
 
-      if (!checkpointUnlocked && currentTime >= checkpointSeconds && !checkpointPromptVisible) {
+      if (!checkpointUnlocked && !checkpointAnswered && !checkpointAttemptedRef.current && !videoCompleted && currentTime >= checkpointSeconds && !checkpointPromptVisible) {
         maxAllowedYoutubeTimeRef.current = Math.max(maxAllowedYoutubeTimeRef.current, checkpointSeconds);
         youtubePlayerRef.current.pauseVideo?.();
         setCheckpointPromptVisible(true);
@@ -507,6 +926,18 @@ export default function LessonDetailPage() {
     if (!youtubeVideoId || !youtubeApiReady || !youtubePlayerContainerRef.current) return;
     const YT = (window as any).YT;
     if (!YT?.Player) return;
+
+    setYoutubeApiLoadFailed(false);
+    setYoutubeApiTimeoutExpired(false);
+    setYoutubePlayerCreationFailed(false);
+
+    if (youtubePlayerRef.current?.destroy) {
+      youtubePlayerRef.current.destroy();
+    }
+    youtubePlayerRef.current = null;
+    if (youtubePlayerContainerRef.current) {
+      youtubePlayerContainerRef.current.innerHTML = "";
+    }
 
     maxAllowedYoutubeTimeRef.current = 0;
     try {
@@ -691,10 +1122,11 @@ export default function LessonDetailPage() {
 
   const syncLessonProgressIfCompleted = async (progressMap: Record<string, ProgresoSeccion>) => {
     if (isEditor || !lesson || lessonAlreadyCompleted || lessonProgressSyncingRef.current) return;
-    const hasQuizSection = secciones.some((section) => section.tipo === "prueba" || !!section.prueba_id);
-    if (hasQuizSection) return;
 
-    const requiredSections = secciones.filter((section) => section.es_obligatorio !== false);
+    const checkpointQuizId = currentGating?.habilitado ? currentGating.seccion_preguntas_id : undefined;
+    const requiredSections = secciones.filter((section) =>
+      section.es_obligatorio !== false && section.id !== checkpointQuizId,
+    );
     if (requiredSections.length === 0) return;
 
     const completedAllRequired = requiredSections.every((section) => !!progressMap[section.id]?.completado);
@@ -784,16 +1216,51 @@ export default function LessonDetailPage() {
     () => (currentActividad?.proveedor === "nativo" ? parseNativeInteractiveConfig(currentActividad.configuracion) : null),
     [currentActividad]
   );
-  const isNativeQuickQuizMode = Boolean(nativeConfig?.isQuickQuiz && nativeConfig.questions.length > 0);
+  const isNativeQuickQuizMode = Boolean(nativeConfig?.activityType === "quiz" && nativeConfig?.isQuickQuiz && nativeConfig.questions.length > 0);
+  const isNativeDragAndDropMode = nativeConfig?.activityType === "drag_and_drop";
+  const isNativeInteractiveMapMode = nativeConfig?.activityType === "interactive_map";
+  const isNativeHotspotMode = nativeConfig?.activityType === "hotspot";
+  const isNativeFillInTheBlankMode = nativeConfig?.activityType === "fill_in_the_blank";
   const currentNativeQuickQuestion = isNativeQuickQuizMode
     ? (nativeConfig?.questions[nativeQuickQuestionIdx] ?? null)
     : null;
+  const currentNativeOrderingQuestion = nativeConfig?.activityType === "ordering"
+    ? nativeConfig.questions[0] ?? null
+    : null;
+  const currentNativeHotspotOptions = nativeConfig?.hotspots ?? [];
+  const nativeHotspotImageUrl = nativeConfig?.hotspotImageUrl ?? null;
+  const nativeActivityHasContent = Boolean(
+    (nativeConfig?.questions.length ?? 0) > 0
+    || isNativeHotspotMode
+    || isNativeDragAndDropMode
+    || isNativeInteractiveMapMode
+    || isNativeFillInTheBlankMode
+  );
   const nativeAnsweredCount = nativeConfig
-    ? nativeConfig.questions.filter((question) => Boolean(nativeAnswers[question.id])).length
+    ? (isNativeFillInTheBlankMode
+      ? Object.keys(nativeAnswers).filter((key) => key.startsWith(`${nativeConfig.questions[0]?.id}:`)).length
+      : nativeConfig.questions.filter((question) => Boolean(nativeAnswers[question.id])).length)
     : 0;
   const nativeTimedOutCount = nativeConfig
-    ? nativeConfig.questions.filter((question) => nativeTimedOutQuestions[question.id]).length
+    ? (isNativeFillInTheBlankMode ? 0 : nativeConfig.questions.filter((question) => nativeTimedOutQuestions[question.id]).length)
     : 0;
+  const nativeOrderingIds = currentNativeOrderingQuestion
+    ? nativeOrderingState[currentNativeOrderingQuestion.id] ?? currentNativeOrderingQuestion.options.map((option) => option.id)
+    : [];
+
+  useEffect(() => {
+    setNativeAnswers({});
+    setNativeTimedOutQuestions({});
+    setNativeQuickQuestionIdx(0);
+    setNativeFeedback(null);
+    if (currentNativeOrderingQuestion) {
+      setNativeOrderingState((prev) => ({
+        ...prev,
+        [currentNativeOrderingQuestion.id]: currentNativeOrderingQuestion.options.map((option) => option.id),
+      }));
+    }
+    setNativeQuickRemainingSeconds(nativeConfig?.timePerQuestionSeconds ?? 0);
+  }, [nativeConfig?.activityType, currentNativeOrderingQuestion?.id, currentActividad?.id, currentSection?.id]);
 
   useEffect(() => {
     if (!currentSection) return;
@@ -881,11 +1348,21 @@ export default function LessonDetailPage() {
   useEffect(() => {
     setNativeAnswers({});
     setNativeFeedback(null);
+    setNativeScore(null);
     setNativeQuickQuestionIdx(0);
     setNativeQuickRemainingSeconds(0);
     setNativeTimedOutQuestions({});
     setNativeQuickStartedAtMs(null);
   }, [currentSection?.id, currentActividad?.id]);
+
+  useEffect(() => {
+    if (!currentSection || !currentActividadIntento?.completado || currentSection.tipo !== "actividad_interactiva" || isEditor) {
+      return;
+    }
+    if (progSecciones[currentSection.id]?.completado) return;
+
+    void markSectionComplete(currentSection.id);
+  }, [currentSection, currentActividadIntento?.completado, isEditor, progSecciones, markSectionComplete]);
 
   useEffect(() => {
     if (!isNativeQuickQuizMode || !nativeConfig) {
@@ -919,6 +1396,15 @@ export default function LessonDetailPage() {
     const alreadyUnlocked = !!relatedProgress?.completado && (relatedProgress.puntuacion ?? 0) >= minScore;
     setCheckpointUnlocked(alreadyUnlocked);
     if (alreadyUnlocked) return;
+
+    const alreadyAnswered = relatedProgress != null;
+    if (alreadyAnswered) {
+      setCheckpointQuestionLoading(false);
+      setCheckpointQuestionLoadError(null);
+      setCheckpointPromptVisible(false);
+      setCheckpointQuestion(null);
+      return;
+    }
 
     const checkpointSeconds = currentGating.checkpoint_segundos;
     if (checkpointSeconds == null || checkpointSeconds <= 0) return;
@@ -1017,7 +1503,7 @@ export default function LessonDetailPage() {
     }
 
     // Verificar checkpoint
-    if (!currentGating?.habilitado || !checkpointQuestion || checkpointUnlocked || checkpointPromptVisible) return;
+    if (!currentGating?.habilitado || !checkpointQuestion || checkpointUnlocked || checkpointPromptVisible || checkpointAnswered || checkpointAttemptedRef.current || videoSectionAlreadyCompleted) return;
 
     const checkpointSeconds = currentGating.checkpoint_segundos;
     if (checkpointSeconds == null || checkpointSeconds <= 0) return;
@@ -1055,6 +1541,7 @@ export default function LessonDetailPage() {
       setProgSecciones(merged);
       await syncLessonProgressIfCompleted(merged);
 
+      checkpointAttemptedRef.current = true;
       if (passed) {
         setCheckpointUnlocked(true);
         setCheckpointPromptVisible(false);
@@ -1072,7 +1559,28 @@ export default function LessonDetailPage() {
 
         toast.success("Checkpoint de video superado. Puedes continuar.");
       } else {
-        toast.error("Respuesta incorrecta. Intenta nuevamente para desbloquear el video.");
+        setCheckpointPromptVisible(false);
+        setCheckpointSelectedOption("");
+
+        try {
+          if (youtubePlayerRef.current?.playVideo) {
+            youtubePlayerRef.current.playVideo();
+          } else {
+            await videoElementRef.current?.play();
+          }
+        } catch {
+          // no-op
+        }
+
+        toast.error("Respuesta incorrecta. El video continuará para que sigas con el contenido.");
+      }
+
+      if (
+        currentSection?.tipo === "video" &&
+        videoProgressPercent >= 100 &&
+        !progSecciones[currentSection.id]?.completado
+      ) {
+        await markSectionComplete(currentSection.id);
       }
     } catch (err) {
       toast.error(normalizeError(err));
@@ -1112,26 +1620,104 @@ export default function LessonDetailPage() {
     allowPartial?: boolean;
     source?: "native_manual_submit" | "quick_auto_timeout" | "quick_manual_finish" | "quick_auto_answer";
   }) => {
-    if (!currentSection?.actividad_interactiva_id || !nativeConfig || nativeConfig.questions.length === 0) return;
-
-    const allowPartial = options?.allowPartial ?? false;
-    const unansweredQuestionIds = nativeConfig.questions
-      .filter((question) => !nativeAnswers[question.id])
-      .map((question) => question.id);
-    if (!allowPartial && unansweredQuestionIds.length > 0) {
-      toast.error("Responde todas las preguntas para enviar la actividad nativa.");
-      return;
+    if (!currentSection?.actividad_interactiva_id || !nativeConfig) return;
+    if (nativeSubmitting) return;
+    const hasNativeInteraction = isNativeHotspotMode || isNativeDragAndDropMode || isNativeInteractiveMapMode || isNativeFillInTheBlankMode;
+    // Para ordering, solo validar que existan elementos a ordenar
+    if (nativeConfig.activityType === "ordering") {
+      if (!nativeConfig.questions || nativeConfig.questions.length === 0 || !nativeConfig.questions[0] || !nativeConfig.questions[0].options || nativeConfig.questions[0].options.length === 0) {
+        toast.error("La actividad de ordenar requiere al menos un elemento para ordenar.");
+        return;
+      }
+    } else {
+      if (nativeConfig.questions.length === 0 && !hasNativeInteraction) return;
     }
 
-    const timedOutQuestionIds = nativeConfig.questions
-      .filter((question) => nativeTimedOutQuestions[question.id])
-      .map((question) => question.id);
-    const correctAnswers = nativeConfig.questions.reduce((total, question) => {
-      const selectedId = nativeAnswers[question.id];
-      const selectedOption = question.options.find((option) => option.id === selectedId);
-      return total + (selectedOption?.isCorrect ? 1 : 0);
-    }, 0);
-    const scoreNormalizado = Math.round((correctAnswers / nativeConfig.questions.length) * 100);
+    const allowPartial = options?.allowPartial ?? false;
+    const fillBlankText = nativeConfig.fillBlankText || nativeConfig.questions[0]?.prompt || "";
+    const fillBlankMatches = isNativeFillInTheBlankMode ? fillBlankText.match(/___+/g) || [] : [];
+    const fillInBlankKeys = isNativeFillInTheBlankMode
+      ? Array.from({ length: fillBlankMatches.length }, (_, index) => `${nativeConfig.questions[0]?.id ?? "fill_blank_1"}:${index}`)
+      : [];
+    let unansweredQuestionIds: string[] = [];
+    if (nativeConfig.activityType === "ordering") {
+      // No requiere validación de preguntas respondidas
+      unansweredQuestionIds = [];
+    } else {
+      unansweredQuestionIds = isNativeHotspotMode
+        ? (nativeAnswers.hotspot ? [] : ["hotspot_selection"])
+        : isNativeDragAndDropMode
+          ? (nativeConfig.dragAndDropItems ?? []).filter((item) => !nativeAnswers[item.id]).map((item) => item.id)
+          : isNativeInteractiveMapMode
+            ? (nativeAnswers["map_selection"] ? [] : ["map_selection"])
+            : isNativeFillInTheBlankMode
+              ? fillInBlankKeys.filter((key) => !nativeAnswers[key])
+              : nativeConfig.questions
+                .filter((question) => !nativeAnswers[question.id])
+                .map((question) => question.id);
+      if (!allowPartial && unansweredQuestionIds.length > 0) {
+        toast.error("Responde todas las preguntas para enviar la actividad nativa.");
+        return;
+      }
+    }
+
+    const timedOutQuestionIds = isNativeHotspotMode || isNativeDragAndDropMode || isNativeInteractiveMapMode || isNativeFillInTheBlankMode
+      ? []
+      : nativeConfig.questions
+        .filter((question) => nativeTimedOutQuestions[question.id])
+        .map((question) => question.id);
+
+    let correctAnswers = 0;
+    let scoringItems = isNativeHotspotMode ? 1 : isNativeFillInTheBlankMode ? fillInBlankKeys.length : nativeConfig.questions.length;
+    if (nativeConfig.activityType === "fill_in_the_blank") {
+      const fillBlankQuestion = nativeConfig.questions[0] ?? { id: "fill_blank_1", prompt: "", options: [] };
+      const fillBlankAnswers = nativeConfig.fillBlankAnswers ?? [];
+      const bankItems = (nativeConfig.fillBlankWordBank?.filter((word) => word.trim()) ?? fillBlankQuestion.options.map((option) => option.text.trim()).filter((text) => text))
+        .map((text, index) => ({ id: `${fillBlankQuestion.id}_word_${index}`, text }));
+      const expectedAnswers = fillBlankAnswers.length >= fillInBlankKeys.length
+        ? fillBlankAnswers
+        : fillBlankQuestion.options.map((option) => option.text.trim()).filter((text) => text);
+
+      correctAnswers = fillInBlankKeys.reduce((total, key) => {
+        const blankIndex = Number(key.split(":")[1] ?? -1);
+        const expectedText = expectedAnswers[blankIndex]?.trim().toLowerCase() || "";
+        if (!expectedText) return total;
+        const selectedId = nativeAnswers[key] || "";
+        const selectedText = bankItems.find((item) => item.id === selectedId)?.text || selectedId;
+        return selectedText.trim().toLowerCase() === expectedText ? total + 1 : total;
+      }, 0);
+    } else if (nativeConfig.activityType === "ordering" && currentNativeOrderingQuestion) {
+      scoringItems = currentNativeOrderingQuestion.options.length;
+      const orderingIds = nativeOrderingState[currentNativeOrderingQuestion.id] ?? currentNativeOrderingQuestion.options.map((option) => option.id);
+      const correctOrder = currentNativeOrderingQuestion.options.map((option) => option.id);
+      correctAnswers = orderingIds.reduce((total, optionId, index) => (
+        optionId === correctOrder[index] ? total + 1 : total
+      ), 0);
+    } else if (nativeConfig.activityType === "drag_and_drop") {
+      scoringItems = nativeConfig.dragAndDropItems?.length ?? 0;
+      correctAnswers = (nativeConfig.dragAndDropItems ?? []).reduce((total, item) => {
+        const selectedCategory = nativeAnswers[item.id];
+        return total + (selectedCategory && selectedCategory === item.targetCategoryId ? 1 : 0);
+      }, 0);
+    } else if (nativeConfig.activityType === "interactive_map") {
+      scoringItems = 1;
+      const selectedId = nativeAnswers["map_selection"];
+      const selectedMarker = nativeConfig.mapMarkers?.find((marker) => marker.id === selectedId);
+      correctAnswers = selectedMarker?.isCorrect ? 1 : 0;
+    } else if (isNativeHotspotMode) {
+      const selectedId = nativeAnswers.hotspot;
+      const selectedOption = currentNativeHotspotOptions.find((option) => option.id === selectedId);
+      correctAnswers = selectedOption?.isCorrect ? 1 : 0;
+    } else {
+      correctAnswers = nativeConfig.questions.reduce((total, question) => {
+        const selectedId = nativeAnswers[question.id];
+        const selectedOption = question.options.find((option) => option.id === selectedId);
+        return total + (selectedOption?.isCorrect ? 1 : 0);
+      }, 0);
+    }
+    if (nativeSubmitting) return;
+
+    const scoreNormalizado = Math.round((correctAnswers / Math.max(1, scoringItems)) * 100);
 
     const completedByRule = currentActividad?.regla_completitud === "puntaje"
       ? scoreNormalizado >= nativeConfig.scoreThreshold
@@ -1152,9 +1738,10 @@ export default function LessonDetailPage() {
         completed_at: completedByRule ? new Date().toISOString() : undefined,
         metadata: {
           origen: options?.source ?? "native_manual_submit",
+          native_activity_type: nativeConfig.activityType,
           native_mode: isNativeQuickQuizMode ? "quick_quiz" : "standard_quiz",
-          total_questions: nativeConfig.questions.length,
-          answered_questions: nativeConfig.questions.length - unansweredQuestionIds.length,
+          total_questions: scoringItems,
+          answered_questions: scoringItems - unansweredQuestionIds.length,
           unanswered_questions: unansweredQuestionIds.length,
           unanswered_question_ids: unansweredQuestionIds,
           timed_out_questions: timedOutQuestionIds.length,
@@ -1166,6 +1753,7 @@ export default function LessonDetailPage() {
         },
       });
       setCurrentActividadIntento(intento);
+      setNativeScore(scoreNormalizado);
 
       if (completedByRule && !progSecciones[currentSection.id]?.completado) {
         await markSectionComplete(currentSection.id);
@@ -1364,22 +1952,122 @@ export default function LessonDetailPage() {
     currentActividad,
   ]);
 
+  const checkpointAttempted = useMemo(() => {
+    if (!currentGating?.habilitado || !currentGating.seccion_preguntas_id) return false;
+    return progSecciones[currentGating.seccion_preguntas_id] != null;
+  }, [currentGating, progSecciones]);
+
+  const checkpointSectionId = currentGating?.seccion_preguntas_id;
+  const visibleSections = useMemo(() => {
+    if (!checkpointAttempted || !checkpointSectionId) return secciones;
+    return secciones.filter((section) => section.id !== checkpointSectionId);
+  }, [secciones, checkpointAttempted, checkpointSectionId]);
+  const sectionIndexById = useMemo(
+    () => Object.fromEntries(secciones.map((section, idx) => [section.id, idx])),
+    [secciones],
+  );
+  const lessonCompletionPercent = useMemo(() => {
+    const total = visibleSections.length;
+    if (total === 0) return 0;
+    const completed = visibleSections.filter((section) => Boolean(progSecciones[section.id]?.completado)).length;
+    return Math.round((completed / total) * 100);
+  }, [visibleSections, progSecciones]);
+
+  const resourceExtension = inferResourceExtension(contentURL) || "";
+  const isPdfResource = resourceExtension === "pdf";
+  const isDocxResource = ["docx", "doc"].includes(resourceExtension);
+  const isPptxResource = ["ppt", "pptx"].includes(resourceExtension);
+  const imageExtensions = ["png", "jpg", "jpeg", "gif", "webp", "bmp", "svg", "avif", "tiff", "tif", "ico"];
+  const isImageResource = imageExtensions.includes(resourceExtension) || currentRecurso?.tipo === "imagen";
+  const isImageViewable = isImageResource && Boolean(contentURL);
+  const pdfViewerUrl = isPdfResource ? contentURL : isPptxResource ? pptxPdfUrl : null;
+  const isPdfViewable = Boolean(pdfViewerUrl);
+  const protectedPdfURL = useMemo(
+    () => (isPdfResource && contentURL ? buildProtectedPdfUrl(contentURL) : null),
+    [contentURL, isPdfResource],
+  );
+
+  const documentReadTrackingRequired = isPdfResource || isDocxResource || isPptxResource;
+  const pdfReadComplete = isPdfViewable && pdfPageCount > 0 && pdfPagesSeen.size >= pdfPageCount;
+  const docxReadComplete = isDocxResource && docxScrollComplete;
+  const pptxReadComplete = isPptxResource && pdfReadComplete;
+  const documentReadComplete = isPdfResource
+    ? pdfReadComplete
+    : isDocxResource
+    ? docxReadComplete
+    : isPptxResource
+    ? pptxReadComplete
+    : true;
+  const documentReadTrackingFailed =
+    (isPdfResource && Boolean(pdfLoadError)) ||
+    (isDocxResource && Boolean(docxLoadError)) ||
+    (isPptxResource && Boolean(pptxLoadError));
+  const documentReadyToComplete = !documentReadTrackingRequired || documentReadComplete || documentReadTrackingFailed;
+
+  const imageSectionValidated = (currentSection?.tipo === "imagen" || (currentSection?.tipo === "recurso" && isImageViewable)) && Boolean(contentURL) && imageLoaded;
+  const imageQuestionSection = useMemo(() => {
+    if (!currentSection || !isImageViewable) return null;
+    if (currentSection.prueba_id) return currentSection;
+    const currentIndex = sectionIndexById[currentSection.id];
+    if (currentIndex == null) return null;
+    const nextSection = secciones[currentIndex + 1];
+    if (!nextSection) return null;
+    if (nextSection.tipo === "prueba" && nextSection.prueba_id) return nextSection;
+    return null;
+  }, [currentSection, isImageViewable, sectionIndexById, secciones]);
+  const imageQuestionAvailable = Boolean(imageQuestionSection?.prueba_id);
+  const imageQuestionRequired = imageQuestionAvailable && isImageViewable;
+  const imageQuestionPending = imageQuestionAvailable && !imageQuestionAnswered;
+
   const gatingSatisfied = useMemo(() => {
     if (!currentGating?.habilitado) return true;
+
+    if (imageSectionValidated) {
+      return true;
+    }
+
+    if (currentSection?.tipo === "actividad_interactiva" && currentActividadIntento?.completado) {
+      return true;
+    }
+
+    if (currentSection?.tipo === "recurso" && documentReadyToComplete) {
+      return true;
+    }
+
     if (!currentGating.seccion_preguntas_id) return false;
+
+    if (currentGating.checkpoint_segundos != null && currentGating.checkpoint_segundos > 0) {
+      return checkpointAttempted || videoSectionAlreadyCompleted;
+    }
 
     const preguntasProgress = progSecciones[currentGating.seccion_preguntas_id];
     if (!preguntasProgress?.completado) return false;
 
     const puntuacion = preguntasProgress.puntuacion ?? 0;
     return puntuacion >= currentGating.puntaje_minimo;
-  }, [currentGating, progSecciones]);
+  }, [currentGating, progSecciones, checkpointAttempted, videoSectionAlreadyCompleted, currentSection?.tipo, documentReadComplete, currentActividadIntento?.completado]);
 
-  const isPdfResource = !!contentURL && contentURL.toLowerCase().includes(".pdf");
-  const protectedPdfURL = useMemo(
-    () => (isPdfResource && contentURL ? buildProtectedPdfUrl(contentURL) : null),
-    [contentURL, isPdfResource],
-  );
+  const getNextSectionIndex = useCallback((currentIndex: number) => {
+    let nextIndex = currentIndex + 1;
+    while (nextIndex < secciones.length) {
+      const nextSection = secciones[nextIndex];
+      if (!nextSection) break;
+      if (checkpointAttempted && checkpointSectionId && nextSection.id === checkpointSectionId) {
+        nextIndex += 1;
+        continue;
+      }
+      if (
+        currentSection?.tipo === "actividad_interactiva" &&
+        currentSection.actividad_interactiva_id &&
+        nextSection.actividad_interactiva_id === currentSection.actividad_interactiva_id
+      ) {
+        nextIndex += 1;
+        continue;
+      }
+      return nextIndex;
+    }
+    return currentIndex;
+  }, [checkpointAttempted, checkpointSectionId, secciones, currentSection?.tipo, currentSection?.actividad_interactiva_id]);
 
   useEffect(() => {
     if (!isPdfResource) return;
@@ -1422,6 +2110,345 @@ export default function LessonDetailPage() {
     };
   }, [isPdfResource]);
 
+  useEffect(() => {
+    if (!pdfViewerUrl) {
+      setPdfDoc(null);
+      setPdfPageCount(0);
+      setPdfCurrentPage(1);
+      setPdfPagesSeen(new Set());
+      setPdfLoading(false);
+      setPdfLoadError(null);
+      return;
+    }
+
+    let active = true;
+    setPdfLoading(true);
+    setPdfLoadError(null);
+    setPdfDoc(null);
+    setPdfPageCount(0);
+    setPdfCurrentPage(1);
+    setPdfPagesSeen(new Set());
+
+    void (async () => {
+      try {
+        const raw = await fetchResourceArrayBuffer(pdfViewerUrl);
+        const pdf = await pdfjsLib.getDocument({ data: raw }).promise;
+        if (!active) return;
+        setPdfDoc(pdf);
+        setPdfPageCount(pdf.numPages);
+        setPdfCurrentPage(1);
+        if (isPptxResource) {
+          setPptxSlideCount(pdf.numPages);
+        }
+      } catch (err) {
+        if (active) {
+          setPdfLoadError(normalizeError(err));
+        }
+      } finally {
+        if (active) {
+          setPdfLoading(false);
+        }
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [pdfViewerUrl]);
+
+  useEffect(() => {
+    if (!pdfDoc || !pdfCanvasRef.current) return;
+    let active = true;
+
+    void (async () => {
+      try {
+        const page = await pdfDoc.getPage(pdfCurrentPage);
+        if (!active || !pdfCanvasRef.current) return;
+
+        const viewport = page.getViewport({ scale: 1.3 });
+        const canvas = pdfCanvasRef.current;
+        const context = canvas.getContext("2d");
+        if (!context) return;
+
+        canvas.width = viewport.width;
+        canvas.height = viewport.height;
+
+        await page.render({ canvas, viewport }).promise;
+        if (!active) return;
+        setPdfPagesSeen((prev) => new Set([...prev, pdfCurrentPage]));
+      } catch (err) {
+        console.error("Error rendering PDF page:", err);
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [pdfDoc, pdfCurrentPage]);
+
+  useEffect(() => {
+    if (!contentURL || !isDocxResource) {
+      setDocxHtml(null);
+      setDocxLoading(false);
+      setDocxLoadError(null);
+      setDocxScrollComplete(false);
+      setDocxHasInteracted(false);
+      setPptxLoadError(null);
+      return;
+    }
+
+    let active = true;
+    setDocxLoading(true);
+    setDocxLoadError(null);
+    setDocxHtml(null);
+    setDocxScrollComplete(false);
+    setDocxHasInteracted(false);
+
+    void (async () => {
+      try {
+        const raw = await fetchResourceArrayBuffer(contentURL);
+        const result = await mammoth.convertToHtml({ arrayBuffer: raw });
+        if (!active) return;
+        setDocxHtml(result.value);
+      } catch (err) {
+        if (active) {
+          setDocxLoadError(normalizeError(err));
+        }
+      } finally {
+        if (active) {
+          setDocxLoading(false);
+        }
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [contentURL, isDocxResource]);
+
+  useEffect(() => {
+    setImageQuestion(null);
+    setImageQuestionLoadError(null);
+    setImageQuestionSelectedOption("");
+    setImageQuestionAnswered(false);
+    setImageQuestionCorrect(null);
+
+    const targetQuestionSection = imageQuestionSection;
+    if (!targetQuestionSection || !targetQuestionSection.prueba_id || !isImageViewable) {
+      setImageQuestionLoading(false);
+      return;
+    }
+
+    let active = true;
+    setImageQuestionLoading(true);
+    setImageQuestionLoadError(null);
+
+    void getPruebaCompleta(targetQuestionSection.prueba_id)
+      .then((response) => {
+        if (!active) return;
+        const prueba = unwrapApiData(response);
+        const firstQuestion = prueba?.preguntas?.[0];
+        if (!firstQuestion || !Array.isArray(firstQuestion.respuestas) || firstQuestion.respuestas.length === 0) {
+          setImageQuestionLoadError("No se encontró la pregunta de imagen o no tiene opciones disponibles.");
+          setImageQuestion(null);
+          return;
+        }
+        setImageQuestion(firstQuestion);
+      })
+      .catch((error) => {
+        if (!active) return;
+        setImageQuestionLoadError(normalizeError(error));
+      })
+      .finally(() => {
+        if (active) {
+          setImageQuestionLoading(false);
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [currentSection?.tipo, currentSection?.prueba_id, contentURL, imageQuestionSection]);
+
+  useEffect(() => {
+    setPptxLoadError(null);
+  }, [contentURL, isPptxResource]);
+
+  useEffect(() => {
+    if (!contentURL || !isPptxResource) {
+      setPptxLoading(false);
+      setPptxLoadError(null);
+      setPptxSlides([]);
+      setPptxSlideCount(0);
+      setPptxCurrentSlideIndex(0);
+      setPptxSlidesViewed(new Set());
+      setPptxPdfUrl(null);
+      return;
+    }
+
+    let active = true;
+    let pdfObjectUrl: string | null = null;
+    setPptxLoading(true);
+    setPptxLoadError(null);
+    setPptxSlides([]);
+    setPptxSlideCount(0);
+    setPptxCurrentSlideIndex(0);
+    setPptxSlidesViewed(new Set());
+    setPptxPdfUrl(null);
+    setPdfLoadError(null);
+
+    void (async () => {
+      try {
+        const raw = await fetchResourceArrayBuffer(contentURL);
+        const token = localStorage.getItem("token");
+        const headers: HeadersInit = token
+          ? { Authorization: `Bearer ${token}`, "Content-Type": "application/vnd.openxmlformats-officedocument.presentationml.presentation" }
+          : { "Content-Type": "application/vnd.openxmlformats-officedocument.presentationml.presentation" };
+        const convertUrl = `${API_BASE_URL.replace(/\/$/, "")}/recursos/pptx-to-pdf`;
+
+        const convertResponse = await fetch(convertUrl, {
+          method: "POST",
+          headers,
+          body: raw,
+        });
+
+        if (!convertResponse.ok) {
+          const errorText = await convertResponse.text();
+          throw new Error(`Error al convertir PPTX: ${convertResponse.status} ${errorText}`);
+        }
+
+        const pdfBytes = new Uint8Array(await convertResponse.arrayBuffer());
+        if (!active) return;
+
+        const pdfArrayBuffer = pdfBytes.buffer;
+        pdfObjectUrl = URL.createObjectURL(new Blob([pdfArrayBuffer], { type: "application/pdf" }));
+        setPptxPdfUrl(pdfObjectUrl);
+        setPptxSlideCount(0);
+        setPptxSlidesViewed(new Set([0]));
+      } catch (err) {
+        if (active) {
+          const message = normalizeError(err);
+          setPptxLoadError(message);
+          setPdfLoadError(message);
+        }
+      } finally {
+        if (active) {
+          setPptxLoading(false);
+        }
+      }
+    })();
+
+    return () => {
+      active = false;
+      if (pdfObjectUrl) {
+        URL.revokeObjectURL(pdfObjectUrl);
+      }
+    };
+  }, [contentURL, isPptxResource]);
+
+  useEffect(() => {
+    if (!isPptxResource || pptxSlideCount <= 0) return;
+    setPptxSlidesViewed((prev) => new Set(prev).add(pptxCurrentSlideIndex));
+  }, [isPptxResource, pptxCurrentSlideIndex, pptxSlideCount]);
+
+  useEffect(() => {
+    const container = docxViewerRef.current;
+    if (!container || !docxHtml) return;
+
+    const checkScroll = () => {
+      const totalHeight = container.scrollHeight;
+      const visibleHeight = container.clientHeight;
+      const isComplete = container.scrollTop + visibleHeight >= totalHeight - 16;
+      const isScrollable = totalHeight > visibleHeight + 16;
+      setDocxScrollComplete(isComplete && (docxHasInteracted || !isScrollable));
+    };
+
+    const onInteraction = () => {
+      if (!docxHasInteracted) {
+        setDocxHasInteracted(true);
+      }
+      checkScroll();
+    };
+
+    checkScroll();
+    container.addEventListener("scroll", onInteraction, { passive: true });
+    container.addEventListener("pointerdown", onInteraction);
+
+    return () => {
+      container.removeEventListener("scroll", onInteraction);
+      container.removeEventListener("pointerdown", onInteraction);
+    };
+  }, [docxHtml, docxHasInteracted]);
+
+  const handleSubmitImageQuestion = async () => {
+    if (!imageQuestion || !imageQuestionSelectedOption || imageQuestionAnswered) return;
+    const selected = imageQuestion.respuestas.find((option) => option.id === imageQuestionSelectedOption);
+    const isCorrect = Boolean(selected?.es_correcta);
+    setImageQuestionAnswered(true);
+    setImageQuestionCorrect(isCorrect);
+
+    if (isEditor) return;
+
+    const sectionsToComplete = new Set<string>();
+    if (currentSection && !progSecciones[currentSection.id]?.completado) {
+      sectionsToComplete.add(currentSection.id);
+    }
+    if (imageQuestionSection && imageQuestionSection.id !== currentSection?.id && !progSecciones[imageQuestionSection.id]?.completado) {
+      sectionsToComplete.add(imageQuestionSection.id);
+    }
+
+    for (const sectionId of sectionsToComplete) {
+      try {
+        await markSectionComplete(sectionId);
+      } catch {
+        // markSectionComplete already handles errors with toast
+      }
+    }
+  };
+
+  const handleNextClick = useCallback(async () => {
+    if (!isEditor && currentSection && !progSecciones[currentSection.id]?.completado) {
+      if (currentSection.tipo === "recurso" && isImageViewable && imageQuestionAvailable && imageQuestionAnswered && imageLoaded) {
+        await markSectionComplete(currentSection.id);
+      } else if (currentSection.tipo === "recurso" && documentReadyToComplete) {
+        await markSectionComplete(currentSection.id);
+      } else if (currentSection.tipo === "imagen" && imageLoaded) {
+        await markSectionComplete(currentSection.id);
+      } else if (currentSection.tipo === "actividad_interactiva" && !!currentActividadIntento?.completado) {
+        await markSectionComplete(currentSection.id);
+      }
+    }
+
+    if (currentSection?.tipo === "actividad_interactiva") {
+      if (!progSecciones[currentSection.id]?.completado && !!currentActividadIntento?.completado) {
+        await markSectionComplete(currentSection.id);
+      }
+
+      if (!isEditor && lesson && !lessonAlreadyCompleted && !!currentActividadIntento?.completado) {
+        try {
+          await upsertProgreso({
+            leccion_id: lesson.id,
+            completado: true,
+            puntaje: nativeScore != null ? nativeScore : 100,
+          });
+          setLessonAlreadyCompleted(true);
+        } catch {
+          // no-op; sección ya quedó marcada y el usuario puede continuar.
+        }
+      }
+
+      navigate(returnPath);
+      return;
+    }
+
+    const nextIndex = getNextSectionIndex(currentIdx);
+    if (nextIndex === currentIdx) {
+      navigate(returnPath);
+    } else {
+      setCurrentIdx(nextIndex);
+    }
+  }, [currentIdx, currentSection, documentReadyToComplete, getNextSectionIndex, imageLoaded, imageQuestionAvailable, imageQuestionAnswered, isImageViewable, isEditor, markSectionComplete, navigate, progSecciones, returnPath, currentActividadIntento?.completado]);
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[40vh]">
@@ -1456,7 +2483,11 @@ export default function LessonDetailPage() {
   const currentRequisitos = currentSection?.requisitos || [];
   const blockedByRequisitos = currentRequisitos.some((id) => !progSecciones[id]?.completado);
 
-  const sectionCompleted = !!currentSection && !!progSecciones[currentSection.id]?.completado;
+  const sectionCompleted = !!currentSection && (
+    !!progSecciones[currentSection.id]?.completado ||
+    (isVideoSection && checkpointAttempted && videoProgressPercent >= 100) ||
+    (currentSection.tipo === "actividad_interactiva" && !!currentActividadIntento?.completado)
+  );
 
   const youtubeValidated = !youtubeVideoId || !!currentVideoProgress?.completado;
   const interactiveValidated = !isInteractiveSection || !!currentActividadIntento?.completado;
@@ -1468,12 +2499,17 @@ export default function LessonDetailPage() {
     !sectionCompleted &&
     !blockedByRequisitos &&
     (!isVideoSection || youtubeValidated) &&
-    interactiveValidated;
+    interactiveValidated &&
+    documentReadyToComplete &&
+    (!imageQuestionRequired || imageQuestionAnswered);
+
+  const resourceValidationIncomplete = currentSection?.tipo === "recurso" && !documentReadyToComplete;
+  const imageValidationIncomplete = currentSection?.tipo === "imagen" && !imageLoaded;
 
   const nextBlocked =
     !!currentSection &&
     !isEditor &&
-    ((currentSection.es_obligatorio !== false && !sectionCompleted) || blockedByRequisitos || !gatingSatisfied);
+    ((currentSection.es_obligatorio !== false && !sectionCompleted) || blockedByRequisitos || !gatingSatisfied || resourceValidationIncomplete || imageValidationIncomplete || imageQuestionPending);
 
   return (
     <div className="max-w-4xl mx-auto p-4">
@@ -1493,28 +2529,15 @@ export default function LessonDetailPage() {
         <p className="text-gray-500">{t("lessons.noSections", { defaultValue: "Esta lección no tiene secciones" })}</p>
       ) : (
         <>
-          {/* Section progress indicator */}
-          <div className="flex gap-1 mb-6">
-            {secciones.map((s, idx) => (
-              <button
-                key={s.id}
-                onClick={() => setCurrentIdx(idx)}
-                className={`flex-1 h-2 rounded-full transition-colors ${
-                  progSecciones[s.id]?.completado
-                    ? "bg-green-500"
-                    : idx === currentIdx
-                    ? "bg-blue-500"
-                    : "bg-gray-200"
-                }`}
-              />
-            ))}
-          </div>
-
           {/* Current section */}
           {currentSection && (
             <div className="bg-white rounded-lg shadow p-6 mb-4">
               <div className="flex items-center justify-between mb-4">
-                <h2 className="text-lg font-semibold">{`${currentSection.tipo} — Sección ${currentIdx + 1}`}</h2>
+                <h2 className="text-lg font-semibold">
+                  {currentSection.tipo === "actividad_interactiva"
+                    ? currentActividad?.titulo || "Actividad interactiva"
+                    : `${currentSection.tipo} — Sección ${currentIdx + 1}`}
+                </h2>
                 {progSecciones[currentSection.id]?.completado && (
                   <CheckCircle size={20} className="text-green-500" />
                 )}
@@ -1659,25 +2682,254 @@ export default function LessonDetailPage() {
                 </div>
               )}
 
-              {currentSection.tipo === "imagen" && contentURL && (
-                <img src={contentURL} alt="" className="w-full rounded mb-4" />
-              )}
 
-              {(currentSection.tipo === "texto" || currentSection.tipo === "recurso") && (currentSection.contenido || currentRecurso?.descripcion || contentURL) && (
+              {(currentSection.tipo === "texto" || currentSection.tipo === "recurso" || currentSection.tipo === "imagen") && (currentSection.contenido || currentRecurso?.descripcion || contentURL) && (
                 <div className="mb-4 space-y-3">
-                  {currentSection.contenido && <p className="text-gray-700 whitespace-pre-wrap">{currentSection.contenido}</p>}
-                  {!currentSection.contenido && currentRecurso?.descripcion && <p className="text-gray-700 whitespace-pre-wrap">{currentRecurso.descripcion}</p>}
-                  {isPdfResource && contentURL && (
-                    <iframe
-                      src={protectedPdfURL || contentURL}
-                      className="w-full h-[540px] rounded border border-slate-200"
-                      title="PDF Recurso"
-                      sandbox="allow-scripts allow-same-origin"
-                      referrerPolicy="strict-origin-when-cross-origin"
-                      onContextMenu={(event) => event.preventDefault()}
-                    />
+                  {isImageViewable && (
+                    <div className="mb-4 rounded-3xl border border-slate-200 bg-white shadow-sm p-4">
+                      <img
+                        src={contentURL || undefined}
+                        alt="Contenido de imagen"
+                        className="w-full rounded-2xl mb-4"
+                        onLoad={() => setImageLoaded(true)}
+                        onError={() => setImageLoaded(false)}
+                      />
+
+                      <div className="mb-4 flex flex-wrap items-center gap-2">
+                        <span className={imageLoaded ? "inline-flex items-center gap-2 rounded-full bg-emerald-100 px-3 py-2 text-sm font-medium text-emerald-800" : "inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-2 text-sm font-medium text-slate-700"}>
+                          {imageLoaded ? "✅ Imagen cargada" : "Cargando imagen..."}
+                        </span>
+                        {currentSection.prueba_id && (
+                          <span className={`inline-flex items-center gap-2 rounded-full px-3 py-2 text-sm font-medium ${imageQuestionAnswered ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"}`}>
+                            {imageQuestionAnswered ? "Pregunta respondida" : "Responde la pregunta para continuar"}
+                          </span>
+                        )}
+                      </div>
+
+                      {imageQuestionAvailable ? (
+                        <div className="rounded-3xl border border-slate-200 bg-slate-50 p-5">
+                          <div className="mb-3 text-sm font-semibold text-slate-900">Pregunta</div>
+
+                          {imageQuestionLoading ? (
+                            <div className="text-sm text-slate-600">Cargando pregunta...</div>
+                          ) : imageQuestionLoadError ? (
+                            <div className="text-sm text-rose-700">{imageQuestionLoadError}</div>
+                          ) : imageQuestion ? (
+                            <>
+                              <p className="text-sm text-slate-700 mb-4">Toca el botón para responder la pregunta asociada a esta imagen.</p>
+                              <button
+                                type="button"
+                                onClick={() => setShowImageQuestionModal(true)}
+                                className="inline-flex items-center justify-center rounded-full bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-700"
+                              >
+                                {imageQuestionAnswered ? "Ver pregunta respondida" : "Responder pregunta"}
+                              </button>
+                              {imageQuestionAnswered && imageQuestionCorrect != null && (
+                                <div className={`mt-3 rounded-2xl px-3 py-2 text-sm ${imageQuestionCorrect ? "bg-emerald-50 text-emerald-800 border border-emerald-200" : "bg-rose-50 text-rose-800 border border-rose-200"}`}>
+                                  {imageQuestionCorrect ? "Respuesta correcta. Ya puedes avanzar." : "Respuesta incorrecta. El botón siguiente ya está habilitado."}
+                                </div>
+                              )}
+                            </>
+                          ) : (
+                            <div className="text-sm text-slate-600">No hay pregunta disponible para este contenido.</div>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
+                          Este recurso solo muestra la imagen. Avanza una vez que la hayas revisado.
+                        </div>
+                      )}
+
+                      {showImageQuestionModal && imageQuestion && (
+                        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-4">
+                          <div className="w-full max-w-2xl rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl">
+                            <div className="flex items-start justify-between gap-4">
+                              <div>
+                                <h3 className="text-lg font-semibold text-slate-900">Pregunta de la imagen</h3>
+                                <p className="mt-1 text-sm text-slate-600">Responde la pregunta para habilitar el botón siguiente.</p>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => setShowImageQuestionModal(false)}
+                                className="rounded-full bg-slate-100 px-3 py-2 text-sm text-slate-700 hover:bg-slate-200"
+                              >
+                                Cerrar
+                              </button>
+                            </div>
+
+                            <div className="mt-6">
+                              <p className="text-base text-slate-900 mb-4">{imageQuestion.texto}</p>
+                              <div className="space-y-3 mb-4">
+                                {imageQuestion.respuestas.map((option) => (
+                                  <label
+                                    key={option.id}
+                                    className={`flex cursor-pointer items-center gap-3 rounded-2xl border px-4 py-3 text-slate-900 transition ${imageQuestionSelectedOption === option.id ? "border-indigo-500 bg-indigo-50" : "border-slate-200 bg-white"}`}
+                                  >
+                                    <input
+                                      type="radio"
+                                      name={`imagen-pregunta-modal-${currentSection.id}`}
+                                      checked={imageQuestionSelectedOption === option.id}
+                                      onChange={() => setImageQuestionSelectedOption(option.id)}
+                                      className="h-4 w-4 text-indigo-600"
+                                    />
+                                    <span>{option.texto}</span>
+                                  </label>
+                                ))}
+                              </div>
+                              <div className="flex flex-col gap-3 sm:flex-row sm:justify-end">
+                                <button
+                                  type="button"
+                                  onClick={() => setShowImageQuestionModal(false)}
+                                  className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
+                                >
+                                  Volver
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={async () => {
+                                    await handleSubmitImageQuestion();
+                                    setShowImageQuestionModal(false);
+                                  }}
+                                  disabled={!imageQuestionSelectedOption || imageQuestionAnswered}
+                                  className="inline-flex items-center justify-center rounded-full bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                  {imageQuestionAnswered ? "Respuesta enviada" : "Enviar respuesta"}
+                                </button>
+                              </div>
+                              {imageQuestionAnswered && imageQuestionCorrect != null && (
+                                <div className={`mt-4 rounded-2xl px-3 py-2 text-sm ${imageQuestionCorrect ? "bg-emerald-50 text-emerald-800 border border-emerald-200" : "bg-rose-50 text-rose-800 border border-rose-200"}`}>
+                                  {imageQuestionCorrect ? "Respuesta correcta. Ya puedes avanzar." : "Respuesta incorrecta. El botón siguiente ya está habilitado."}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
                   )}
-                  {!isPdfResource && contentURL && (
+
+                  {currentSection.contenido && !currentSection.prueba_id && <p className="text-gray-700 whitespace-pre-wrap">{currentSection.contenido}</p>}
+                  {!currentSection.contenido && currentRecurso?.descripcion && !currentSection.prueba_id && <p className="text-gray-700 whitespace-pre-wrap">{currentRecurso.descripcion}</p>}
+                  {isPdfViewable && pdfViewerUrl && (
+                    <div className="mb-4 rounded-lg border border-slate-200 bg-slate-50 p-4">
+                      <div className="mb-3 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                        <div>
+                          <p className="text-sm font-semibold text-slate-900">
+                            {isPptxResource ? "Visor PDF de presentación" : "Visor PDF nativo"}
+                          </p>
+                          <p className="text-xs text-slate-600">Navega por todas las páginas para registrar la lectura completa.</p>
+                        </div>
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setPdfCurrentPage((p) => Math.max(1, p - 1))}
+                            disabled={pdfCurrentPage <= 1 || pdfLoading}
+                            className="rounded-md border border-slate-300 bg-white px-3 py-1 text-sm text-slate-700 disabled:opacity-50"
+                          >
+                            Anterior
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setPdfCurrentPage((p) => Math.min(pdfPageCount, p + 1))}
+                            disabled={pdfCurrentPage >= pdfPageCount || pdfLoading}
+                            className="rounded-md border border-slate-300 bg-white px-3 py-1 text-sm text-slate-700 disabled:opacity-50"
+                          >
+                            Siguiente
+                          </button>
+                        </div>
+                      </div>
+
+                      {pdfLoading ? (
+                        <div className="rounded-lg border border-slate-200 bg-white p-6 text-center text-slate-600">Cargando PDF...</div>
+                      ) : pdfLoadError ? (
+                        <div className="rounded-lg border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">{pdfLoadError}</div>
+                      ) : (
+                        <>
+                          <div className="overflow-auto rounded border border-slate-200 bg-white">
+                            <canvas ref={pdfCanvasRef} className="w-full" />
+                          </div>
+                          <div className="mt-3 flex flex-col gap-2 text-sm text-slate-700 md:flex-row md:items-center md:justify-between">
+                            <span>Página {pdfCurrentPage} de {pdfPageCount}</span>
+                            <span>Vistas {pdfPagesSeen.size}/{pdfPageCount} páginas</span>
+                            <span className={pdfReadComplete ? "text-emerald-700" : "text-slate-600"}>
+                              {pdfReadComplete ? "Lectura completa" : "Continúa navegando por todas las páginas"}
+                            </span>
+                          </div>
+                          {pdfReadComplete && (
+                            <div className="mt-3 inline-flex items-center gap-2 rounded-full bg-emerald-100 px-3 py-2 text-sm font-medium text-emerald-800">
+                              <span>✅ Documento leído</span>
+                              <span className="rounded-full bg-emerald-200 px-2 py-0.5 text-xs text-emerald-900">Siguiente habilitado</span>
+                            </div>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  )}
+                  {isPptxResource && !pdfViewerUrl && (
+                    <div className="mb-4 rounded-lg border border-slate-200 bg-slate-50 p-4">
+                      {pptxLoading ? (
+                        <p className="text-sm text-slate-600">Convirtiendo la presentación PPTX a PDF...</p>
+                      ) : pptxLoadError ? (
+                        <div className="rounded-lg border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">
+                          {pptxLoadError}
+                        </div>
+                      ) : (
+                        <p className="text-sm text-slate-600">Preparando la vista previa de la presentación...</p>
+                      )}
+                    </div>
+                  )}
+                  {isPptxResource && contentURL && (
+                    <div className="mb-4 rounded-lg border border-slate-200 bg-slate-50 p-4">
+                      <div className="mb-3 flex items-center justify-between gap-4">
+                        <div>
+                          <p className="text-sm font-semibold text-slate-900">Descarga original</p>
+                          <p className="text-xs text-slate-600">La presentación PPTX original se conserva para descargarla como archivo de diapositivas.</p>
+                        </div>
+                        <a
+                          href={contentURL}
+                          download={extractFileNameFromUrl(contentURL, "presentacion.pptx")}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="rounded-md border border-slate-300 bg-white px-3 py-1 text-sm text-slate-700 hover:bg-slate-50"
+                        >
+                          Descargar PPTX
+                        </a>
+                      </div>
+                      {pptxSlideCount > 0 && (
+                        <p className="text-xs text-slate-500">Diapositivas detectadas: {pptxSlideCount}</p>
+                      )}
+                    </div>
+                  )}
+                  {isDocxResource && contentURL && (
+                    <div className="mb-4 rounded-lg border border-slate-200 bg-slate-50 p-4">
+                      <div className="mb-3 flex items-center justify-between gap-4">
+                        <div>
+                          <p className="text-sm font-semibold text-slate-900">Visor Word nativo</p>
+                          <p className="text-xs text-slate-600">Desplázate hasta el final para registrar que leíste el documento.</p>
+                        </div>
+                        <span className={docxReadComplete ? "text-emerald-700 text-sm" : "text-slate-600 text-sm"}>
+                          {docxReadComplete ? "Lectura completa" : "Desplázate hasta el final"}
+                        </span>
+                      </div>
+
+                      {docxLoading ? (
+                        <div className="rounded-lg border border-slate-200 bg-white p-6 text-center text-slate-600">Cargando Word...</div>
+                      ) : docxLoadError ? (
+                        <div className="rounded-lg border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">{docxLoadError}</div>
+                      ) : (
+                        <>
+                          <div ref={docxViewerRef} className="prose max-w-none h-[540px] overflow-y-auto rounded border border-slate-200 bg-white p-4 text-sm text-slate-700" dangerouslySetInnerHTML={{ __html: docxHtml || "" }} />
+                          {docxReadComplete && (
+                            <div className="mt-3 inline-flex items-center gap-2 rounded-full bg-emerald-100 px-3 py-2 text-sm font-medium text-emerald-800">
+                              <span>✅ Documento leído</span>
+                              <span className="rounded-full bg-emerald-200 px-2 py-0.5 text-xs text-emerald-900">Siguiente habilitado</span>
+                            </div>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  )}
+                  {!isPdfResource && !isDocxResource && !isPptxResource && contentURL && (
                     <a
                       href={contentURL}
                       target="_blank"
@@ -1703,11 +2955,198 @@ export default function LessonDetailPage() {
 
                       {currentActividad.proveedor === "nativo" && nativeConfig ? (
                         <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 space-y-4">
-                          {nativeConfig.questions.length === 0 ? (
-                            <p className="text-sm text-amber-800">La actividad nativa no tiene preguntas validas configuradas.</p>
+                          <div className="rounded-md border border-emerald-200 bg-white p-3 text-sm text-emerald-900">
+                            Tipo de actividad nativa: <span className="font-semibold">{getNativeActivityTypeLabel(nativeConfig.activityType)}</span>
+                          </div>
+                          {currentActividadIntento?.completado ? (
+                            <div className="rounded-lg border border-emerald-200 bg-white p-4 text-slate-900">
+                              <p className="text-sm font-semibold text-emerald-900">Actividad completada</p>
+                              {nativeScore != null && (
+                                <p className="mt-2 text-sm text-slate-700">Puntaje: {nativeScore}%</p>
+                              )}
+                              <p className="mt-3 text-sm text-slate-600">La actividad nativa ya fue completada y no puede volver a realizarse. Usa el botón siguiente para continuar con el siguiente contenido.</p>
+                            </div>
+                          ) : !nativeActivityHasContent ? (
+                            <p className="text-sm text-amber-800">La actividad nativa no tiene configuración válida para mostrarse.</p>
                           ) : (
                             <>
-                              {isNativeQuickQuizMode ? (
+                              {(isNativeDragAndDropMode || isNativeInteractiveMapMode || isNativeFillInTheBlankMode) ? (
+                                <NativeActivityRenderer
+                                  config={nativeConfig}
+                                  answers={nativeAnswers}
+                                  setAnswers={setNativeAnswers}
+                                  submitting={nativeSubmitting}
+                                  onSubmit={() => void onSubmitNativeActividad()}
+                                  isEditor={isEditor}
+                                />
+                              ) : nativeConfig.activityType === "ordering" && currentNativeOrderingQuestion ? (
+                                <div className="space-y-4">
+                                  <div className="rounded-md border border-emerald-300 bg-white p-3">
+                                    <p className="text-sm font-semibold text-emerald-900">Ordena los elementos en el orden correcto</p>
+                                    <p className="mt-1 text-sm text-slate-600">Arrastra las flechas para cambiar el orden y luego envía la actividad.</p>
+                                  </div>
+                                  <div className="space-y-2">
+                                    {nativeOrderingIds.map((optionId, index) => {
+                                      const option = currentNativeOrderingQuestion.options.find((item) => item.id === optionId);
+                                      if (!option) return null;
+                                      return (
+                                        <div key={optionId} className="flex items-center justify-between gap-3 rounded-md border border-slate-200 bg-white p-3">
+                                          <span className="text-sm text-slate-800">{index + 1}. {option.text}</span>
+                                          <div className="flex items-center gap-2">
+                                            <button
+                                              type="button"
+                                              disabled={index === 0 || nativeSubmitting}
+                                              onClick={() => {
+                                                setNativeOrderingState((prev) => {
+                                                  const current = prev[currentNativeOrderingQuestion.id] ?? nativeOrderingIds;
+                                                  const next = [...current];
+                                                  const above = next[index - 1];
+                                                  const currentItem = next[index];
+                                                  if (!above || !currentItem) return prev;
+                                                  next[index - 1] = currentItem;
+                                                  next[index] = above;
+                                                  return { ...prev, [currentNativeOrderingQuestion.id]: next };
+                                                });
+                                              }}
+                                              className="rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                                            >⬆</button>
+                                            <button
+                                              type="button"
+                                              disabled={index === nativeOrderingIds.length - 1 || nativeSubmitting}
+                                              onClick={() => {
+                                                setNativeOrderingState((prev) => {
+                                                  const current = prev[currentNativeOrderingQuestion.id] ?? nativeOrderingIds;
+                                                  const next = [...current];
+                                                  const currentItem = next[index];
+                                                  const below = next[index + 1];
+                                                  if (!currentItem || !below) return prev;
+                                                  next[index] = below;
+                                                  next[index + 1] = currentItem;
+                                                  return { ...prev, [currentNativeOrderingQuestion.id]: next };
+                                                });
+                                              }}
+                                              className="rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                                            >⬇</button>
+                                          </div>
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+
+                                  {!isEditor && (
+                                    <button
+                                      type="button"
+                                      onClick={() => void onSubmitNativeActividad()}
+                                      disabled={nativeSubmitting}
+                                      className="rounded-md bg-emerald-700 px-3 py-2 text-white hover:bg-emerald-800 disabled:opacity-50"
+                                    >
+                                      {nativeSubmitting ? "Enviando..." : "Enviar actividad nativa"}
+                                    </button>
+                                  )}
+                                </div>
+) : nativeConfig.activityType === "true_false" ? (
+                                <div className="space-y-4">
+                                  {nativeConfig.questions.map((question, index) => (
+                                    <div key={question.id} className="rounded-md border border-emerald-200 bg-white p-3">
+                                      <p className="text-sm font-medium text-emerald-900 mb-3">{index + 1}. {question.prompt}</p>
+                                      <div className="flex flex-col gap-2">
+                                        {question.options.length > 0 ? question.options.map((option) => (
+                                          <label key={option.id} className="inline-flex items-center gap-2 text-sm text-emerald-900">
+                                            <input
+                                              type="radio"
+                                              name={`native-${question.id}`}
+                                              checked={nativeAnswers[question.id] === option.id}
+                                              onChange={() => setNativeAnswers((prev) => ({ ...prev, [question.id]: option.id }))}
+                                            />
+                                            {option.text}
+                                          </label>
+                                        )) : (
+                                          <>
+                                            {[["true", "Verdadero"], ["false", "Falso"]].map(([value, label]) => (
+                                              <label key={value} className="inline-flex items-center gap-2 text-sm text-emerald-900">
+                                                <input
+                                                  type="radio"
+                                                  name={`native-${question.id}`}
+                                                  checked={nativeAnswers[question.id] === value}
+                                                  onChange={() => setNativeAnswers((prev) => ({ ...prev, [question.id]: String(value) }))}
+                                                />
+                                                {label}
+                                              </label>
+                                            ))}
+                                          </>
+                                        )}
+                                      </div>
+                                    </div>
+                                  ))}
+
+                                  {!isEditor && (
+                                    <button
+                                      type="button"
+                                      onClick={() => void onSubmitNativeActividad()}
+                                      disabled={nativeSubmitting}
+                                      className="rounded-md bg-emerald-700 px-3 py-2 text-white hover:bg-emerald-800 disabled:opacity-50"
+                                    >
+                                      {nativeSubmitting ? "Enviando..." : "Enviar actividad nativa"}
+                                    </button>
+                                  )}
+                                </div>
+                              ) : nativeConfig.activityType === "matching" ? (
+                                <NativeActivityMatchingPlayer
+                                  config={nativeConfig}
+                                  answers={nativeAnswers}
+                                  setAnswers={setNativeAnswers}
+                                  submitting={nativeSubmitting}
+                                  onSubmit={() => void onSubmitNativeActividad()}
+                                  isEditor={isEditor}
+                                />
+                              ) : nativeConfig.activityType === "hotspot" ? (
+                                <div className="space-y-4">
+                                  <div className="rounded-md border border-emerald-300 bg-white p-3">
+                                    <p className="text-sm font-semibold text-emerald-900">Hotspot</p>
+                                    <p className="mt-1 text-sm text-slate-600">Selecciona el punto correcto en la imagen.</p>
+                                  </div>
+                                  {nativeHotspotImageUrl ? (
+                                    <div className="overflow-hidden rounded-lg border border-slate-200 bg-slate-100">
+                                      <img src={nativeHotspotImageUrl} alt="Hotspot" className="w-full object-contain" />
+                                    </div>
+                                  ) : (
+                                    <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                                      No se ha configurado imagen para esta actividad Hotspot.
+                                    </div>
+                                  )}
+
+                                  {currentNativeHotspotOptions.length > 0 ? (
+                                    <div className="space-y-2">
+                                      {currentNativeHotspotOptions.map((hotspot) => (
+                                        <label key={hotspot.id} className="flex items-center gap-2 rounded-md border border-slate-200 bg-white p-3 text-sm text-slate-800">
+                                          <input
+                                            type="radio"
+                                            name="native-hotspot"
+                                            checked={nativeAnswers.hotspot === hotspot.id}
+                                            onChange={() => setNativeAnswers((prev) => ({ ...prev, hotspot: hotspot.id }))}
+                                          />
+                                          <span>{hotspot.text || `Punto ${hotspot.id}`}</span>
+                                        </label>
+                                      ))}
+                                    </div>
+                                  ) : (
+                                    <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                                      No hay puntos hotspot configurados para esta actividad.
+                                    </div>
+                                  )}
+
+                                  {!isEditor && (
+                                    <button
+                                      type="button"
+                                      onClick={() => void onSubmitNativeActividad()}
+                                      disabled={nativeSubmitting || currentNativeHotspotOptions.length === 0}
+                                      className="rounded-md bg-emerald-700 px-3 py-2 text-white hover:bg-emerald-800 disabled:opacity-50"
+                                    >
+                                      {nativeSubmitting ? "Enviando..." : "Enviar actividad nativa"}
+                                    </button>
+                                  )}
+                                </div>
+                              ) : isNativeQuickQuizMode ? (
                                 <>
                                   <div className="rounded-md border border-emerald-300 bg-white p-3">
                                     <p className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-700">
@@ -1823,6 +3262,11 @@ export default function LessonDetailPage() {
                           Estado: {currentActividadIntento?.completado ? "Completada" : "Pendiente"}
                         </p>
                         <p>Intentos registrados: {currentActividadIntento?.intentos ?? 0}</p>
+                        {nativeScore != null && (
+                          <div className="mt-2 inline-flex items-center gap-2 rounded-full bg-emerald-100 px-3 py-2 text-sm font-semibold text-emerald-900">
+                            Puntaje: {nativeScore}%
+                          </div>
+                        )}
                         {nativeFeedback && <p className="mt-2 text-sm text-emerald-800">{nativeFeedback}</p>}
                         {!isEditor && !currentActividadIntento?.completado && currentActividad.proveedor !== "nativo" && (
                           <button
@@ -2001,8 +3445,8 @@ export default function LessonDetailPage() {
               <ChevronLeft size={16} /> {t("common.previous", { defaultValue: "Anterior" })}
             </button>
             <button
-              onClick={() => setCurrentIdx((p) => Math.min(secciones.length - 1, p + 1))}
-              disabled={currentIdx === secciones.length - 1 || nextBlocked}
+              onClick={() => void handleNextClick()}
+              disabled={nextBlocked}
               className="inline-flex items-center gap-1 px-4 py-2 border rounded-lg disabled:opacity-50"
             >
               {t("common.next", { defaultValue: "Siguiente" })} <ChevronRight size={16} />

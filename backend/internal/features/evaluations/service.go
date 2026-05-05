@@ -31,6 +31,10 @@ func (s *Service) GetPrueba(ctx context.Context, id string) (*Prueba, error) {
 	return s.repo.GetPrueba(ctx, id)
 }
 
+func (s *Service) ListMisPruebasByEstudiante(ctx context.Context, estudianteID string) ([]PruebaAsignada, error) {
+	return s.repo.ListMisPruebasByEstudiante(ctx, estudianteID)
+}
+
 func (s *Service) GetPruebaCompleta(ctx context.Context, id string) (*PruebaCompleta, error) {
 	return s.repo.GetPruebaCompleta(ctx, id)
 }

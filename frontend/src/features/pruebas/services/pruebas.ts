@@ -1,8 +1,12 @@
 import api from "@/shared/lib/api";
-import type { Prueba, PruebaCompleta, Pregunta, Respuesta, ResultadoPrueba } from "@/shared/types";
+import type { Prueba, PruebaConLeccion, PruebaCompleta, Pregunta, Respuesta, ResultadoPrueba } from "@/shared/types";
 
 export async function listPruebasByLeccion(leccionId: string): Promise<Prueba[]> {
   return api.get(`/lecciones/${leccionId}/pruebas`);
+}
+
+export async function listMisPruebasEstudiante(): Promise<PruebaConLeccion[]> {
+  return api.get(`/student/pruebas`);
 }
 
 export async function getPrueba(id: string): Promise<Prueba> {

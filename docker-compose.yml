@@ -49,6 +49,25 @@ services:
     depends_on:
       - postgrest
 
+  # ─── Backend con LibreOffice para conversión PPTX -> PDF ───
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: arcanea-backend
+    restart: unless-stopped
+    ports:
+      - "${BACKEND_CONTAINER_PORT:-9082}:8082"
+    env_file:
+      - .env
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      LIBREOFFICE_PATH: soffice
+      DB_HOST: db
+      DB_PORT: 5432
+
   # ─── Ollama (LLM local) ───────────────────────────────────
   ollama:
     image: ollama/ollama:latest
