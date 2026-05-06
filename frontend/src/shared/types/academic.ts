@@ -231,7 +231,7 @@ export interface ActividadInteractiva {
   leccion_id: string;
   titulo: string;
   descripcion?: string | null;
-  proveedor: "h5p" | "genially" | "educaplay" | "nativo";
+  proveedor: "nativo";
   embed_url: string;
   regla_completitud: "manual" | "evento" | "puntaje";
   puntaje_maximo: number;

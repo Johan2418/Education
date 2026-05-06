@@ -8,4 +8,16 @@ export default defineConfig({
       '@': '/src',
     },
   },
+  build: {
+    // Ensure cache busting with content hash
+    rollupOptions: {
+      output: {
+        // JS chunks with content hash
+        chunkFileNames: 'assets/[name].[hash].js',
+        entryFileNames: 'assets/[name].[hash].js',
+        // CSS chunks with content hash
+        assetFileNames: 'assets/[name].[hash][extname]',
+      },
+    },
+  },
 })

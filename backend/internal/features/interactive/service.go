@@ -35,7 +35,20 @@ func (s *Service) ListActividadesByLeccion(ctx context.Context, leccionID, userI
 			return nil, errors.New("no autorizado para esta lección")
 		}
 	}
-	return s.repo.ListActividadesByLeccion(ctx, leccionID)
+	items, err := s.repo.ListActividadesByLeccion(ctx, leccionID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Filtrar actividades deprecated: solo retornar las que tienen proveedor "nativo"
+	var nativeActivities []ActividadInteractiva
+	for _, item := range items {
+		if item.Proveedor == "nativo" {
+			nativeActivities = append(nativeActivities, item)
+		}
+	}
+
+	return nativeActivities, nil
 }
 
 func (s *Service) GetActividad(ctx context.Context, actividadID, userID, userRole string) (*ActividadInteractiva, error) {
@@ -68,6 +81,11 @@ func (s *Service) GetActividad(ctx context.Context, actividadID, userID, userRol
 		// allowed
 	default:
 		return nil, errors.New("no autorizado")
+	}
+
+	// Validar que el proveedor es "nativo"
+	if item.Proveedor != "nativo" {
+		return nil, errors.New("actividad deprecated: proveedor '" + item.Proveedor + "' ya no es soportado. Solo se permiten actividades nativas")
 	}
 
 	return item, nil
@@ -355,12 +373,15 @@ func (s *Service) validateActividadUpdate(req ActividadInteractivaRequest, curre
 }
 
 func validateProveedor(proveedor string) error {
-	switch strings.TrimSpace(strings.ToLower(proveedor)) {
-	case "h5p", "genially", "educaplay", "nativo":
+	normalized := strings.TrimSpace(strings.ToLower(proveedor))
+	if normalized == "nativo" {
 		return nil
-	default:
-		return errors.New("proveedor invalido")
 	}
+	// Proveedores h5p, genially, educaplay están deprecados desde migración 033
+	if normalized == "h5p" || normalized == "genially" || normalized == "educaplay" {
+		return errors.New("proveedor deprecated: se permite solo 'nativo'. Por favor migre sus actividades al nuevo sistema nativo")
+	}
+	return errors.New("proveedor inválido: solo se permite 'nativo'")
 }
 
 func validateRegla(regla string) error {
@@ -373,37 +394,17 @@ func validateRegla(regla string) error {
 }
 
 func validateEmbedURL(proveedor, raw string) error {
+	// Solo se permite 'nativo', los demás proveedores están deprecated
 	provider := strings.ToLower(strings.TrimSpace(proveedor))
 	raw = strings.TrimSpace(raw)
-	if provider == "nativo" && raw == "" {
-		return nil
-	}
-	if raw == "" {
-		return errors.New("embed_url es requerido")
-	}
 
-	u, err := url.ParseRequestURI(raw)
-	if err != nil {
-		return errors.New("embed_url invalido")
-	}
-	if !strings.EqualFold(u.Scheme, "https") {
-		return errors.New("embed_url debe usar https")
-	}
+	// Para actividades nativas, embed_url puede estar vacío (se usan configuración nativa)
 	if provider == "nativo" {
 		return nil
 	}
 
-	host := strings.ToLower(u.Hostname())
-	allowed := allowedDomainsByProvider[provider]
-	if len(allowed) == 0 {
-		return errors.New("proveedor invalido")
-	}
-	for _, domain := range allowed {
-		if host == domain || strings.HasSuffix(host, "."+domain) {
-			return nil
-		}
-	}
-	return errors.New("dominio no permitido para el proveedor")
+	// Cualquier otro proveedor es inválido
+	return errors.New("solo se permite proveedor 'nativo'. Los proveedores h5p, genially y educaplay están deprecated")
 }
 
 func canManage(role string) bool {
@@ -1120,6 +1121,10 @@ func resolveScoreThresholdFromConfig(config json.RawMessage) float64 {
 	return 70
 }
 
+// DEPRECATED: Dominios permitidos para proveedores viejos (h5p, genially, educaplay)
+// Estos proveedores fueron deprecados en la migración 033
+// Solo se permite el proveedor 'nativo' a partir de ahora
+// Se mantiene para referencia histórica y auditoría
 var allowedDomainsByProvider = map[string][]string{
 	"h5p":       {"h5p.com", "h5p.org"},
 	"genially":  {"genial.ly", "genially.com"},

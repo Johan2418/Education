@@ -1850,7 +1850,7 @@ export default function LessonDetailPage() {
       isEditor
       || !currentSection?.actividad_interactiva_id
       || !currentActividad
-      || currentActividad.proveedor === "nativo"
+      || currentActividad.proveedor !== "nativo"
     ) {
       processedInteractiveEventKeysRef.current.clear();
       return;
@@ -3243,17 +3243,52 @@ export default function LessonDetailPage() {
                             </>
                           )}
                         </div>
+                      ) : ["h5p", "genially", "educaplay"].includes(currentActividad.proveedor) ? (
+                        <div className="rounded-lg border border-red-200 bg-red-50 p-4">
+                          <div className="flex items-start gap-3">
+                            <div className="rounded-full bg-red-100 p-2">
+                              <svg className="h-5 w-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4v2m0-10a9 9 0 1 1 0 18 9 9 0 0 1 0-18z" />
+                              </svg>
+                            </div>
+                            <div>
+                              <h4 className="font-semibold text-red-900">Actividad Deprecated</h4>
+                              <p className="mt-1 text-sm text-red-800">
+                                Esta actividad usa el proveedor "{currentActividad.proveedor}" que ha sido deprecado.
+                              </p>
+                              <p className="mt-2 text-sm text-red-700">
+                                Los proveedores H5P, Genially y Educaplay ya no son soportados. Por favor, contacta al docente para que reemplace esta actividad con una versión nativa.
+                              </p>
+                              {!isEditor && !currentActividadIntento?.completado && (
+                                <button
+                                  onClick={() => void onRegistrarActividadCompletada()}
+                                  disabled={savingActividadIntento}
+                                  className="mt-3 px-3 py-2 rounded-md bg-red-700 text-white hover:bg-red-800 disabled:opacity-50 text-sm"
+                                >
+                                  {savingActividadIntento ? "Guardando..." : "Marcar como completada (sin evaluar)"}
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        </div>
                       ) : (
-                        <div className="aspect-video w-full overflow-hidden rounded-lg border border-slate-200 bg-slate-100">
-                          <iframe
-                            ref={interactiveIframeRef}
-                            title={`Actividad interactiva ${currentActividad.proveedor}`}
-                            src={currentActividad.embed_url}
-                            className="h-full w-full"
-                            allow="fullscreen; autoplay"
-                            sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox"
-                            referrerPolicy="strict-origin-when-cross-origin"
-                          />
+                        <div className="rounded-lg border border-yellow-200 bg-yellow-50 p-4">
+                          <div className="flex items-start gap-3">
+                            <div className="rounded-full bg-yellow-100 p-2">
+                              <svg className="h-5 w-5 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4v2m0-10a9 9 0 1 1 0 18 9 9 0 0 1 0-18z" />
+                              </svg>
+                            </div>
+                            <div>
+                              <h4 className="font-semibold text-yellow-900">Proveedor No Soportado</h4>
+                              <p className="mt-1 text-sm text-yellow-800">
+                                El proveedor "{currentActividad.proveedor}" no es válido o no está configurado correctamente.
+                              </p>
+                              <p className="mt-2 text-sm text-yellow-700">
+                                Solo se soportan actividades nativas. Por favor, contacta al administrador.
+                              </p>
+                            </div>
+                          </div>
                         </div>
                       )}
 
@@ -3268,15 +3303,6 @@ export default function LessonDetailPage() {
                           </div>
                         )}
                         {nativeFeedback && <p className="mt-2 text-sm text-emerald-800">{nativeFeedback}</p>}
-                        {!isEditor && !currentActividadIntento?.completado && currentActividad.proveedor !== "nativo" && (
-                          <button
-                            onClick={() => void onRegistrarActividadCompletada()}
-                            disabled={savingActividadIntento}
-                            className="mt-2 px-3 py-2 rounded-md bg-indigo-700 text-white hover:bg-indigo-800 disabled:opacity-50"
-                          >
-                            {savingActividadIntento ? "Guardando..." : "Marcar actividad como completada"}
-                          </button>
-                        )}
                       </div>
                     </>
                   ) : (

@@ -53,7 +53,7 @@ function toISOOrNull(raw: string): string | null {
 interface ActividadFormState {
   titulo: string;
   descripcion: string;
-  proveedor: "h5p" | "genially" | "educaplay" | "nativo";
+  proveedor: "nativo";
   embed_url: string;
   regla_completitud: "manual" | "evento" | "puntaje";
   puntaje_maximo: string;
@@ -66,7 +66,7 @@ function emptyActividadForm(): ActividadFormState {
   return {
     titulo: "",
     descripcion: "",
-    proveedor: "h5p",
+    proveedor: "nativo",
     embed_url: "",
     regla_completitud: "manual",
     puntaje_maximo: "100",
@@ -1280,7 +1280,7 @@ export default function TeacherLessonSectionsPage() {
                 </article>
 
                 <article className="rounded-2xl bg-white border border-slate-200 shadow-sm p-4">
-                  <h2 className="text-base font-semibold text-slate-900 mb-3">Actividad interactiva (H5P, Genially, Educaplay, Nativa)</h2>
+                  <h2 className="text-base font-semibold text-slate-900 mb-3">Actividad interactiva (Nativa)</h2>
 
                   {!canManageInteractiveContent ? (
                     <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
@@ -1404,14 +1404,11 @@ export default function TeacherLessonSectionsPage() {
                             value={actividadForm.proveedor}
                             onChange={(e) => setActividadForm((prev) => ({
                               ...prev,
-                              proveedor: e.target.value as "h5p" | "genially" | "educaplay" | "nativo",
+                              proveedor: e.target.value as "nativo",
                             }))}
-                            className="mt-1 w-full rounded-md border border-slate-300 px-2 py-1.5"
+                            className="mt-1 w-full rounded-md border border-slate-300 px-2 py-1.5" disabled
                           >
-                            <option value="h5p">H5P</option>
-                            <option value="genially">Genially</option>
-                            <option value="educaplay">Educaplay</option>
-                            <option value="nativo">Nativa</option>
+                            <option value="nativo">Nativa (quiz interno)</option>
                           </select>
                         </label>
                         <label className="text-sm text-slate-800 md:col-span-2">
@@ -1423,20 +1420,9 @@ export default function TeacherLessonSectionsPage() {
                           />
                         </label>
 
-                        {actividadForm.proveedor !== "nativo" ? (
-                        <label className="text-sm text-slate-800 md:col-span-2">
-                          URL embed
-                          <input
-                            value={actividadForm.embed_url}
-                            onChange={(e) => setActividadForm((prev) => ({ ...prev, embed_url: e.target.value }))}
-                            placeholder="https://..."
-                            className="mt-1 w-full rounded-md border border-slate-300 px-2 py-1.5"
-                          />
-                        </label>
-                      ) : (
                         <>
                           <div className="text-sm text-emerald-800 md:col-span-2 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2">
-                            Proveedor nativo: esta actividad se renderiza dentro de la plataforma y no requiere URL de embed.
+                            Proveedor nativo: esta actividad se renderiza dentro de la plataforma.
                           </div>
                           <label className="text-sm text-slate-800 md:col-span-2">
                             Tipo de actividad nativa
@@ -1533,10 +1519,9 @@ export default function TeacherLessonSectionsPage() {
                               </label>
                             </>
                           )}
-                            </>
-                          )}
                         </>
                       )}
+                        </>
 
                         <label className="text-sm text-slate-800">
                           Regla de completitud

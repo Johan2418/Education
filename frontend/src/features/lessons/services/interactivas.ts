@@ -9,7 +9,7 @@ export interface ActividadInteractivaPayload {
   leccion_id: string;
   titulo: string;
   descripcion?: string | null;
-  proveedor: "h5p" | "genially" | "educaplay" | "nativo";
+  proveedor: "nativo"; // Solo se permite 'nativo' - h5p, genially y educaplay están deprecated
   embed_url: string;
   regla_completitud?: "manual" | "evento" | "puntaje";
   puntaje_maximo?: number;
@@ -218,7 +218,7 @@ function normalizeScore(score: number | undefined, scaled: number | undefined): 
 }
 
 export function normalizeInteractiveProviderEvent(
-  provider: "h5p" | "genially" | "educaplay" | "nativo",
+  provider: "nativo",
   rawPayload: unknown,
   eventOrigin: string,
 ): NormalizedInteractiveEvent | null {
@@ -275,13 +275,10 @@ export function normalizeInteractiveProviderEvent(
 }
 
 export function extractInteractiveAllowedOrigins(
-  provider?: "h5p" | "genially" | "educaplay" | "nativo",
+  provider?: "nativo",
   configuracion?: Record<string, unknown> | null,
 ): string[] {
   const defaults: Record<string, string[]> = {
-    h5p: ["https://h5p.com", "https://h5p.org"],
-    genially: ["https://genial.ly", "https://genially.com"],
-    educaplay: ["https://www.educaplay.com", "https://educaplay.com"],
     nativo: [],
   };
 
@@ -645,10 +642,26 @@ export async function listActividadesInteractivasByLeccion(leccionId: string): P
 
 export async function getActividadInteractiva(actividadId: string): Promise<ActividadInteractiva> {
   const res = await api.get<ApiData<ActividadInteractiva>>(`/actividades-interactivas/${actividadId}`);
-  return res.data;
+  const actividad = res.data;
+  
+  // ⚠️ VALIDATION: Reject deprecated providers
+  const deprecatedProviders = ["h5p", "genially", "educaplay"];
+  if (deprecatedProviders.includes(actividad.proveedor)) {
+    throw new Error(
+      `Actividad "${actividad.titulo}" usa proveedor deprecated "${actividad.proveedor}". ` +
+      `Solo se soporta "nativo". Por favor contacta al administrador.`
+    );
+  }
+  
+  return actividad;
 }
 
 export async function createActividadInteractiva(payload: ActividadInteractivaPayload): Promise<ActividadInteractiva> {
+  // Validación: Solo se permite proveedor 'nativo'
+  // Proveedores h5p, genially y educaplay fueron deprecados en la migración 033
+  if (payload.proveedor !== "nativo") {
+    throw new Error(`Proveedor '${payload.proveedor}' no está permitido. Solo se soporta 'nativo'. Proveedores h5p, genially y educaplay están deprecated.`);
+  }
   const res = await api.post<ApiData<ActividadInteractiva>>(`/actividades-interactivas`, payload);
   return res.data;
 }
@@ -657,6 +670,10 @@ export async function updateActividadInteractiva(
   actividadId: string,
   payload: Partial<ActividadInteractivaPayload>,
 ): Promise<ActividadInteractiva> {
+  // Validación: Solo se permite proveedor 'nativo'
+  if (payload.proveedor && payload.proveedor !== "nativo") {
+    throw new Error(`Proveedor '${payload.proveedor}' no está permitido. Solo se soporta 'nativo'. Proveedores h5p, genially y educaplay están deprecated.`);
+  }
   const res = await api.put<ApiData<ActividadInteractiva>>(`/actividades-interactivas/${actividadId}`, payload);
   return res.data;
 }
