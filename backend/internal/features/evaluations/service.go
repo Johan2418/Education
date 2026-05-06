@@ -176,11 +176,8 @@ func (s *Service) SubmitResultado(ctx context.Context, req ResultadoPruebaReques
 		}
 		reqProgreso.Completado = &completado
 
-		mejorPuntaje := canonical.PuntajeObtenido
-		if existing != nil && existing.Puntaje != nil && *existing.Puntaje > mejorPuntaje {
-			mejorPuntaje = *existing.Puntaje
-		}
-		reqProgreso.Puntaje = &mejorPuntaje
+		// Guardar el puntaje del intento más reciente para que el valor mostrado refleje el resultado actual.
+		reqProgreso.Puntaje = &canonical.PuntajeObtenido
 
 		if _, err := s.repo.UpsertProgreso(ctx, usuarioID, reqProgreso); err != nil {
 			return nil, err

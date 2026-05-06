@@ -21,7 +21,7 @@ function normalizeProgreso(response: ProgresoItemResponse): Progreso | null {
 export async function upsertProgreso(data: {
   leccion_id: string;
   completado: boolean;
-  puntaje: number;
+  puntaje?: number | null;
 }): Promise<Progreso> {
   const res = await api.put<ProgresoItemResponse>("/progreso", data);
   const item = normalizeProgreso(res);

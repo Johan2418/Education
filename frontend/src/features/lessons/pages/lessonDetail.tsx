@@ -558,13 +558,15 @@ export default function LessonDetailPage() {
   const docxViewerRef = useRef<HTMLDivElement | null>(null);
   const [nativeAnswers, setNativeAnswers] = useState<Record<string, string>>({});
   const [nativeOrderingState, setNativeOrderingState] = useState<Record<string, string[]>>({});
+  const [nativeOrderingDragOverId, setNativeOrderingDragOverId] = useState<string | null>(null);
   const [nativeSubmitting, setNativeSubmitting] = useState(false);
   const [nativeFeedback, setNativeFeedback] = useState<string | null>(null);
   const [nativeScore, setNativeScore] = useState<number | null>(null);
   const [nativeQuickQuestionIdx, setNativeQuickQuestionIdx] = useState(0);
   const [nativeQuickRemainingSeconds, setNativeQuickRemainingSeconds] = useState(0);
   const [nativeTimedOutQuestions, setNativeTimedOutQuestions] = useState<Record<string, boolean>>({});
-  const [nativeQuickStartedAtMs, setNativeQuickStartedAtMs] = useState<number | null>(null);
+  const nativeQuickStartedAtMsRef = useRef<number | null>(null);
+  const nativeQuickTimerReadyRef = useRef(false);
   const [savingActividadIntento, setSavingActividadIntento] = useState(false);
   const [lessonAlreadyCompleted, setLessonAlreadyCompleted] = useState(false);
   const [studentAccessDenied, setStudentAccessDenied] = useState(false);
@@ -1137,14 +1139,14 @@ export default function LessonDetailPage() {
       .filter((value): value is number => typeof value === "number" && Number.isFinite(value));
     const lessonScore = numericScores.length > 0
       ? Math.round(numericScores.reduce((sum, score) => sum + score, 0) / numericScores.length)
-      : 100;
+      : null;
 
     lessonProgressSyncingRef.current = true;
     try {
       await upsertProgreso({
         leccion_id: lesson.id,
         completado: true,
-        puntaje: lessonScore,
+        puntaje: lessonScore ?? undefined,
       });
       setLessonAlreadyCompleted(true);
     } catch {
@@ -1352,7 +1354,8 @@ export default function LessonDetailPage() {
     setNativeQuickQuestionIdx(0);
     setNativeQuickRemainingSeconds(0);
     setNativeTimedOutQuestions({});
-    setNativeQuickStartedAtMs(null);
+    nativeQuickStartedAtMsRef.current = null;
+    nativeQuickTimerReadyRef.current = false;
   }, [currentSection?.id, currentActividad?.id]);
 
   useEffect(() => {
@@ -1367,18 +1370,31 @@ export default function LessonDetailPage() {
   useEffect(() => {
     if (!isNativeQuickQuizMode || !nativeConfig) {
       setNativeQuickRemainingSeconds(0);
-      setNativeQuickStartedAtMs(null);
+      nativeQuickStartedAtMsRef.current = null;
+      nativeQuickTimerReadyRef.current = false;
       return;
     }
     setNativeQuickQuestionIdx(0);
     setNativeQuickRemainingSeconds(nativeConfig.timePerQuestionSeconds);
-    setNativeQuickStartedAtMs(Date.now());
+    nativeQuickStartedAtMsRef.current = Date.now();
+    nativeQuickTimerReadyRef.current = false;
   }, [isNativeQuickQuizMode, nativeConfig, currentSection?.id, currentActividad?.id]);
 
   useEffect(() => {
     if (!isNativeQuickQuizMode || !nativeConfig) return;
     setNativeQuickRemainingSeconds(nativeConfig.timePerQuestionSeconds);
   }, [isNativeQuickQuizMode, nativeConfig, nativeQuickQuestionIdx]);
+
+  useEffect(() => {
+    if (!isNativeQuickQuizMode || !nativeConfig) {
+      nativeQuickTimerReadyRef.current = false;
+      return;
+    }
+
+    if (nativeQuickStartedAtMsRef.current != null && nativeQuickRemainingSeconds === nativeConfig.timePerQuestionSeconds) {
+      nativeQuickTimerReadyRef.current = true;
+    }
+  }, [isNativeQuickQuizMode, nativeConfig, nativeQuickRemainingSeconds, currentNativeQuickQuestion?.id]);
 
   useEffect(() => {
     setCheckpointQuestion(null);
@@ -1722,8 +1738,8 @@ export default function LessonDetailPage() {
     const completedByRule = currentActividad?.regla_completitud === "puntaje"
       ? scoreNormalizado >= nativeConfig.scoreThreshold
       : true;
-    const elapsedSeconds = nativeQuickStartedAtMs != null
-      ? Math.max(1, Math.round((Date.now() - nativeQuickStartedAtMs) / 1000))
+    const elapsedSeconds = nativeQuickStartedAtMsRef.current != null
+      ? Math.max(1, Math.round((Date.now() - nativeQuickStartedAtMsRef.current) / 1000))
       : undefined;
 
     setNativeSubmitting(true);
@@ -1787,6 +1803,8 @@ export default function LessonDetailPage() {
     }
     setNativeQuickRemainingSeconds(nativeConfig.timePerQuestionSeconds);
     setNativeQuickQuestionIdx((prev) => Math.min(prev + 1, nativeConfig.questions.length - 1));
+    nativeQuickStartedAtMsRef.current = Date.now();
+    nativeQuickTimerReadyRef.current = false;
   };
 
   const onSelectNativeAnswer = (questionId: string, optionId: string) => {
@@ -1802,29 +1820,38 @@ export default function LessonDetailPage() {
       });
       return;
     }
+    nativeQuickTimerReadyRef.current = false;
     setNativeQuickRemainingSeconds(nativeConfig.timePerQuestionSeconds);
     setNativeQuickQuestionIdx((prev) => Math.min(prev + 1, nativeConfig.questions.length - 1));
+    nativeQuickStartedAtMsRef.current = Date.now();
   };
 
   useEffect(() => {
-    if (!isNativeQuickQuizMode || isEditor || nativeSubmitting || !currentNativeQuickQuestion) return;
-    if (nativeQuickRemainingSeconds <= 0) return;
-    const timeoutId = window.setTimeout(() => {
-      setNativeQuickRemainingSeconds((prev) => Math.max(0, prev - 1));
-    }, 1000);
+    if (!isNativeQuickQuizMode || isEditor || nativeSubmitting || !currentNativeQuickQuestion || !nativeConfig) return;
+    if (nativeQuickStartedAtMsRef.current == null) return;
+
+    const updateRemainingSeconds = () => {
+      const elapsedSeconds = Math.floor((Date.now() - nativeQuickStartedAtMsRef.current!) / 1000);
+      const remaining = Math.max(0, nativeConfig.timePerQuestionSeconds - elapsedSeconds);
+      setNativeQuickRemainingSeconds(remaining);
+    };
+
+    updateRemainingSeconds();
+    const intervalId = window.setInterval(updateRemainingSeconds, 250);
     return () => {
-      window.clearTimeout(timeoutId);
+      window.clearInterval(intervalId);
     };
   }, [
     isNativeQuickQuizMode,
     isEditor,
     nativeSubmitting,
     currentNativeQuickQuestion?.id,
-    nativeQuickRemainingSeconds,
+    nativeConfig?.timePerQuestionSeconds,
   ]);
 
   useEffect(() => {
     if (!isNativeQuickQuizMode || isEditor || nativeSubmitting || !nativeConfig || !currentNativeQuickQuestion) return;
+    if (!nativeQuickTimerReadyRef.current) return;
     if (nativeQuickRemainingSeconds > 0) return;
 
     const questionId = currentNativeQuickQuestion.id;
@@ -2429,7 +2456,7 @@ export default function LessonDetailPage() {
           await upsertProgreso({
             leccion_id: lesson.id,
             completado: true,
-            puntaje: nativeScore != null ? nativeScore : 100,
+            puntaje: nativeScore ?? undefined,
           });
           setLessonAlreadyCompleted(true);
         } catch {
@@ -2989,8 +3016,40 @@ export default function LessonDetailPage() {
                                     {nativeOrderingIds.map((optionId, index) => {
                                       const option = currentNativeOrderingQuestion.options.find((item) => item.id === optionId);
                                       if (!option) return null;
+                                      const isDragOver = nativeOrderingDragOverId === optionId;
                                       return (
-                                        <div key={optionId} className="flex items-center justify-between gap-3 rounded-md border border-slate-200 bg-white p-3">
+                                        <div
+                                          key={optionId}
+                                          draggable={!nativeSubmitting}
+                                          onDragStart={(event) => {
+                                            event.dataTransfer.setData("text/plain", optionId);
+                                            event.dataTransfer.effectAllowed = "move";
+                                          }}
+                                          onDragOver={(event) => {
+                                            event.preventDefault();
+                                            setNativeOrderingDragOverId(optionId);
+                                            event.dataTransfer.dropEffect = "move";
+                                          }}
+                                          onDragLeave={() => setNativeOrderingDragOverId(null)}
+                                          onDrop={(event) => {
+                                            event.preventDefault();
+                                            const draggedId = event.dataTransfer.getData("text/plain");
+                                            setNativeOrderingDragOverId(null);
+                                            if (!draggedId || draggedId === optionId) return;
+                                            setNativeOrderingState((prev) => {
+                                              const current = prev[currentNativeOrderingQuestion.id] ?? nativeOrderingIds;
+                                              const next = [...current];
+                                              const fromIndex = next.indexOf(draggedId);
+                                              const toIndex = next.indexOf(optionId);
+                                              if (fromIndex === -1 || toIndex === -1) return prev;
+                                              next.splice(fromIndex, 1);
+                                              next.splice(toIndex, 0, draggedId);
+                                              return { ...prev, [currentNativeOrderingQuestion.id]: next };
+                                            });
+                                          }}
+                                          onDragEnd={() => setNativeOrderingDragOverId(null)}
+                                          className={`flex items-center justify-between gap-3 rounded-md border p-3 ${isDragOver ? "border-emerald-400 bg-emerald-50" : "border-slate-200 bg-white"}`}
+                                        >
                                           <span className="text-sm text-slate-800">{index + 1}. {option.text}</span>
                                           <div className="flex items-center gap-2">
                                             <button

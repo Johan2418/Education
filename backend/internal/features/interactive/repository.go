@@ -245,11 +245,7 @@ func (r *Repository) syncProgresoSeccion(ctx context.Context, actividadID, userI
 	ON CONFLICT (user_id, leccion_seccion_id)
 	DO UPDATE SET
 	  completado = (internal.progreso_seccion.completado OR EXCLUDED.completado),
-	  puntuacion = CASE
-	    WHEN EXCLUDED.puntuacion IS NULL THEN internal.progreso_seccion.puntuacion
-	    WHEN internal.progreso_seccion.puntuacion IS NULL THEN EXCLUDED.puntuacion
-	    ELSE GREATEST(internal.progreso_seccion.puntuacion, EXCLUDED.puntuacion)
-	  END,
+	  puntuacion = COALESCE(EXCLUDED.puntuacion, internal.progreso_seccion.puntuacion),
 	  tiempo_dedicado = GREATEST(internal.progreso_seccion.tiempo_dedicado, EXCLUDED.tiempo_dedicado),
 	  intentos = GREATEST(internal.progreso_seccion.intentos, EXCLUDED.intentos),
 	  updated_at = now();`

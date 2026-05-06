@@ -506,13 +506,64 @@ function parseVirtualLabAssets(rawInput: unknown): Array<{ id: string; name: str
     .filter((item): item is { id: string; name: string; url: string } => item !== null);
 }
 
+function parseMatchingPairs(rawInput: unknown): Array<{ id: string; left: string; right: string }> {
+  if (!Array.isArray(rawInput)) return [];
+  return rawInput
+    .map((rawPair, idx) => {
+      if (typeof rawPair !== "object" || rawPair === null) return null;
+      const pair = rawPair as Record<string, unknown>;
+      const left = String(pair.left ?? pair.izquierda ?? pair.texto_izquierdo ?? "").trim();
+      const right = String(pair.right ?? pair.derecha ?? pair.texto_derecho ?? "").trim();
+      if (!left || !right) return null;
+      const idRaw = pair.id ?? `pair_${idx + 1}`;
+      const id = typeof idRaw === "string" && idRaw.trim() ? idRaw.trim() : `pair_${idx + 1}`;
+      return { id, left, right };
+    })
+    .filter((item): item is { id: string; left: string; right: string } => item !== null);
+}
+
+function buildMatchingQuestionsFromPairs(
+  pairs: Array<{ id: string; left: string; right: string }>
+): NativeInteractiveQuestion[] {
+  if (pairs.length === 0) return [];
+  
+  // Create a unified answer bank from all right texts
+  // Each option represents a possible answer, identified by its pair id
+  const answerBank: NativeInteractiveOption[] = pairs.map((p) => ({
+    id: p.id,
+    text: p.right,
+    isCorrect: true,
+  }));
+  
+  // Each pair becomes a question where:
+  // - id is the pair id (used as key in answers)
+  // - prompt is the left text (the question/concept to match)
+  // - options are all available right texts (the answers to choose from)
+  return pairs.map((pair) => ({
+    id: pair.id,
+    prompt: pair.left,
+    options: answerBank,
+  }));
+}
+
 export function parseNativeInteractiveConfig(configuracion?: Record<string, unknown> | null): NativeInteractiveConfig {
   const cfg = toObject(configuracion) || {};
   const activityType = readActivityType(cfg);
   const rawQuestions = configuracion?.preguntas ?? configuracion?.questions;
   const rawOrderingItems = configuracion?.ordering_items ?? configuracion?.orderingItems;
-  const questions = Array.isArray(rawQuestions)
-    ? rawQuestions
+  
+  // For matching activities, try to reconstruct from pairs first
+  let questions: NativeInteractiveQuestion[] = [];
+  if (activityType === "matching") {
+    const matchingPairs = parseMatchingPairs(configuracion?.pairs ?? configuracion?.pares ?? configuracion?.matching_pairs);
+    if (matchingPairs.length >= 2) {
+      questions = buildMatchingQuestionsFromPairs(matchingPairs);
+    }
+  }
+  
+  // If no questions reconstructed from pairs, parse from preguntas/questions
+  if (questions.length === 0 && Array.isArray(rawQuestions)) {
+    questions = rawQuestions
       .map((rawQuestion, idx) => {
         if (typeof rawQuestion !== "object" || rawQuestion === null) return null;
         const question = rawQuestion as Record<string, unknown>;
@@ -530,8 +581,8 @@ export function parseNativeInteractiveConfig(configuracion?: Record<string, unkn
         const id = typeof idRaw === "string" && idRaw.trim() ? idRaw.trim() : `q_${idx + 1}`;
         return { id, prompt, options };
       })
-      .filter((question): question is NativeInteractiveQuestion => question !== null)
-    : [];
+      .filter((question): question is NativeInteractiveQuestion => question !== null);
+  }
   const orderingQuestions = parseOrderingItems(rawOrderingItems);
   const quickQuizEnabled = readBoolean(cfg, [
     ["modo_quiz_veloz"],
