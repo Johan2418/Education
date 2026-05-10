@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { Loader2, Plus, Search, SendHorizontal, XCircle, CheckCircle2, ClipboardList, BarChart3, Trash2, Pencil, Library } from "lucide-react";
+import { Loader2, Plus, Search, SendHorizontal, XCircle, CheckCircle2, ClipboardList, BarChart3, Trash2, Pencil, Library, FileText, Settings, BookOpen, GraduationCap, Users, UploadCloud, CheckCircle, Calendar, X, AlertCircle, HelpCircle } from "lucide-react";
 import toast from "react-hot-toast";
 import * as pdfjsLib from "pdfjs-dist";
 import pdfWorkerSrc from "pdfjs-dist/build/pdf.worker.min.mjs?url";
@@ -9,8 +9,9 @@ import { extractRawText } from "mammoth";
 
 import api from "@/shared/lib/api";
 import { getMe } from "@/shared/lib/auth";
+import { convertDocxToPdf, convertPptxToPdf } from "@/features/trabajos/services/trabajos";
 import type { Curso, Leccion, Materia, Tema, Unidad } from "@/shared/types";
-import type { CreateTrabajoRequest, LibroPreguntaInput, PdfPaginaMetadata, Trabajo, UpdateTrabajoRequest } from "@/shared/types/trabajos";
+import type { CreateTrabajoRequest, LibroPreguntaInput, PdfPaginaMetadata, Trabajo, UpdateTrabajoRequest, EntregaConCalificacion } from "@/shared/types/trabajos";
 import {
   confirmarLibro,
   createTrabajo,
@@ -19,6 +20,8 @@ import {
   extractLibro,
   getLibroEstado,
   listTrabajosByLeccion,
+  listTrabajosByMateria,
+  listEntregasByTrabajo,
   publicarTrabajo,
   revisarLibro,
   updateTrabajo,
@@ -30,7 +33,8 @@ interface LeccionOption {
 }
 
 interface TrabajoRow extends Trabajo {
-  leccion_titulo: string;
+  leccion_titulo?: string;
+  materia_titulo?: string;
 }
 
 interface PageChunk {
@@ -317,10 +321,24 @@ export default function TeacherTrabajos() {
   const [search, setSearch] = useState("");
   const [trabajos, setTrabajos] = useState<TrabajoRow[]>([]);
   const [lecciones, setLecciones] = useState<LeccionOption[]>([]);
+  const [materias, setMaterias] = useState<Materia[]>([]);
+  const [selectedMateria, setSelectedMateria] = useState<string>("");
+  const [selectedCurso, setSelectedCurso] = useState<string>("");
 
   const [showCreate, setShowCreate] = useState(false);
+  const [showDetails, setShowDetails] = useState(false);
+  const [selectedTrabajo, setSelectedTrabajo] = useState<TrabajoRow | null>(null);
+  const [trabajoEntregas, setTrabajoEntregas] = useState<EntregaConCalificacion[]>([]);
+  const [loadingEntregas, setLoadingEntregas] = useState(false);
   const [editingTrabajoId, setEditingTrabajoId] = useState<string | null>(null);
   const [createMode, setCreateMode] = useState<"manual" | "libro">("manual");
+  const [filePreviewModal, setFilePreviewModal] = useState<{ url: string; type: 'pdf' | 'image' | 'other' } | null>(null);
+  const [convertingFile, setConvertingFile] = useState(false);
+  const [imageZoom, setImageZoom] = useState(1);
+  const [imagePan, setImagePan] = useState({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+  const [selectedWorkType, setSelectedWorkType] = useState<"archivo" | "preguntas_abiertas" | "preguntas_cerradas">("preguntas_abiertas");
   const [libroPages, setLibroPages] = useState<PageChunk[]>([]);
   const [libroFileName, setLibroFileName] = useState("");
   const [libroPageStart, setLibroPageStart] = useState(1);
@@ -359,16 +377,30 @@ export default function TeacherTrabajos() {
     instrucciones: "",
   });
   const [newTrabajo, setNewTrabajo] = useState<CreateTrabajoRequest>({
-    leccion_id: "",
+    leccion_id: undefined,
+    materia_id: undefined,
     titulo: "",
     descripcion: "",
     instrucciones: "",
     fecha_vencimiento: "",
+    tipo_trabajo: "preguntas",
+    permite_archivo: false,
+    permite_entrega_tardia: false,
+    max_intentos: null,
   });
 
   const loadData = useCallback(async () => {
     const cursosRes = await api.get<{ data: Curso[] }>("/cursos");
     const cursos = cursosRes.data || [];
+
+    // Cargar materias del profesor usando cursos existentes
+    const allMaterias: Materia[] = [];
+    for (const curso of cursos) {
+      const materiasRes = await api.get<{ data: Materia[] }>(`/cursos/${curso.id}/materias`);
+      const materias = materiasRes.data || [];
+      allMaterias.push(...materias);
+    }
+    setMaterias(allMaterias);
 
     const allLecciones: LeccionOption[] = [];
     const allTrabajos: TrabajoRow[] = [];
@@ -378,6 +410,17 @@ export default function TeacherTrabajos() {
       const materias = materiasRes.data || [];
 
       for (const materia of materias) {
+        // Cargar trabajos por materia
+        try {
+          const trabajosMateria = await listTrabajosByMateria(materia.id);
+          for (const trabajo of trabajosMateria) {
+            allTrabajos.push({ ...trabajo, materia_titulo: materia.nombre });
+          }
+        } catch {
+          // Skip materias where listing fails so the page remains usable.
+        }
+
+        // Cargar lecciones para mantener compatibilidad con trabajos antiguos
         const unidadesRes = await api.get<{ data: Unidad[] }>(`/materias/${materia.id}/unidades`);
         const unidades = unidadesRes.data || [];
 
@@ -867,17 +910,25 @@ export default function TeacherTrabajos() {
   };
 
   const handleCreate = async () => {
-    if (!editingTrabajoId && !newTrabajo.leccion_id) {
-      toast.error(t("teacher.trabajos.validation", { defaultValue: "Leccion y titulo son obligatorios" }));
+    // Validar materia (solo para creación nueva)
+    if (!editingTrabajoId && !selectedMateria) {
+      toast.error(t("teacher.trabajos.validation.materiaRequired", { defaultValue: "Materia es obligatoria" }));
       return;
     }
 
-    const requiresManualTitle = editingTrabajoId !== null || createMode === "manual";
-    if (requiresManualTitle && !newTrabajo.titulo.trim()) {
-      toast.error(t("teacher.trabajos.validation", { defaultValue: "Leccion y titulo son obligatorios" }));
+    // Validar título (para edición y creación manual)
+    if ((editingTrabajoId !== null || createMode === "manual") && !newTrabajo.titulo.trim()) {
+      toast.error(t("teacher.trabajos.validation.titleRequired", { defaultValue: "Título es obligatorio" }));
       return;
     }
 
+    // Validar tipo de trabajo (solo para creación manual)
+    if (!editingTrabajoId && createMode === "manual" && !selectedWorkType) {
+      toast.error(t("teacher.trabajos.validation.workTypeRequired", { defaultValue: "Tipo de trabajo es obligatorio" }));
+      return;
+    }
+
+    // Validar libro (solo para creación desde libro)
     if (!editingTrabajoId && createMode === "libro" && libroPages.length === 0) {
       toast.error(t("teacher.trabajos.bookCreate.noPages", { defaultValue: "Carga un libro con paginas validas antes de crear" }));
       return;
@@ -893,16 +944,56 @@ export default function TeacherTrabajos() {
           descripcion: newTrabajo.descripcion || undefined,
           instrucciones: newTrabajo.instrucciones || undefined,
           fecha_vencimiento: newTrabajo.fecha_vencimiento || undefined,
+          tipo_trabajo: newTrabajo.tipo_trabajo,
+          permite_archivo: newTrabajo.permite_archivo,
+          permite_entrega_tardia: newTrabajo.permite_entrega_tardia,
+          max_intentos: newTrabajo.max_intentos,
         };
         await updateTrabajo(editingTrabajoId, payload);
       } else if (createMode === "manual") {
-        await createTrabajo({
-          leccion_id: newTrabajo.leccion_id,
+        const workTypeConfig = {
+          archivo: { tipo_trabajo: "archivo" as const, permite_archivo: true, calificacion_automatica: false },
+          preguntas_abiertas: { tipo_trabajo: "preguntas" as const, permite_archivo: false, calificacion_automatica: false },
+          preguntas_cerradas: { tipo_trabajo: "preguntas" as const, permite_archivo: false, calificacion_automatica: true },
+        }[selectedWorkType];
+        
+        console.log("Creando trabajo manual con:", {
+          materia_id: selectedMateria,
+          titulo: newTrabajo.titulo.trim(),
+          tipo_trabajo: workTypeConfig.tipo_trabajo,
+          permite_archivo: workTypeConfig.permite_archivo,
+          calificacion_automatica: workTypeConfig.calificacion_automatica,
+        });
+        
+        const createdTrabajo = await createTrabajo({
+          leccion_id: undefined,
+          materia_id: selectedMateria || undefined,
           titulo: newTrabajo.titulo.trim(),
           descripcion: newTrabajo.descripcion || undefined,
           instrucciones: newTrabajo.instrucciones || undefined,
           fecha_vencimiento: newTrabajo.fecha_vencimiento || undefined,
+          tipo_trabajo: workTypeConfig.tipo_trabajo,
+          permite_archivo: workTypeConfig.permite_archivo,
+          permite_entrega_tardia: newTrabajo.permite_entrega_tardia,
+          max_intentos: newTrabajo.max_intentos,
+          calificacion_automatica: workTypeConfig.calificacion_automatica,
         });
+        
+        // Publicar automáticamente el trabajo creado
+        try {
+          await publicarTrabajo(createdTrabajo.id);
+          console.log("Trabajo publicado automáticamente:", createdTrabajo.id);
+          toast.success(t("teacher.trabajos.published", { defaultValue: "Trabajo creado y publicado exitosamente" }));
+          
+          // Redirect to preguntas page if creating questions-based assignment
+          if (selectedWorkType === "preguntas_abiertas" || selectedWorkType === "preguntas_cerradas") {
+            navigate(`/teacher/trabajos/${createdTrabajo.id}/preguntas`);
+            return;
+          }
+        } catch (err) {
+          console.error("Error al publicar trabajo automáticamente:", JSON.stringify(err, null, 2));
+          toast.error("Error al publicar trabajo automáticamente: " + (err as any)?.message || "Error desconocido");
+        }
       } else {
         const leccionTitulo = lecciones.find((item) => item.id === newTrabajo.leccion_id)?.titulo || "Leccion";
         const libroBase = libroFileName ? libroFileName.replace(/\.[^.]+$/, "") : "Libro";
@@ -1218,6 +1309,7 @@ export default function TeacherTrabajos() {
         await startSequentialReview(createdBookTrabajoIds);
       }
     } catch (err) {
+      console.error("Error al crear/editar trabajo:", err);
       toast.error(normalizeError(err));
     } finally {
       setSaving(false);
@@ -1280,6 +1372,21 @@ export default function TeacherTrabajos() {
     }
   };
 
+  const handleViewTrabajoDetails = async (trabajo: TrabajoRow) => {
+    setSelectedTrabajo(trabajo);
+    setShowDetails(true);
+    setLoadingEntregas(true);
+    try {
+      const entregas = await listEntregasByTrabajo(trabajo.id);
+      setTrabajoEntregas(entregas);
+    } catch (err) {
+      console.error("Error al cargar entregas:", err);
+      setTrabajoEntregas([]);
+    } finally {
+      setLoadingEntregas(false);
+    }
+  };
+
   const handleCerrar = async (trabajoId: string) => {
     if (!confirm(t("teacher.trabajos.confirmClose", { defaultValue: "Deseas cerrar este trabajo?" }))) {
       return;
@@ -1291,6 +1398,52 @@ export default function TeacherTrabajos() {
     } catch (err) {
       toast.error(normalizeError(err));
     }
+  };
+
+  const handleFilePreview = async (fileUrl: string) => {
+    const BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:9082";
+    const fullUrl = fileUrl.startsWith('http') ? fileUrl : `${BASE_URL}${fileUrl}`;
+    const extension = fileUrl.split('.').pop()?.toLowerCase();
+    
+    // File types that can be displayed directly
+    const viewableExtensions = ['pdf', 'jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'svg'];
+    
+    if (viewableExtensions.includes(extension || '')) {
+      setFilePreviewModal({ url: fullUrl, type: extension === 'pdf' ? 'pdf' : 'image' });
+      // Reset zoom and pan when opening new file
+      setImageZoom(1);
+      setImagePan({ x: 0, y: 0 });
+    } else if (extension === 'docx' || extension === 'pptx') {
+      setConvertingFile(true);
+      try {
+        const file = await fetch(fullUrl).then(r => r.blob());
+        const fileObj = new File([file], fileUrl.split('/').pop() || 'file.' + extension, { type: file.type });
+        
+        let pdfBlob: Blob;
+        if (extension === 'docx') {
+          pdfBlob = await convertDocxToPdf(fileObj);
+        } else {
+          pdfBlob = await convertPptxToPdf(fileObj);
+        }
+        
+        const pdfUrl = URL.createObjectURL(pdfBlob);
+        setFilePreviewModal({ url: pdfUrl, type: 'pdf' });
+      } catch (err) {
+        toast.error("No se pudo convertir el archivo a PDF");
+        setFilePreviewModal({ url: fullUrl, type: 'other' });
+      } finally {
+        setConvertingFile(false);
+      }
+    } else {
+      setFilePreviewModal({ url: fullUrl, type: 'other' });
+    }
+  };
+
+  const handleZoomIn = () => setImageZoom(prev => Math.min(prev + 0.25, 5));
+  const handleZoomOut = () => setImageZoom(prev => Math.max(prev - 0.25, 0.5));
+  const handleResetZoom = () => {
+    setImageZoom(1);
+    setImagePan({ x: 0, y: 0 });
   };
 
   const handleEliminar = async (trabajoId: string) => {
@@ -1321,34 +1474,68 @@ export default function TeacherTrabajos() {
 
   return (
     <div className="max-w-6xl mx-auto p-4">
-      <div className="flex items-center justify-between mb-4 gap-3 flex-wrap">
-        <h1 className="text-2xl font-bold">{t("teacher.trabajos.title", { defaultValue: "Gestion de Trabajos" })}</h1>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => navigate("/teacher/trabajos/analytics")}
-            className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition"
-          >
-            <BarChart3 size={16} />
-            {t("teacher.trabajos.analytics.nav", { defaultValue: "Analytics v2" })}
-          </button>
-          <button
-            onClick={openCreateModal}
-            className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
-          >
-            <Plus size={16} />
-            {t("teacher.trabajos.new", { defaultValue: "Nuevo Trabajo" })}
-          </button>
+      {/* Header mejorado con selector de materias */}
+      <div className="bg-gradient-to-r from-blue-600 to-indigo-700 rounded-xl p-6 mb-6 shadow-lg">
+        <div className="flex items-center justify-between gap-4 flex-wrap">
+          <div className="flex-1">
+            <h1 className="text-2xl font-bold text-white mb-3">{t("teacher.trabajos.title", { defaultValue: "Gestión de Trabajos" })}</h1>
+            
+            {materias.length > 0 && (
+              <div className="bg-white/20 backdrop-blur rounded-lg p-4">
+                <label className="block text-sm font-medium text-white mb-2">{t("teacher.trabajos.filterByMateria", { defaultValue: "Filtrar por materia:" })}</label>
+                <select
+                  className="w-full border border-white/30 rounded-lg px-4 py-2 text-sm bg-white/90 backdrop-blur focus:ring-2 focus:ring-white/50"
+                  value={selectedMateria}
+                  onChange={(e) => setSelectedMateria(e.target.value)}
+                >
+                  <option value="">{t("teacher.trabajos.allMaterias", { defaultValue: "Todas las materias" })}</option>
+                  {materias.map((materia) => (
+                    <option key={materia.id} value={materia.id}>{materia.nombre}</option>
+                  ))}
+                </select>
+                {selectedMateria && (
+                  <p className="text-xs text-white/90 mt-2">
+                    {t("teacher.trabajos.materiaFilterActive", { defaultValue: "Mostrando trabajos de: " })}
+                    {materias.find(m => m.id === selectedMateria)?.nombre}
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+          
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => navigate("/teacher/trabajos/analytics")}
+              className="inline-flex items-center gap-2 px-5 py-3 bg-white text-indigo-700 rounded-lg hover:bg-indigo-50 transition-colors shadow-md font-medium"
+            >
+              <BarChart3 size={18} />
+              <span>{t("teacher.trabajos.analytics.nav", { defaultValue: "Analytics v2" })}</span>
+            </button>
+            <button
+              onClick={openCreateModal}
+              className="inline-flex items-center gap-2 px-5 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors shadow-md font-medium"
+            >
+              <Plus size={18} />
+              <span>{t("teacher.trabajos.new", { defaultValue: "Nuevo Trabajo" })}</span>
+            </button>
+          </div>
         </div>
       </div>
 
       <div className="relative mb-4">
         <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
         <input
-          className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg"
+          className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder={t("teacher.trabajos.search", { defaultValue: "Buscar por titulo, leccion o estado" })}
         />
+        {selectedMateria && (
+          <div className="mt-2 flex items-center gap-2 text-sm text-gray-600">
+            <GraduationCap size={14} />
+            <span>{t("teacher.trabajos.materiaSelected", { defaultValue: "Los estudiantes de esta materia verán este trabajo" })}</span>
+          </div>
+        )}
       </div>
 
       {pendingManualReviewTrabajos.length > 0 && (
@@ -1424,99 +1611,54 @@ export default function TeacherTrabajos() {
           {t("teacher.trabajos.empty", { defaultValue: "No hay trabajos registrados" })}
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {visibleTrabajos.map((trabajo) => (
-            <div key={trabajo.id} className="bg-white rounded-lg shadow p-4 border border-gray-100">
-              <div className="flex items-start justify-between gap-2">
-                <div>
-                  <h3 className="font-semibold text-gray-900">{trabajo.titulo}</h3>
-                  <p className="text-xs text-gray-500 mt-1">{trabajo.leccion_titulo}</p>
+            <div 
+              key={trabajo.id} 
+              className="bg-white rounded-xl shadow-sm hover:shadow-md transition-shadow p-6 border border-gray-100 cursor-pointer"
+              onClick={() => handleViewTrabajoDetails(trabajo)}
+            >
+              <div className="flex items-start justify-between gap-2 mb-3">
+                <div className="flex-1">
+                  <h3 className="font-semibold text-gray-900 text-lg">{trabajo.titulo}</h3>
+                  <p className="text-sm text-gray-500 mt-1">{trabajo.materia_titulo || trabajo.leccion_titulo}</p>
                 </div>
-                <span className={`text-xs px-2 py-1 rounded-full ${trabajo.estado === "publicado" ? "bg-emerald-100 text-emerald-700" : trabajo.estado === "cerrado" ? "bg-gray-200 text-gray-700" : "bg-amber-100 text-amber-700"}`}>
-                  {trabajo.estado}
+                <span className={`text-xs px-3 py-1.5 rounded-full font-medium ${
+                  trabajo.estado === "publicado" ? "bg-emerald-100 text-emerald-700" : 
+                  trabajo.estado === "cerrado" ? "bg-gray-200 text-gray-700" : 
+                  "bg-amber-100 text-amber-700"
+                }`}>
+                  {trabajo.estado.charAt(0).toUpperCase() + trabajo.estado.slice(1)}
                 </span>
               </div>
 
-              {trabajo.descripcion && <p className="text-sm text-gray-600 mt-2 line-clamp-2">{trabajo.descripcion}</p>}
+              {trabajo.descripcion && (
+                <p className="text-sm text-gray-600 mt-3 line-clamp-2">{trabajo.descripcion}</p>
+              )}
 
-              <div className="mt-4 flex flex-wrap gap-2">
-                {trabajo.estado === "borrador" && (
-                  <button
-                    onClick={() => handlePublicar(trabajo.id)}
-                    className="inline-flex items-center gap-1 px-3 py-1.5 text-sm rounded bg-emerald-600 text-white hover:bg-emerald-700"
-                  >
-                    <SendHorizontal size={14} />
-                    {t("teacher.trabajos.publish", { defaultValue: "Publicar" })}
-                  </button>
-                )}
-
-                {trabajo.estado !== "cerrado" && (
-                  <button
-                    onClick={() => handleCerrar(trabajo.id)}
-                    className="inline-flex items-center gap-1 px-3 py-1.5 text-sm rounded bg-gray-700 text-white hover:bg-gray-800"
-                  >
-                    <XCircle size={14} />
-                    {t("teacher.trabajos.close", { defaultValue: "Cerrar" })}
-                  </button>
-                )}
-
-                <button
-                  onClick={() => navigate(`/teacher/trabajos/${trabajo.id}/calificar`)}
-                  className="inline-flex items-center gap-1 px-3 py-1.5 text-sm rounded bg-blue-600 text-white hover:bg-blue-700"
-                >
-                  <CheckCircle2 size={14} />
-                  {t("teacher.trabajos.grade", { defaultValue: "Calificar" })}
-                </button>
-
-                <button
-                  onClick={() => navigate(`/teacher/trabajos/${trabajo.id}/preguntas`)}
-                  className="inline-flex items-center gap-1 px-3 py-1.5 text-sm rounded bg-slate-700 text-white hover:bg-slate-800"
-                >
-                  <ClipboardList size={14} />
-                  Preguntas
-                </button>
-
-                <button
-                  onClick={() => openEditModal(trabajo)}
-                  className="inline-flex items-center gap-1 px-3 py-1.5 text-sm rounded bg-indigo-600 text-white hover:bg-indigo-700"
-                >
-                  <Pencil size={14} />
-                  {t("teacher.trabajos.edit", { defaultValue: "Editar" })}
-                </button>
-
-                {trabajo.extraido_de_libro && trabajo.id_extraccion && trabajo.estado === "borrador" && (
-                  <button
-                    onClick={() => { void startSequentialReview([trabajo.id]); }}
-                    className="inline-flex items-center gap-1 px-3 py-1.5 text-sm rounded bg-amber-600 text-white hover:bg-amber-700"
-                  >
-                    <CheckCircle2 size={14} />
-                    {t("teacher.trabajos.verifyBook", { defaultValue: "Verificar libro" })}
-                  </button>
-                )}
-
-                <button
-                  onClick={() => navigate(`/teacher/trabajos/${trabajo.id}/reportes`)}
-                  className="inline-flex items-center gap-1 px-3 py-1.5 text-sm rounded bg-cyan-600 text-white hover:bg-cyan-700"
-                >
-                  <BarChart3 size={14} />
-                  {t("teacher.trabajos.reports", { defaultValue: "Reportes" })}
-                </button>
-
-                <button
-                  onClick={() => navigate(`/teacher/recursos-personales?trabajoId=${trabajo.id}`)}
-                  className="inline-flex items-center gap-1 px-3 py-1.5 text-sm rounded bg-emerald-600 text-white hover:bg-emerald-700"
-                >
-                  <Library size={14} />
-                  Recursos personales
-                </button>
-
-                <button
-                  onClick={() => handleEliminar(trabajo.id)}
-                  className="inline-flex items-center gap-1 px-3 py-1.5 text-sm rounded bg-rose-600 text-white hover:bg-rose-700"
-                >
-                  <Trash2 size={14} />
-                  {t("teacher.trabajos.delete", { defaultValue: "Eliminar" })}
-                </button>
+              <div className="mt-4 pt-4 border-t border-gray-100 flex items-center justify-between text-xs text-gray-500">
+                <span className="flex items-center gap-1">
+                  <Calendar size={14} />
+                  {new Date(trabajo.created_at).toLocaleDateString()}
+                </span>
+                <div className="flex items-center gap-2">
+                  {trabajo.tipo_trabajo === "preguntas" && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        navigate(`/teacher/trabajos/${trabajo.id}/preguntas`);
+                      }}
+                      className="flex items-center gap-1 px-2 py-1 rounded bg-purple-100 text-purple-700 hover:bg-purple-200"
+                    >
+                      <HelpCircle size={12} />
+                      Banco de preguntas
+                    </button>
+                  )}
+                  <span className="flex items-center gap-1">
+                    <Users size={14} />
+                    Ver detalles
+                  </span>
+                </div>
               </div>
             </div>
           ))}
@@ -1555,18 +1697,36 @@ export default function TeacherTrabajos() {
               )}
 
               <div className="space-y-3">
-              {!editingTrabajoId && (
-                <div>
-                  <label className="text-sm font-medium block mb-1">{t("teacher.trabajos.leccion", { defaultValue: "Leccion" })}</label>
+              {materias.length > 0 && (
+                <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg border border-blue-200 p-4">
+                  <label className="block text-sm font-semibold text-gray-900 mb-2">
+                    <div className="flex items-center gap-2">
+                      <GraduationCap className="text-blue-600" size={16} />
+                      {t("teacher.trabajos.selectMateriaForCreate", { defaultValue: "Asignar a materia:" })}
+                    </div>
+                  </label>
                   <select
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2"
-                    value={newTrabajo.leccion_id}
-                    onChange={(e) => setNewTrabajo((prev) => ({ ...prev, leccion_id: e.target.value }))}
+                    className="w-full border border-gray-300 rounded-lg px-4 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white shadow-sm"
+                    value={selectedMateria}
+                    onChange={(e) => {
+                      setSelectedMateria(e.target.value);
+                      const materia = materias.find(m => m.id === e.target.value);
+                      if (materia) {
+                        setSelectedCurso(materia.curso_id);
+                      }
+                    }}
                   >
-                    {lecciones.map((leccion) => (
-                      <option key={leccion.id} value={leccion.id}>{leccion.titulo}</option>
+                    <option value="">{t("teacher.trabajos.selectMateria", { defaultValue: "Selecciona una materia" })}</option>
+                    {materias.map((materia) => (
+                      <option key={materia.id} value={materia.id}>{materia.nombre}</option>
                     ))}
                   </select>
+                  {selectedMateria && (
+                    <p className="text-xs text-blue-700 mt-2 flex items-center gap-2">
+                      <Users size={12} />
+                      {t("teacher.trabajos.materiaSelected", { defaultValue: "Los estudiantes de esta materia verán este trabajo" })}
+                    </p>
+                  )}
                 </div>
               )}
 
@@ -1579,6 +1739,60 @@ export default function TeacherTrabajos() {
                   value={newTrabajo.titulo}
                   onChange={(e) => setNewTrabajo((prev) => ({ ...prev, titulo: e.target.value }))}
                 />
+              </div>
+
+              <div>
+                <label className="text-sm font-medium block mb-1">{t("teacher.trabajos.workType", { defaultValue: "Tipo de trabajo" })}</label>
+                <div className="grid grid-cols-3 gap-2">
+                  <button
+                    type="button"
+                    className={`px-3 py-2 rounded border text-sm ${
+                      selectedWorkType === "archivo"
+                        ? "bg-purple-600 text-white border-purple-600"
+                        : "bg-white"
+                    }`}
+                    onClick={() => setSelectedWorkType("archivo")}
+                  >
+                    <div className="flex flex-col items-center gap-1">
+                      <UploadCloud size={16} />
+                      <span>{t("teacher.trabajos.workType.file", { defaultValue: "Archivo" })}</span>
+                    </div>
+                  </button>
+                  <button
+                    type="button"
+                    className={`px-3 py-2 rounded border text-sm ${
+                      selectedWorkType === "preguntas_abiertas"
+                        ? "bg-purple-600 text-white border-purple-600"
+                        : "bg-white"
+                    }`}
+                    onClick={() => setSelectedWorkType("preguntas_abiertas")}
+                  >
+                    <div className="flex flex-col items-center gap-1">
+                      <FileText size={16} />
+                      <span>{t("teacher.trabajos.workType.openQuestions", { defaultValue: "Abiertas" })}</span>
+                    </div>
+                  </button>
+                  <button
+                    type="button"
+                    className={`px-3 py-2 rounded border text-sm ${
+                      selectedWorkType === "preguntas_cerradas"
+                        ? "bg-purple-600 text-white border-purple-600"
+                        : "bg-white"
+                    }`}
+                    onClick={() => setSelectedWorkType("preguntas_cerradas")}
+                  >
+                    <div className="flex flex-col items-center gap-1">
+                      <CheckCircle size={16} />
+                      <span>{t("teacher.trabajos.workType.closedQuestions", { defaultValue: "Cerradas" })}</span>
+                    </div>
+                  </button>
+                </div>
+                {selectedWorkType === "preguntas_abiertas" && (
+                  <p className="text-xs text-gray-600 mt-1">{t("teacher.trabajos.workType.openQuestionsHint", { defaultValue: "Revisión manual por el docente" })}</p>
+                )}
+                {selectedWorkType === "preguntas_cerradas" && (
+                  <p className="text-xs text-gray-600 mt-1">{t("teacher.trabajos.workType.closedQuestionsHint", { defaultValue: "Calificación automática por el sistema" })}</p>
+                )}
               </div>
 
               <div>
@@ -1611,6 +1825,34 @@ export default function TeacherTrabajos() {
                   value={newTrabajo.fecha_vencimiento || ""}
                   onChange={(e) => setNewTrabajo((prev) => ({ ...prev, fecha_vencimiento: e.target.value }))}
                 />
+              </div>
+
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="permite_entrega_tardia"
+                  checked={newTrabajo.permite_entrega_tardia}
+                  onChange={(e) => setNewTrabajo((prev) => ({ ...prev, permite_entrega_tardia: e.target.checked }))}
+                  className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
+                />
+                <label htmlFor="permite_entrega_tardia" className="text-sm">
+                  {t("teacher.trabajos.permiteEntregaTardia", { defaultValue: "Permitir entregas tardías después de la fecha límite" })}
+                </label>
+              </div>
+
+              <div>
+                <label className="text-sm font-medium block mb-1">{t("teacher.trabajos.maxIntentos", { defaultValue: "Número máximo de intentos (opcional)" })}</label>
+                <input
+                  type="number"
+                  min="1"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2"
+                  value={newTrabajo.max_intentos ?? ""}
+                  onChange={(e) => setNewTrabajo((prev) => ({ ...prev, max_intentos: e.target.value ? parseInt(e.target.value) : null }))}
+                  placeholder={t("teacher.trabajos.maxIntentosPlaceholder", { defaultValue: "Sin límite si se deja vacío" })}
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  {t("teacher.trabajos.maxIntentosHelp", { defaultValue: "Dejar vacío para permitir intentos ilimitados" })}
+                </p>
               </div>
 
               {!editingTrabajoId && createMode === "libro" && (
@@ -2081,6 +2323,261 @@ export default function TeacherTrabajos() {
                   {t("common.close", { defaultValue: "Cerrar" })}
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showDetails && selectedTrabajo && (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={() => setShowDetails(false)}>
+          <div className="bg-white rounded-xl w-full max-w-4xl max-h-[90vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+            <div className="p-6 border-b border-gray-100 flex items-center justify-between">
+              <div>
+                <h2 className="text-xl font-semibold text-gray-900">{selectedTrabajo.titulo}</h2>
+                <p className="text-sm text-gray-500 mt-1">{selectedTrabajo.materia_titulo || selectedTrabajo.leccion_titulo}</p>
+              </div>
+              <button
+                onClick={() => setShowDetails(false)}
+                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                <X size={20} className="text-gray-500" />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-6">
+              {/* Información del trabajo */}
+              <div className="mb-6">
+                <h3 className="text-lg font-semibold mb-3 flex items-center gap-2">
+                  <FileText size={18} />
+                  Información del trabajo
+                </h3>
+                <div className="bg-gray-50 rounded-lg p-4 space-y-2">
+                  <div className="flex justify-between">
+                    <span className="text-sm text-gray-600">Estado:</span>
+                    <span className={`text-sm font-medium ${
+                      selectedTrabajo.estado === "publicado" ? "text-emerald-600" :
+                      selectedTrabajo.estado === "cerrado" ? "text-gray-600" :
+                      "text-amber-600"
+                    }`}>
+                      {selectedTrabajo.estado.charAt(0).toUpperCase() + selectedTrabajo.estado.slice(1)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-sm text-gray-600">Fecha de creación:</span>
+                    <span className="text-sm font-medium">{new Date(selectedTrabajo.created_at).toLocaleDateString()}</span>
+                  </div>
+                  {selectedTrabajo.descripcion && (
+                    <div className="pt-2">
+                      <span className="text-sm text-gray-600 block mb-1">Descripción:</span>
+                      <p className="text-sm text-gray-800">{selectedTrabajo.descripcion}</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Lista de estudiantes */}
+              <div>
+                <h3 className="text-lg font-semibold mb-3 flex items-center gap-2">
+                  <Users size={18} />
+                  Entregas de estudiantes
+                </h3>
+                <div className="bg-gray-50 rounded-lg p-4">
+                  {loadingEntregas ? (
+                    <div className="flex items-center justify-center py-8">
+                      <Loader2 className="animate-spin text-gray-400" />
+                    </div>
+                  ) : trabajoEntregas.length === 0 ? (
+                    <p className="text-sm text-gray-600 text-center py-8">
+                      No hay entregas registradas
+                    </p>
+                  ) : (
+                    <div className="space-y-2">
+                      {trabajoEntregas.map((entrega) => {
+                        const submittedDate = new Date(entrega.entrega.submitted_at);
+                        const fechaVencimiento = selectedTrabajo?.fecha_vencimiento ? new Date(selectedTrabajo.fecha_vencimiento) : null;
+                        const isLate = fechaVencimiento && submittedDate > fechaVencimiento;
+
+                        return (
+                          <div key={entrega.entrega.id} className="flex items-center justify-between p-3 bg-white rounded border border-gray-200">
+                            <div className="flex items-center gap-3">
+                              <div className="w-8 h-8 bg-emerald-100 rounded-full flex items-center justify-center">
+                                <CheckCircle size={16} className="text-emerald-600" />
+                              </div>
+                              <div>
+                                <p className="text-sm font-medium">{entrega.estudiante_nombre || "Estudiante"}</p>
+                                <p className="text-xs text-gray-500">
+                                  Entregado el {submittedDate.toLocaleDateString()}
+                                </p>
+                                {isLate && (
+                                  <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 mt-1">
+                                    <AlertCircle size={10} />
+                                    Entregado atrasado
+                                  </span>
+                                )}
+                                {entrega.entrega.archivo_url && (
+                                  <button
+                                    onClick={() => handleFilePreview(entrega.entrega.archivo_url!)}
+                                    disabled={convertingFile}
+                                    className="text-xs px-3 py-1.5 bg-blue-50 text-blue-600 rounded hover:bg-blue-100 transition-colors mt-1 disabled:opacity-50"
+                                  >
+                                    {convertingFile ? "Convirtiendo..." : "Ver archivo"}
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                            <button
+                              onClick={() => navigate(`/teacher/trabajos/${selectedTrabajo?.id}/calificar?entregaId=${entrega.entrega.id}`)}
+                              className="text-sm text-blue-600 hover:text-blue-700 font-medium"
+                            >
+                              {entrega.calificacion ? "Revisar" : "Calificar"}
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="p-6 border-t border-gray-100 flex justify-between items-center">
+              <button
+                onClick={() => {
+                  if (selectedTrabajo && confirm("¿Estás seguro de eliminar este trabajo? Esta acción no se puede deshacer.")) {
+                    handleEliminar(selectedTrabajo.id);
+                    setShowDetails(false);
+                  }
+                }}
+                className="px-4 py-2 bg-rose-600 text-white rounded-lg hover:bg-rose-700 transition-colors"
+              >
+                Eliminar trabajo
+              </button>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => navigate(`/teacher/trabajos/${selectedTrabajo.id}/calificar`)}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                >
+                  Ir a calificar
+                </button>
+                <button
+                  onClick={() => setShowDetails(false)}
+                  className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+                >
+                  Cerrar
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* File Preview Modal */}
+      {filePreviewModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-2xl w-full max-w-6xl max-h-[95vh] flex flex-col">
+            <div className="flex items-center justify-between p-4 border-b">
+              <h3 className="text-lg font-semibold">Vista previa del archivo</h3>
+              <button
+                onClick={() => {
+                  setFilePreviewModal(null);
+                  if (filePreviewModal.url.startsWith('blob:')) {
+                    URL.revokeObjectURL(filePreviewModal.url);
+                  }
+                  setImageZoom(1);
+                  setImagePan({ x: 0, y: 0 });
+                }}
+                className="text-gray-500 hover:text-gray-700 text-2xl font-bold px-2"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="flex-1 overflow-auto p-0">
+              {filePreviewModal.type === 'pdf' ? (
+                <iframe
+                  src={filePreviewModal.url}
+                  className="w-full h-full border-0"
+                  style={{ height: '80vh' }}
+                  title="PDF Preview"
+                />
+              ) : filePreviewModal.type === 'image' ? (
+                <div className="relative w-full h-full flex items-center justify-center bg-gray-100" style={{ height: '80vh', overflow: 'hidden' }}>
+                  <div
+                    className="cursor-move"
+                    style={{
+                      transform: `scale(${imageZoom}) translate(${imagePan.x}px, ${imagePan.y}px)`,
+                      transformOrigin: 'center',
+                      transition: isDragging ? 'none' : 'transform 0.1s ease-out'
+                    }}
+                    onMouseDown={(e) => {
+                      setIsDragging(true);
+                      setDragStart({ x: e.clientX - imagePan.x, y: e.clientY - imagePan.y });
+                    }}
+                    onMouseMove={(e) => {
+                      if (isDragging) {
+                        setImagePan({
+                          x: e.clientX - dragStart.x,
+                          y: e.clientY - dragStart.y
+                        });
+                      }
+                    }}
+                    onMouseUp={() => setIsDragging(false)}
+                    onMouseLeave={() => setIsDragging(false)}
+                  >
+                    <img
+                      src={filePreviewModal.url}
+                      alt="Preview"
+                      className="max-w-full max-h-full object-contain"
+                      draggable={false}
+                    />
+                  </div>
+                  {/* Zoom Controls */}
+                  <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 flex gap-2 bg-white rounded-lg shadow-lg p-2">
+                    <button
+                      onClick={handleZoomOut}
+                      className="w-8 h-8 flex items-center justify-center bg-gray-100 hover:bg-gray-200 rounded"
+                    >
+                      −
+                    </button>
+                    <span className="w-12 flex items-center justify-center text-sm font-medium">
+                      {Math.round(imageZoom * 100)}%
+                    </span>
+                    <button
+                      onClick={handleZoomIn}
+                      className="w-8 h-8 flex items-center justify-center bg-gray-100 hover:bg-gray-200 rounded"
+                    >
+                      +
+                    </button>
+                    <button
+                      onClick={handleResetZoom}
+                      className="w-8 h-8 flex items-center justify-center bg-gray-100 hover:bg-gray-200 rounded text-xs"
+                    >
+                      ⟲
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex flex-col items-center justify-center h-full p-8" style={{ minHeight: '60vh' }}>
+                  <p className="text-gray-600 mb-4 text-center">
+                    Este formato de archivo no se puede visualizar directamente.
+                  </p>
+                  <div className="flex gap-3">
+                    <a
+                      href={filePreviewModal.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
+                    >
+                      Descargar archivo
+                    </a>
+                    <button
+                      onClick={() => setFilePreviewModal(null)}
+                      className="px-6 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors font-medium"
+                    >
+                      Cerrar
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>

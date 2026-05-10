@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { ClipboardList, Loader2, Search } from "lucide-react";
+import { AlertCircle, ClipboardList, Loader2, Search } from "lucide-react";
 import toast from "react-hot-toast";
 
 import { getMe } from "@/shared/lib/auth";
 import { listMisTrabajos } from "@/features/trabajos/services/trabajos";
-import type { Trabajo } from "@/shared/types/trabajos";
+import type { TrabajoConEstadoEntrega } from "@/shared/types/trabajos";
 
 function normalizeError(err: unknown): string {
   if (typeof err === "object" && err !== null && "message" in err) {
@@ -23,8 +23,9 @@ export default function StudentTrabajos() {
   const navigate = useNavigate();
 
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
-  const [trabajos, setTrabajos] = useState<Trabajo[]>([]);
+  const [trabajos, setTrabajos] = useState<TrabajoConEstadoEntrega[]>([]);
 
   useEffect(() => {
     (async () => {
@@ -38,7 +39,9 @@ export default function StudentTrabajos() {
         const data = await listMisTrabajos();
         setTrabajos(data);
       } catch (err) {
-        toast.error(normalizeError(err));
+        const errorMsg = normalizeError(err);
+        setError(errorMsg);
+        toast.error(errorMsg);
       } finally {
         setLoading(false);
       }
@@ -60,6 +63,25 @@ export default function StudentTrabajos() {
     return (
       <div className="flex items-center justify-center min-h-[40vh]">
         <Loader2 size={32} className="animate-spin text-blue-600" />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="max-w-5xl mx-auto p-4">
+        <h1 className="text-2xl font-bold mb-4">{t("student.trabajos.title", { defaultValue: "Mis Trabajos" })}</h1>
+        <div className="bg-red-50 border border-red-200 rounded-lg p-6 text-center">
+          <AlertCircle size={48} className="mx-auto mb-3 text-red-500" />
+          <p className="text-red-800 font-medium">{t("student.trabajos.error", { defaultValue: "Error al cargar trabajos" })}</p>
+          <p className="text-red-600 text-sm mt-2">{error}</p>
+          <button
+            onClick={() => window.location.reload()}
+            className="mt-4 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
+          >
+            {t("common.retry", { defaultValue: "Reintentar" })}
+          </button>
+        </div>
       </div>
     );
   }
@@ -93,9 +115,30 @@ export default function StudentTrabajos() {
             >
               <div className="flex items-start justify-between">
                 <h3 className="font-semibold text-gray-900">{trabajo.titulo}</h3>
-                <span className={`text-xs px-2 py-1 rounded-full ${trabajo.estado === "cerrado" ? "bg-gray-200 text-gray-700" : "bg-emerald-100 text-emerald-700"}`}>
-                  {trabajo.estado}
-                </span>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs px-2 py-1 rounded-full bg-blue-100 text-blue-700">
+                    {trabajo.tipo_trabajo === "preguntas" && t("student.trabajos.tipoPreguntas", { defaultValue: "Preguntas" })}
+                    {trabajo.tipo_trabajo === "archivo" && t("student.trabajos.tipoArchivo", { defaultValue: "Archivo" })}
+                    {trabajo.tipo_trabajo === "mixto" && t("student.trabajos.tipoMixto", { defaultValue: "Mixto" })}
+                    {!trabajo.tipo_trabajo && t("student.trabajos.tipoPreguntas", { defaultValue: "Preguntas" })}
+                  </span>
+                  <span className={`text-xs px-2 py-1 rounded-full ${trabajo.estado === "cerrado" ? "bg-gray-200 text-gray-700" : "bg-emerald-100 text-emerald-700"}`}>
+                    {trabajo.estado}
+                  </span>
+                  {trabajo.entregada ? (
+                    <span className={`text-xs px-2 py-1 rounded-full ${
+                      trabajo.entrega_estado === "calificada" ? "bg-purple-100 text-purple-700" : "bg-green-100 text-green-700"
+                    }`}>
+                      {trabajo.entrega_estado === "calificada"
+                        ? `${t("student.trabajos.calificado", { defaultValue: "Calificado" })}: ${trabajo.calificacion?.toFixed(1)}`
+                        : t("student.trabajos.entregado", { defaultValue: "Entregado" })}
+                    </span>
+                  ) : (
+                    <span className="text-xs px-2 py-1 rounded-full bg-amber-100 text-amber-700">
+                      {t("student.trabajos.pendiente", { defaultValue: "Pendiente" })}
+                    </span>
+                  )}
+                </div>
               </div>
               {trabajo.descripcion && <p className="text-sm text-gray-600 mt-2 line-clamp-2">{trabajo.descripcion}</p>}
               {trabajo.fecha_vencimiento && (

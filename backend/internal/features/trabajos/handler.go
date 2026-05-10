@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/csv"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
 	"time"
@@ -30,6 +31,7 @@ func (h *Handler) CreateTrabajo(w http.ResponseWriter, r *http.Request) {
 		shared.Error(w, http.StatusBadRequest, "Datos inválidos")
 		return
 	}
+	fmt.Printf("[DEBUG] CreateTrabajo called with: materia_id=%v, titulo=%s, leccion_id=%v\n", req.MateriaID, req.Titulo, req.LeccionID)
 	item, err := h.svc.CreateTrabajo(r.Context(), req, claims.Subject, claims.UserRole)
 	if err != nil {
 		shared.Error(w, http.StatusBadRequest, err.Error())
@@ -41,6 +43,16 @@ func (h *Handler) CreateTrabajo(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) ListTrabajosByLeccion(w http.ResponseWriter, r *http.Request) {
 	claims := middleware.GetClaims(r.Context())
 	items, err := h.svc.ListTrabajosByLeccion(r.Context(), chi.URLParam(r, "leccionId"), claims.Subject, claims.UserRole)
+	if err != nil {
+		shared.Error(w, http.StatusForbidden, err.Error())
+		return
+	}
+	shared.Success(w, items)
+}
+
+func (h *Handler) ListTrabajosByMateria(w http.ResponseWriter, r *http.Request) {
+	claims := middleware.GetClaims(r.Context())
+	items, err := h.svc.ListTrabajosByMateria(r.Context(), chi.URLParam(r, "materiaId"), claims.Subject, claims.UserRole)
 	if err != nil {
 		shared.Error(w, http.StatusForbidden, err.Error())
 		return
@@ -127,6 +139,32 @@ func (h *Handler) ListMisTrabajos(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	shared.Success(w, items)
+}
+
+func (h *Handler) UploadFile(w http.ResponseWriter, r *http.Request) {
+	claims := middleware.GetClaims(r.Context())
+
+	// Limit upload size to 50MB
+	r.Body = http.MaxBytesReader(w, r.Body, 50*1024*1024)
+	if err := r.ParseMultipartForm(50 * 1024 * 1024); err != nil {
+		shared.Error(w, http.StatusBadRequest, "Archivo demasiado grande (máximo 50MB)")
+		return
+	}
+
+	file, header, err := r.FormFile("file")
+	if err != nil {
+		shared.Error(w, http.StatusBadRequest, "No se pudo leer el archivo")
+		return
+	}
+	defer file.Close()
+
+	url, err := h.svc.UploadFile(r.Context(), file, header.Filename, claims.Subject)
+	if err != nil {
+		shared.Error(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	shared.Success(w, map[string]string{"url": url})
 }
 
 func (h *Handler) UpsertEntrega(w http.ResponseWriter, r *http.Request) {

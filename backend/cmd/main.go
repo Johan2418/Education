@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -106,6 +108,12 @@ func main() {
 		w.Header().Set("Content-Type", "application/json")
 		w.Write([]byte(`{"name":"Arcanea API","version":"1.0.0","status":"running"}`))
 	})
+
+	// Static file server for uploads
+	workDir, _ := os.Getwd()
+	uploadsDir := filepath.Join(workDir, "uploads")
+	FileServer(r, "/uploads", http.Dir(uploadsDir))
+
 	r.Get("/health", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.Write([]byte(`{"status":"ok"}`))
@@ -230,6 +238,7 @@ func main() {
 		r.Put("/recursos/{recursoId}", resH.UpdateRecurso)
 		r.Delete("/recursos/{recursoId}", resH.DeleteRecurso)
 		r.Post("/recursos/pptx-to-pdf", resH.ConvertPptxToPdf)
+		r.Post("/recursos/docx-to-pdf", resH.ConvertDocxToPdf)
 
 		r.Get("/recursos-personales", resH.ListRecursosPersonales)
 		r.Get("/recursos-personales/{recursoPersonalId}", resH.GetRecursoPersonal)
@@ -291,6 +300,7 @@ func main() {
 
 		// ── Trabajos ───────────────────────────────────────
 		r.Get("/lecciones/{leccionId}/trabajos", trabH.ListTrabajosByLeccion)
+		r.Get("/materias/{materiaId}/trabajos", trabH.ListTrabajosByMateria)
 		r.Post("/trabajos", trabH.CreateTrabajo)
 		r.Put("/trabajos/{trabajoId}", trabH.UpdateTrabajo)
 		r.Put("/trabajos/{trabajoId}/preguntas", trabH.UpdateTrabajoPreguntas)
@@ -299,6 +309,7 @@ func main() {
 		r.Delete("/trabajos/{trabajoId}", trabH.DeleteTrabajo)
 		r.Get("/trabajos/{trabajoId}", trabH.GetTrabajo)
 		r.Get("/mis-trabajos", trabH.ListMisTrabajos)
+		r.Post("/upload", trabH.UploadFile)
 		r.Post("/trabajos/{trabajoId}/entregas", trabH.UpsertEntrega)
 		r.Get("/trabajos/{trabajoId}/mi-entrega", trabH.GetMiEntrega)
 		r.Get("/trabajos/{trabajoId}/formulario", trabH.GetTrabajoFormulario)
@@ -380,4 +391,25 @@ func main() {
 		log.Fatalf("shutdown: %v", err)
 	}
 	log.Println("Server stopped")
+}
+
+// FileServer conveniently sets up a http.FileServer handler to serve
+// static files from a http.FileSystem.
+func FileServer(r chi.Router, path string, root http.FileSystem) {
+	if strings.ContainsAny(path, "{}*") {
+		panic("FileServer does not permit any URL parameters.")
+	}
+
+	if path != "/" && path[len(path)-1] != '/' {
+		r.Get(path, http.RedirectHandler(path+"/", http.StatusMovedPermanently).ServeHTTP)
+		path += "/"
+	}
+	path += "*"
+
+	r.Get(path, func(w http.ResponseWriter, r *http.Request) {
+		rctx := chi.RouteContext(r.Context())
+		pathPrefix := strings.TrimSuffix(rctx.RoutePattern(), "/*")
+		fs := http.StripPrefix(pathPrefix, http.FileServer(root))
+		fs.ServeHTTP(w, r)
+	})
 }

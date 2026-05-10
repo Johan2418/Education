@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -18,6 +19,7 @@ const (
 func Auth(jwtSvc *jwt.Service) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			fmt.Printf("[DEBUG Auth] Request: %s %s\n", r.Method, r.URL.Path)
 			header := r.Header.Get("Authorization")
 			if header == "" {
 				shared.Error(w, http.StatusUnauthorized, "Token requerido")

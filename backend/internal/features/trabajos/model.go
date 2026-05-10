@@ -14,7 +14,8 @@ const (
 
 type Trabajo struct {
 	ID               string     `json:"id" gorm:"column:id;primaryKey;default:gen_random_uuid()"`
-	LeccionID        string     `json:"leccion_id" gorm:"column:leccion_id"`
+	LeccionID        *string    `json:"leccion_id" gorm:"column:leccion_id"`
+	MateriaID        *string    `json:"materia_id" gorm:"column:materia_id"`
 	Titulo           string     `json:"titulo" gorm:"column:titulo"`
 	Descripcion      *string    `json:"descripcion" gorm:"column:descripcion"`
 	Instrucciones    *string    `json:"instrucciones" gorm:"column:instrucciones"`
@@ -24,9 +25,16 @@ type Trabajo struct {
 	Estado           string     `json:"estado" gorm:"column:estado;type:internal.estado_trabajo"`
 	ExtraidoDeLibro  bool       `json:"extraido_de_libro" gorm:"column:extraido_de_libro"`
 	IDExtraccion     *string    `json:"id_extraccion" gorm:"column:id_extraccion"`
-	CreatedBy        *string    `json:"created_by" gorm:"column:created_by"`
-	CreatedAt        time.Time  `json:"created_at" gorm:"column:created_at;autoCreateTime"`
-	UpdatedAt        time.Time  `json:"updated_at" gorm:"column:updated_at;autoUpdateTime"`
+	// New fields for enhanced assignment system
+	TipoTrabajo               string          `json:"tipo_trabajo" gorm:"column:tipo_trabajo;type:internal.tipo_trabajo;default:'preguntas'"`
+	PermiteArchivo            bool            `json:"permite_archivo" gorm:"column:permite_archivo;default:false"`
+	PermiteEntregaTardia      bool            `json:"permite_entrega_tardia" gorm:"column:permite_entrega_tardia;default:false"`
+	MaxIntentos               *int            `json:"max_intentos" gorm:"column:max_intentos"`
+	CalificacionAutomatica    bool            `json:"calificacion_automatica" gorm:"column:calificacion_automatica;default:false"`
+	ConfiguracionCalificacion json.RawMessage `json:"configuracion_calificacion" gorm:"column:configuracion_calificacion;type:jsonb;default:'{}'"`
+	CreatedBy                 *string         `json:"created_by" gorm:"column:created_by"`
+	CreatedAt                 time.Time       `json:"created_at" gorm:"column:created_at;autoCreateTime"`
+	UpdatedAt                 time.Time       `json:"updated_at" gorm:"column:updated_at;autoUpdateTime"`
 }
 
 func (Trabajo) TableName() string { return "internal.trabajo" }
@@ -52,16 +60,17 @@ type TrabajoPregunta struct {
 func (TrabajoPregunta) TableName() string { return "internal.trabajo_pregunta" }
 
 type TrabajoEntrega struct {
-	ID           string          `json:"id" gorm:"column:id;primaryKey;default:gen_random_uuid()"`
-	TrabajoID    string          `json:"trabajo_id" gorm:"column:trabajo_id"`
-	EstudianteID string          `json:"estudiante_id" gorm:"column:estudiante_id"`
-	Respuestas   json.RawMessage `json:"respuestas" gorm:"column:respuestas;type:jsonb"`
-	ArchivoURL   *string         `json:"archivo_url" gorm:"column:archivo_url"`
-	Comentario   *string         `json:"comentario" gorm:"column:comentario"`
-	Estado       string          `json:"estado" gorm:"column:estado;type:internal.estado_entrega_trabajo"`
-	SubmittedAt  time.Time       `json:"submitted_at" gorm:"column:submitted_at"`
-	CreatedAt    time.Time       `json:"created_at" gorm:"column:created_at;autoCreateTime"`
-	UpdatedAt    time.Time       `json:"updated_at" gorm:"column:updated_at;autoUpdateTime"`
+	ID             string          `json:"id" gorm:"column:id;primaryKey;default:gen_random_uuid()"`
+	TrabajoID      string          `json:"trabajo_id" gorm:"column:trabajo_id"`
+	EstudianteID   string          `json:"estudiante_id" gorm:"column:estudiante_id"`
+	Respuestas     json.RawMessage `json:"respuestas" gorm:"column:respuestas;type:jsonb"`
+	ArchivoURL     *string         `json:"archivo_url" gorm:"column:archivo_url"`
+	Comentario     *string         `json:"comentario" gorm:"column:comentario"`
+	Estado         string          `json:"estado" gorm:"column:estado;type:internal.estado_entrega_trabajo"`
+	IntentosUsados int             `json:"intentos_usados" gorm:"column:intentos_usados;default:1"`
+	SubmittedAt    time.Time       `json:"submitted_at" gorm:"column:submitted_at"`
+	CreatedAt      time.Time       `json:"created_at" gorm:"column:created_at;autoCreateTime"`
+	UpdatedAt      time.Time       `json:"updated_at" gorm:"column:updated_at;autoUpdateTime"`
 }
 
 func (TrabajoEntrega) TableName() string { return "internal.trabajo_entrega" }
@@ -128,22 +137,35 @@ func (TrabajoCalificacionPregunta) TableName() string {
 }
 
 type CreateTrabajoRequest struct {
-	LeccionID        string     `json:"leccion_id"`
-	Titulo           string     `json:"titulo"`
-	Descripcion      *string    `json:"descripcion"`
-	Instrucciones    *string    `json:"instrucciones"`
-	FechaVencimiento *time.Time `json:"fecha_vencimiento"`
-	NotaMaxima       *float64   `json:"nota_maxima"`
-	PesoCalif        *float64   `json:"peso_calificacion"`
+	LeccionID              *string    `json:"leccion_id"`
+	MateriaID              *string    `json:"materia_id"`
+	Titulo                 string     `json:"titulo"`
+	Descripcion            *string    `json:"descripcion"`
+	Instrucciones          *string    `json:"instrucciones"`
+	FechaVencimiento       *time.Time `json:"fecha_vencimiento"`
+	NotaMaxima             *float64   `json:"nota_maxima"`
+	PesoCalif              *float64   `json:"peso_calificacion"`
+	TipoTrabajo            string     `json:"tipo_trabajo"`
+	PermiteArchivo         bool       `json:"permite_archivo"`
+	PermiteEntregaTardia   bool       `json:"permite_entrega_tardia"`
+	MaxIntentos            *int       `json:"max_intentos"`
+	CalificacionAutomatica bool       `json:"calificacion_automatica"`
 }
 
 type UpdateTrabajoRequest struct {
-	Titulo           string     `json:"titulo"`
-	Descripcion      *string    `json:"descripcion"`
-	Instrucciones    *string    `json:"instrucciones"`
-	FechaVencimiento *time.Time `json:"fecha_vencimiento"`
-	NotaMaxima       *float64   `json:"nota_maxima"`
-	PesoCalif        *float64   `json:"peso_calificacion"`
+	LeccionID              *string    `json:"leccion_id"`
+	MateriaID              *string    `json:"materia_id"`
+	Titulo                 string     `json:"titulo"`
+	Descripcion            *string    `json:"descripcion"`
+	Instrucciones          *string    `json:"instrucciones"`
+	FechaVencimiento       *time.Time `json:"fecha_vencimiento"`
+	NotaMaxima             *float64   `json:"nota_maxima"`
+	PesoCalif              *float64   `json:"peso_calificacion"`
+	TipoTrabajo            string     `json:"tipo_trabajo"`
+	PermiteArchivo         bool       `json:"permite_archivo"`
+	PermiteEntregaTardia   bool       `json:"permite_entrega_tardia"`
+	MaxIntentos            *int       `json:"max_intentos"`
+	CalificacionAutomatica bool       `json:"calificacion_automatica"`
 }
 
 type CreateEntregaRequest struct {
@@ -179,6 +201,7 @@ type CalificarEntregaPorPreguntaRequest struct {
 	SugerenciaIA json.RawMessage                `json:"sugerencia_ia"`
 	TipoCambio   string                         `json:"tipo_cambio,omitempty"`
 	Motivo       *string                        `json:"motivo,omitempty"`
+	ManualScore  *float64                       `json:"manual_score,omitempty"`
 }
 
 type TrabajoPreguntaInput struct {
@@ -207,6 +230,15 @@ type EntregaDetalleResponse struct {
 	RespuestasPreguntas    []TrabajoRespuestaPregunta    `json:"respuestas_preguntas"`
 	Calificacion           *TrabajoCalificacion          `json:"calificacion,omitempty"`
 	CalificacionesPregunta []TrabajoCalificacionPregunta `json:"calificaciones_pregunta"`
+}
+
+type TrabajoConEstadoEntrega struct {
+	Trabajo
+	Entregada     bool       `json:"entregada"`
+	EntregaID     *string    `json:"entrega_id,omitempty"`
+	EntregaEstado *string    `json:"entrega_estado,omitempty"`
+	Calificacion  *float64   `json:"calificacion,omitempty"`
+	EntregadoAt   *time.Time `json:"entregado_at,omitempty"`
 }
 
 type TrabajoFormularioResponse struct {

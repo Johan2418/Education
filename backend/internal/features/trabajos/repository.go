@@ -30,16 +30,27 @@ func (r *Repository) CreateTrabajo(ctx context.Context, req CreateTrabajoRequest
 		pesoCalif = *req.PesoCalif
 	}
 
+	tipoTrabajo := "preguntas"
+	if req.TipoTrabajo != "" {
+		tipoTrabajo = req.TipoTrabajo
+	}
+
 	t := Trabajo{
-		LeccionID:        req.LeccionID,
-		Titulo:           req.Titulo,
-		Descripcion:      req.Descripcion,
-		Instrucciones:    req.Instrucciones,
-		FechaVencimiento: req.FechaVencimiento,
-		NotaMaxima:       notaMaxima,
-		PesoCalif:        pesoCalif,
-		Estado:           "borrador",
-		CreatedBy:        &createdBy,
+		LeccionID:              req.LeccionID,
+		MateriaID:              req.MateriaID,
+		Titulo:                 req.Titulo,
+		Descripcion:            req.Descripcion,
+		Instrucciones:          req.Instrucciones,
+		FechaVencimiento:       req.FechaVencimiento,
+		NotaMaxima:             notaMaxima,
+		PesoCalif:              pesoCalif,
+		Estado:                 "borrador",
+		TipoTrabajo:            tipoTrabajo,
+		PermiteArchivo:         req.PermiteArchivo,
+		PermiteEntregaTardia:   req.PermiteEntregaTardia,
+		MaxIntentos:            req.MaxIntentos,
+		CalificacionAutomatica: req.CalificacionAutomatica,
+		CreatedBy:              &createdBy,
 	}
 	if err := r.db.WithContext(ctx).Create(&t).Error; err != nil {
 		return nil, err
@@ -56,21 +67,156 @@ func (r *Repository) ListTrabajosByLeccion(ctx context.Context, leccionID string
 	return items, err
 }
 
-func (r *Repository) ListMisTrabajos(ctx context.Context, estudianteID string) ([]Trabajo, error) {
+func (r *Repository) ListTrabajosByMateria(ctx context.Context, materiaID string) ([]Trabajo, error) {
 	var items []Trabajo
 	err := r.db.WithContext(ctx).
-		Table("internal.trabajo tr").
-		Joins("JOIN internal.leccion l ON l.id = tr.leccion_id").
-		Joins("JOIN internal.tema t ON t.id = l.tema_id").
-		Joins("JOIN internal.unidad u ON u.id = t.unidad_id").
-		Joins("JOIN internal.materia m ON m.id = u.materia_id").
-		Joins("JOIN internal.estudiante_curso ec ON ec.curso_id = m.curso_id").
-		Where("ec.estudiante_id = ?", estudianteID).
-		Where("tr.estado IN ?", []string{"publicado", "cerrado"}).
-		Select("tr.*").
-		Order("tr.created_at DESC").
-		Scan(&items).Error
+		Where("materia_id = ?", materiaID).
+		Order("created_at DESC").
+		Find(&items).Error
 	return items, err
+}
+
+func (r *Repository) ListMisTrabajos(ctx context.Context, estudianteID string) ([]TrabajoConEstadoEntrega, error) {
+	type trabajoRow struct {
+		ID                        string          `gorm:"column:id"`
+		LeccionID                 *string         `gorm:"column:leccion_id"`
+		MateriaID                 *string         `gorm:"column:materia_id"`
+		Titulo                    string          `gorm:"column:titulo"`
+		Descripcion               *string         `gorm:"column:descripcion"`
+		Instrucciones             *string         `gorm:"column:instrucciones"`
+		FechaVencimiento          *time.Time      `gorm:"column:fecha_vencimiento"`
+		NotaMaxima                float64         `gorm:"column:nota_maxima"`
+		PesoCalif                 float64         `gorm:"column:peso_calificacion"`
+		Estado                    string          `gorm:"column:estado"`
+		ExtraidoDeLibro           bool            `gorm:"column:extraido_de_libro"`
+		IDExtraccion              *string         `gorm:"column:id_extraccion"`
+		TipoTrabajo               string          `gorm:"column:tipo_trabajo"`
+		PermiteArchivo            bool            `gorm:"column:permite_archivo"`
+		CalificacionAutomatica    bool            `gorm:"column:calificacion_automatica"`
+		ConfiguracionCalificacion json.RawMessage `gorm:"column:configuracion_calificacion"`
+		CreatedBy                 *string         `gorm:"column:created_by"`
+		CreatedAt                 time.Time       `gorm:"column:created_at"`
+		UpdatedAt                 time.Time       `gorm:"column:updated_at"`
+		EntregaID                 *string         `gorm:"column:entrega_id"`
+		EntregaEstado             *string         `gorm:"column:entrega_estado"`
+		Calificacion              *float64        `gorm:"column:calificacion"`
+		EntregadoAt               *time.Time      `gorm:"column:entregado_at"`
+	}
+
+	var rows []trabajoRow
+
+	// Simplified query - get works through estudiante_curso without complex joins
+	err := r.db.WithContext(ctx).
+		Raw(`
+			SELECT DISTINCT
+				tr.*,
+				e.id AS entrega_id,
+				e.estado AS entrega_estado,
+				c.puntaje AS calificacion,
+				e.submitted_at AS entregado_at
+			FROM internal.trabajo tr
+			LEFT JOIN internal.trabajo_entrega e ON e.trabajo_id = tr.id AND e.estudiante_id = ?
+			LEFT JOIN internal.trabajo_calificacion c ON c.entrega_id = e.id
+			WHERE tr.estado IN ('publicado', 'cerrado')
+			AND (
+				-- Works assigned through lesson
+				tr.leccion_id IN (
+					SELECT l.id FROM internal.leccion l
+					INNER JOIN internal.tema t ON t.id = l.tema_id
+					INNER JOIN internal.unidad u ON u.id = t.unidad_id
+					INNER JOIN internal.materia m ON m.id = u.materia_id
+					INNER JOIN internal.curso cur ON cur.id = m.curso_id
+					INNER JOIN internal.estudiante_curso ec ON ec.curso_id = cur.id
+					WHERE ec.estudiante_id = ?
+				)
+				OR
+				-- Works assigned directly through materia
+				tr.materia_id IN (
+					SELECT m.id FROM internal.materia m
+					INNER JOIN internal.curso cur ON cur.id = m.curso_id
+					INNER JOIN internal.estudiante_curso ec ON ec.curso_id = cur.id
+					WHERE ec.estudiante_id = ?
+				)
+			)
+			ORDER BY tr.created_at DESC
+		`, estudianteID, estudianteID, estudianteID).
+		Scan(&rows).Error
+
+	if err != nil {
+		fmt.Printf("[DEBUG] ListMisTrabajos error for estudianteID=%s: %v\n", estudianteID, err)
+		return nil, err
+	}
+
+	fmt.Printf("[DEBUG] ListMisTrabajos found %d works for estudianteID=%s\n", len(rows), estudianteID)
+
+	items := make([]TrabajoConEstadoEntrega, 0, len(rows))
+	for _, row := range rows {
+		item := TrabajoConEstadoEntrega{
+			Trabajo: Trabajo{
+				ID:                        row.ID,
+				LeccionID:                 row.LeccionID,
+				MateriaID:                 row.MateriaID,
+				Titulo:                    row.Titulo,
+				Descripcion:               row.Descripcion,
+				Instrucciones:             row.Instrucciones,
+				FechaVencimiento:          row.FechaVencimiento,
+				NotaMaxima:                row.NotaMaxima,
+				PesoCalif:                 row.PesoCalif,
+				Estado:                    row.Estado,
+				ExtraidoDeLibro:           row.ExtraidoDeLibro,
+				IDExtraccion:              row.IDExtraccion,
+				TipoTrabajo:               row.TipoTrabajo,
+				PermiteArchivo:            row.PermiteArchivo,
+				CalificacionAutomatica:    row.CalificacionAutomatica,
+				ConfiguracionCalificacion: row.ConfiguracionCalificacion,
+				CreatedBy:                 row.CreatedBy,
+				CreatedAt:                 row.CreatedAt,
+				UpdatedAt:                 row.UpdatedAt,
+			},
+			Entregada:     row.EntregaID != nil,
+			EntregaID:     row.EntregaID,
+			EntregaEstado: row.EntregaEstado,
+			Calificacion:  row.Calificacion,
+			EntregadoAt:   row.EntregadoAt,
+		}
+		items = append(items, item)
+	}
+	return items, nil
+}
+
+func (r *Repository) GetEstudiantesEmailsForTrabajo(ctx context.Context, trabajoID string) ([]string, error) {
+	var emails []string
+
+	// Get trabajo to find its materia_id or leccion_id
+	var trabajo Trabajo
+	if err := r.db.WithContext(ctx).Where("id = ?", trabajoID).First(&trabajo).Error; err != nil {
+		return nil, err
+	}
+
+	// Get emails of students enrolled in the curso
+	err := r.db.WithContext(ctx).
+		Raw(`
+			SELECT DISTINCT u.email
+			FROM internal.users u
+			INNER JOIN internal.estudiante_curso ec ON ec.estudiante_id = u.id
+			WHERE ec.curso_id IN (
+				SELECT m.curso_id FROM internal.materia m WHERE m.id = ?
+				UNION
+				SELECT m.curso_id FROM internal.leccion l
+				INNER JOIN internal.tema t ON t.id = l.tema_id
+				INNER JOIN internal.unidad u ON u.id = t.unidad_id
+				INNER JOIN internal.materia m ON m.id = u.materia_id
+				WHERE l.id = ?
+			)
+			AND u.role = 'student'
+		`, trabajo.MateriaID, trabajo.LeccionID).
+		Scan(&emails).Error
+
+	if err != nil {
+		return nil, err
+	}
+
+	return emails, nil
 }
 
 func (r *Repository) GetTrabajo(ctx context.Context, id string) (*Trabajo, error) {
@@ -93,10 +239,15 @@ func (r *Repository) UpdateTrabajoEstado(ctx context.Context, id, estado string)
 
 func (r *Repository) UpdateTrabajo(ctx context.Context, id string, req UpdateTrabajoRequest) (*Trabajo, error) {
 	updates := map[string]interface{}{
-		"titulo":            req.Titulo,
-		"descripcion":       req.Descripcion,
-		"instrucciones":     req.Instrucciones,
-		"fecha_vencimiento": req.FechaVencimiento,
+		"titulo":                  req.Titulo,
+		"descripcion":             req.Descripcion,
+		"instrucciones":           req.Instrucciones,
+		"fecha_vencimiento":       req.FechaVencimiento,
+		"tipo_trabajo":            req.TipoTrabajo,
+		"permite_archivo":         req.PermiteArchivo,
+		"permite_entrega_tardia":  req.PermiteEntregaTardia,
+		"max_intentos":            req.MaxIntentos,
+		"calificacion_automatica": req.CalificacionAutomatica,
 	}
 	if req.NotaMaxima != nil {
 		updates["nota_maxima"] = *req.NotaMaxima
@@ -127,16 +278,66 @@ func (r *Repository) DeleteTrabajo(ctx context.Context, id string) error {
 }
 
 func (r *Repository) UpsertEntrega(ctx context.Context, trabajoID, estudianteID string, req CreateEntregaRequest) (*TrabajoEntrega, error) {
+	// Get trabajo to check max_intentos
+	var trabajo Trabajo
+	if err := r.db.WithContext(ctx).Where("id = ?", trabajoID).First(&trabajo).Error; err != nil {
+		return nil, err
+	}
+
+	// Check if max_intentos is set
+	if trabajo.MaxIntentos != nil && *trabajo.MaxIntentos > 0 {
+		// Get existing entrega to check intentos_usados
+		var existingEntrega TrabajoEntrega
+		err := r.db.WithContext(ctx).
+			Where("trabajo_id = ? AND estudiante_id = ?", trabajoID, estudianteID).
+			First(&existingEntrega).Error
+
+		if err == nil {
+			// Entrega exists, check if attempts exceeded
+			if existingEntrega.IntentosUsados >= *trabajo.MaxIntentos {
+				return nil, fmt.Errorf("has alcanzado el máximo de intentos permitidos (%d)", *trabajo.MaxIntentos)
+			}
+			// Increment intentos_usados
+			e := TrabajoEntrega{
+				TrabajoID:      trabajoID,
+				EstudianteID:   estudianteID,
+				Respuestas:     buildLegacyRespuestas(req),
+				ArchivoURL:     req.ArchivoURL,
+				Comentario:     req.Comentario,
+				Estado:         "enviada",
+				IntentosUsados: existingEntrega.IntentosUsados + 1,
+				SubmittedAt:    time.Now(),
+			}
+			if len(e.Respuestas) == 0 {
+				e.Respuestas = []byte("{}")
+			}
+
+			if err := r.db.WithContext(ctx).Model(&e).Where("id = ?", existingEntrega.ID).Updates(e).Error; err != nil {
+				return nil, err
+			}
+
+			if len(req.RespuestasPreguntas) > 0 {
+				if err := r.syncRespuestasPreguntasTx(ctx, r.db, existingEntrega.ID, req.RespuestasPreguntas); err != nil {
+					return nil, err
+				}
+			}
+
+			return r.GetEntregaByTrabajoAndEstudiante(ctx, trabajoID, estudianteID)
+		}
+	}
+
+	// First submission or no max_intentos limit
 	legacyRespuestas := buildLegacyRespuestas(req)
 	now := time.Now()
 	e := TrabajoEntrega{
-		TrabajoID:    trabajoID,
-		EstudianteID: estudianteID,
-		Respuestas:   legacyRespuestas,
-		ArchivoURL:   req.ArchivoURL,
-		Comentario:   req.Comentario,
-		Estado:       "enviada",
-		SubmittedAt:  now,
+		TrabajoID:      trabajoID,
+		EstudianteID:   estudianteID,
+		Respuestas:     legacyRespuestas,
+		ArchivoURL:     req.ArchivoURL,
+		Comentario:     req.Comentario,
+		Estado:         "enviada",
+		IntentosUsados: 1,
+		SubmittedAt:    now,
 	}
 	if len(e.Respuestas) == 0 {
 		e.Respuestas = []byte("{}")
@@ -144,14 +345,8 @@ func (r *Repository) UpsertEntrega(ctx context.Context, trabajoID, estudianteID 
 
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Clauses(clause.OnConflict{
-			Columns: []clause.Column{{Name: "trabajo_id"}, {Name: "estudiante_id"}},
-			DoUpdates: clause.Assignments(map[string]interface{}{
-				"respuestas":   e.Respuestas,
-				"archivo_url":  e.ArchivoURL,
-				"comentario":   e.Comentario,
-				"estado":       gorm.Expr("?::internal.estado_entrega_trabajo", "enviada"),
-				"submitted_at": now,
-			}),
+			Columns:   []clause.Column{{Name: "trabajo_id"}, {Name: "estudiante_id"}},
+			DoUpdates: clause.AssignmentColumns([]string{"respuestas", "archivo_url", "comentario", "estado", "submitted_at", "intentos_usados"}),
 		}).Create(&e).Error; err != nil {
 			return err
 		}
@@ -176,6 +371,25 @@ func (r *Repository) UpsertEntrega(ctx context.Context, trabajoID, estudianteID 
 }
 
 func (r *Repository) UpdateEntregaByID(ctx context.Context, entregaID string, req CreateEntregaRequest) (*TrabajoEntrega, error) {
+	// Get existing entrega
+	var existingEntrega TrabajoEntrega
+	if err := r.db.WithContext(ctx).Where("id = ?", entregaID).First(&existingEntrega).Error; err != nil {
+		return nil, err
+	}
+
+	// Get trabajo to check max_intentos
+	var trabajo Trabajo
+	if err := r.db.WithContext(ctx).Where("id = ?", existingEntrega.TrabajoID).First(&trabajo).Error; err != nil {
+		return nil, err
+	}
+
+	// Check if max_intentos is set and limit reached
+	if trabajo.MaxIntentos != nil && *trabajo.MaxIntentos > 0 {
+		if existingEntrega.IntentosUsados >= *trabajo.MaxIntentos {
+			return nil, fmt.Errorf("has alcanzado el máximo de intentos permitidos (%d)", *trabajo.MaxIntentos)
+		}
+	}
+
 	legacyRespuestas := buildLegacyRespuestas(req)
 	updates := map[string]interface{}{
 		"estado":       gorm.Expr("?::internal.estado_entrega_trabajo", "enviada"),
@@ -190,6 +404,11 @@ func (r *Repository) UpdateEntregaByID(ctx context.Context, entregaID string, re
 	if req.Comentario != nil {
 		updates["comentario"] = *req.Comentario
 	}
+	// Increment intentos_usados if max_intentos is set
+	if trabajo.MaxIntentos != nil && *trabajo.MaxIntentos > 0 {
+		updates["intentos_usados"] = existingEntrega.IntentosUsados + 1
+	}
+
 	if err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Model(&TrabajoEntrega{}).Where("id = ?", entregaID).Updates(updates).Error; err != nil {
 			return err
@@ -542,11 +761,16 @@ func (r *Repository) UpsertCalificacionPorPregunta(
 		}
 
 		total := 0.0
-		for _, item := range req.Items {
-			if _, ok := valid[item.PreguntaID]; !ok {
-				return fmt.Errorf("pregunta_id invalido para esta entrega")
+		// Use manual_score if provided (for file-based assignments), otherwise calculate from items
+		if req.ManualScore != nil {
+			total = *req.ManualScore
+		} else {
+			for _, item := range req.Items {
+				if _, ok := valid[item.PreguntaID]; !ok {
+					return fmt.Errorf("pregunta_id invalido para esta entrega")
+				}
+				total += item.Puntaje
 			}
-			total += item.Puntaje
 		}
 
 		detalleAnterior := buildCalificacionDetalleFromRows(previousDetalles)
@@ -883,6 +1107,16 @@ func (r *Repository) IsTeacherOfLeccion(ctx context.Context, teacherID, leccionI
 	return count > 0, err
 }
 
+func (r *Repository) IsTeacherOfMateria(ctx context.Context, teacherID, materiaID string) (bool, error) {
+	var count int64
+	err := r.db.WithContext(ctx).
+		Table("internal.materia m").
+		Joins("JOIN internal.curso c ON c.id = m.curso_id").
+		Where("m.id = ? AND c.teacher_id = ?", materiaID, teacherID).
+		Count(&count).Error
+	return count > 0, err
+}
+
 func (r *Repository) CountEntregasByTrabajo(ctx context.Context, trabajoID string) (int64, error) {
 	var count int64
 	err := r.db.WithContext(ctx).
@@ -894,29 +1128,68 @@ func (r *Repository) CountEntregasByTrabajo(ctx context.Context, trabajoID strin
 
 func (r *Repository) IsTeacherOfTrabajo(ctx context.Context, teacherID, trabajoID string) (bool, error) {
 	var count int64
-	err := r.db.WithContext(ctx).
-		Table("internal.trabajo tr").
-		Joins("JOIN internal.leccion l ON l.id = tr.leccion_id").
-		Joins("JOIN internal.tema t ON t.id = l.tema_id").
-		Joins("JOIN internal.unidad u ON u.id = t.unidad_id").
-		Joins("JOIN internal.materia m ON m.id = u.materia_id").
-		Joins("JOIN internal.curso c ON c.id = m.curso_id").
-		Where("tr.id = ? AND c.teacher_id = ?", trabajoID, teacherID).
-		Count(&count).Error
+	// Check if trabajo has materia_id (new schema) or leccion_id (old schema)
+	var trabajo Trabajo
+	err := r.db.WithContext(ctx).Where("id = ?", trabajoID).First(&trabajo).Error
+	if err != nil {
+		return false, err
+	}
+
+	if trabajo.MateriaID != nil && *trabajo.MateriaID != "" {
+		// New schema: trabajo has materia_id directly
+		err = r.db.WithContext(ctx).
+			Table("internal.trabajo tr").
+			Joins("JOIN internal.materia m ON m.id = tr.materia_id").
+			Joins("JOIN internal.curso c ON c.id = m.curso_id").
+			Where("tr.id = ? AND c.teacher_id = ?", trabajoID, teacherID).
+			Count(&count).Error
+	} else if trabajo.LeccionID != nil && *trabajo.LeccionID != "" {
+		// Old schema: trabajo has leccion_id
+		err = r.db.WithContext(ctx).
+			Table("internal.trabajo tr").
+			Joins("JOIN internal.leccion l ON l.id = tr.leccion_id").
+			Joins("JOIN internal.tema t ON t.id = l.tema_id").
+			Joins("JOIN internal.unidad u ON u.id = t.unidad_id").
+			Joins("JOIN internal.materia m ON m.id = u.materia_id").
+			Joins("JOIN internal.curso c ON c.id = m.curso_id").
+			Where("tr.id = ? AND c.teacher_id = ?", trabajoID, teacherID).
+			Count(&count).Error
+	} else {
+		// Neither materia_id nor leccion_id, not authorized
+		return false, nil
+	}
 	return count > 0, err
 }
 
 func (r *Repository) IsStudentEnrolledInTrabajo(ctx context.Context, studentID, trabajoID string) (bool, error) {
 	var count int64
 	err := r.db.WithContext(ctx).
-		Table("internal.trabajo tr").
-		Joins("JOIN internal.leccion l ON l.id = tr.leccion_id").
-		Joins("JOIN internal.tema t ON t.id = l.tema_id").
-		Joins("JOIN internal.unidad u ON u.id = t.unidad_id").
-		Joins("JOIN internal.materia m ON m.id = u.materia_id").
-		Joins("JOIN internal.estudiante_curso ec ON ec.curso_id = m.curso_id").
-		Where("tr.id = ? AND ec.estudiante_id = ?", trabajoID, studentID).
-		Count(&count).Error
+		Raw(`
+			SELECT COUNT(*)
+			FROM internal.trabajo tr
+			WHERE tr.id = ?
+			AND (
+				-- Works assigned through lesson
+				tr.leccion_id IN (
+					SELECT l.id FROM internal.leccion l
+					INNER JOIN internal.tema t ON t.id = l.tema_id
+					INNER JOIN internal.unidad u ON u.id = t.unidad_id
+					INNER JOIN internal.materia m ON m.id = u.materia_id
+					INNER JOIN internal.curso cur ON cur.id = m.curso_id
+					INNER JOIN internal.estudiante_curso ec ON ec.curso_id = cur.id
+					WHERE ec.estudiante_id = ?
+				)
+				OR
+				-- Works assigned directly through materia
+				tr.materia_id IN (
+					SELECT m.id FROM internal.materia m
+					INNER JOIN internal.curso cur ON cur.id = m.curso_id
+					INNER JOIN internal.estudiante_curso ec ON ec.curso_id = cur.id
+					WHERE ec.estudiante_id = ?
+				)
+			)
+		`, trabajoID, studentID, studentID).
+		Scan(&count).Error
 	return count > 0, err
 }
 
@@ -1556,4 +1829,128 @@ func buildFinalRowsFilterClause(
 		return "", args
 	}
 	return "\n\t\t\t  AND " + strings.Join(clauses, "\n\t\t\t  AND "), args
+}
+
+// New repository methods for enhanced assignment system
+
+// ValidarConfiguracionTrabajo validates trabajo configuration
+func (r *Repository) ValidarConfiguracionTrabajo(ctx context.Context, trabajoID string) (bool, []string, error) {
+	// Get trabajo data
+	var trabajo Trabajo
+	if err := r.db.WithContext(ctx).Where("id = ?", trabajoID).First(&trabajo).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return false, []string{"Trabajo no encontrado"}, nil
+		}
+		return false, []string{"Error verificando trabajo"}, err
+	}
+
+	var errors []string
+
+	// Validate based on type
+	if trabajo.TipoTrabajo == "preguntas" {
+		// Count questions
+		var preguntaCount int64
+		if err := r.db.WithContext(ctx).Model(&TrabajoPregunta{}).Where("trabajo_id = ?", trabajoID).Count(&preguntaCount).Error; err != nil {
+			return false, []string{"Error contando preguntas"}, err
+		}
+
+		if preguntaCount == 0 {
+			errors = append(errors, "Los trabajos de tipo preguntas deben tener al menos una pregunta")
+		}
+
+		// Count valid questions for auto-grading
+		if trabajo.CalificacionAutomatica {
+			var preguntasValidas int64
+			if err := r.db.WithContext(ctx).Model(&TrabajoPregunta{}).Where("trabajo_id = ? AND tipo IN (?, ?) AND respuesta_correcta IS NOT NULL AND respuesta_correcta != ''", trabajoID, "opcion_multiple", "verdadero_falso").Count(&preguntasValidas).Error; err != nil {
+				return false, []string{"Error verificando preguntas válidas"}, err
+			}
+
+			if preguntasValidas == 0 {
+				errors = append(errors, "Para calificación automática debe haber preguntas con respuesta correcta configurada")
+			}
+		}
+
+	} else if trabajo.TipoTrabajo == "archivo" {
+		// File uploads should allow files
+		if !trabajo.PermiteArchivo {
+			errors = append(errors, "Los trabajos de tipo archivo deben permitir subida de archivos")
+		}
+
+	} else if trabajo.TipoTrabajo == "mixto" {
+		// Mixed type should have both questions and file upload enabled
+		var preguntaCount int64
+		if err := r.db.WithContext(ctx).Model(&TrabajoPregunta{}).Where("trabajo_id = ?", trabajoID).Count(&preguntaCount).Error; err != nil {
+			return false, []string{"Error contando preguntas"}, err
+		}
+
+		if preguntaCount == 0 {
+			errors = append(errors, "Los trabajos de tipo mixto deben tener preguntas configuradas")
+		}
+
+		if !trabajo.PermiteArchivo {
+			errors = append(errors, "Los trabajos de tipo mixto deben permitir subida de archivos")
+		}
+	}
+
+	// Validate due date is in future for published works
+	if trabajo.Estado == "publicado" && trabajo.FechaVencimiento != nil && trabajo.FechaVencimiento.Before(time.Now()) {
+		errors = append(errors, "La fecha de vencimiento no puede estar en el pasado para trabajos publicados")
+	}
+
+	return len(errors) == 0, errors, nil
+}
+
+// GetTrabajoEstadisticas gets trabajo statistics
+func (r *Repository) GetTrabajoEstadisticas(ctx context.Context, trabajoID string) (map[string]interface{}, error) {
+	type statsRow struct {
+		TotalEntregas        int64      `gorm:"column:total_entregas"`
+		EntregasPendientes   int64      `gorm:"column:entregas_pendientes"`
+		EntregasRevisadas    int64      `gorm:"column:entregas_revisadas"`
+		EntregasCalificadas  int64      `gorm:"column:entregas_calificadas"`
+		PromedioCalificacion *float64   `gorm:"column:promedio_calificacion"`
+		UltimaEntrega        *time.Time `gorm:"column:ultima_entrega"`
+	}
+
+	var stats statsRow
+	query := `
+		SELECT 
+			COUNT(te.id) as total_entregas,
+			COUNT(CASE WHEN te.estado = 'enviada' THEN 1 END) as entregas_pendientes,
+			COUNT(CASE WHEN te.estado = 'revisada' THEN 1 END) as entregas_revisadas,
+			COUNT(CASE WHEN te.estado = 'calificada' THEN 1 END) as entregas_calificadas,
+			COALESCE(AVG(tc.puntaje), 0) as promedio_calificacion,
+			MAX(te.submitted_at) as ultima_entrega
+		FROM internal.trabajo_entrega te
+		LEFT JOIN internal.trabajo_calificacion tc ON te.id = tc.entrega_id
+		WHERE te.trabajo_id = ?
+	`
+
+	if err := r.db.WithContext(ctx).Raw(query, trabajoID).Scan(&stats).Error; err != nil {
+		return nil, err
+	}
+
+	result := map[string]interface{}{
+		"total_entregas":        stats.TotalEntregas,
+		"entregas_pendientes":   stats.EntregasPendientes,
+		"entregas_revisadas":    stats.EntregasRevisadas,
+		"entregas_calificadas":  stats.EntregasCalificadas,
+		"promedio_calificacion": stats.PromedioCalificacion,
+		"ultima_entrega":        stats.UltimaEntrega,
+	}
+
+	return result, nil
+}
+
+// CerrarTrabajosVencidos closes expired trabajos
+func (r *Repository) CerrarTrabajosVencidos(ctx context.Context) (int, error) {
+	result := r.db.WithContext(ctx).Model(&Trabajo{}).Where("estado = ? AND fecha_vencimiento IS NOT NULL AND fecha_vencimiento <= ?", "publicado", time.Now()).Updates(map[string]interface{}{
+		"estado":     "cerrado",
+		"updated_at": time.Now(),
+	})
+
+	if result.Error != nil {
+		return 0, result.Error
+	}
+
+	return int(result.RowsAffected), nil
 }

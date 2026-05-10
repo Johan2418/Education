@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { Loader2, Save, WandSparkles } from "lucide-react";
+import { Loader2, Save, WandSparkles, Clock } from "lucide-react";
 import toast from "react-hot-toast";
 
 import { getMe } from "@/shared/lib/auth";
-import { autoCalificarEntregaCerradas, calificarEntregaPorPregunta, getEntregaDetalle, getTrabajo, listEntregasByTrabajo } from "@/features/trabajos/services/trabajos";
+import { autoCalificarEntregaCerradas, calificarEntregaPorPregunta, convertDocxToPdf, convertPptxToPdf, getEntregaDetalle, getTrabajo, listEntregasByTrabajo } from "@/features/trabajos/services/trabajos";
 import type { CalificarEntregaPreguntaItem, EntregaConCalificacion, EntregaDetalleResponse, Trabajo } from "@/shared/types/trabajos";
 
 function normalizeError(err: unknown): string {
@@ -22,6 +22,8 @@ export default function TeacherTrabajoCalificar() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const { trabajoId = "" } = useParams();
+  const [searchParams] = useSearchParams();
+  const entregaIdParam = searchParams.get("entregaId");
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -35,6 +37,13 @@ export default function TeacherTrabajoCalificar() {
   const [items, setItems] = useState<CalificarEntregaPreguntaItem[]>([]);
   const [feedbackGeneral, setFeedbackGeneral] = useState("");
   const [motivoOverride, setMotivoOverride] = useState("");
+  const [manualScore, setManualScore] = useState<number>(0);
+  const [filePreviewModal, setFilePreviewModal] = useState<{ url: string; type: 'pdf' | 'image' | 'other' } | null>(null);
+  const [convertingFile, setConvertingFile] = useState(false);
+  const [imageZoom, setImageZoom] = useState(1);
+  const [imagePan, setImagePan] = useState({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
 
   const selected = useMemo(() => entregas.find((item) => item.entrega.id === selectedEntrega), [entregas, selectedEntrega]);
 
@@ -75,12 +84,23 @@ export default function TeacherTrabajoCalificar() {
     })();
   }, [loadData, navigate, t, trabajoId]);
 
+  // Auto-select entrega if entregaId is provided in query parameter
+  useEffect(() => {
+    if (entregaIdParam && entregas.length > 0) {
+      const exists = entregas.find((e) => e.entrega.id === entregaIdParam);
+      if (exists) {
+        setSelectedEntrega(entregaIdParam);
+      }
+    }
+  }, [entregaIdParam, entregas]);
+
   useEffect(() => {
     if (!selectedEntrega) {
       setDetalle(null);
       setItems([]);
       setFeedbackGeneral("");
       setMotivoOverride("");
+      setManualScore(0);
       return;
     }
 
@@ -91,6 +111,11 @@ export default function TeacherTrabajoCalificar() {
         const payload = await getEntregaDetalle(selectedEntrega);
         if (cancelled) return;
         setDetalle(payload);
+
+        // Load existing manual score if it's a file-based assignment
+        if (payload.calificacion && (payload.preguntas.length === 0 || trabajo?.tipo_trabajo === "archivo")) {
+          setManualScore(payload.calificacion.puntaje);
+        }
 
         const calByPregunta = new Map(payload.calificaciones_pregunta.map((item) => [item.pregunta_id, item]));
         const initialItems: CalificarEntregaPreguntaItem[] = payload.preguntas.map((pregunta) => {
@@ -127,14 +152,19 @@ export default function TeacherTrabajoCalificar() {
       return;
     }
 
-    if (items.length === 0) {
-      toast.error(t("teacher.trabajos.gradeByQuestion.minItems", { defaultValue: "Debes calificar al menos una pregunta" }));
-      return;
-    }
+    // Check if it's a file-based assignment (no questions or tipo_trabajo is "archivo")
+    const isFileBased = detalle.preguntas.length === 0 || trabajo?.tipo_trabajo === "archivo";
 
-    if (items.some((item) => item.puntaje < 0)) {
-      toast.error(t("teacher.trabajos.gradeByQuestion.nonNegative", { defaultValue: "Cada puntaje por pregunta debe ser >= 0" }));
-      return;
+    if (!isFileBased) {
+      if (items.length === 0) {
+        toast.error(t("teacher.trabajos.gradeByQuestion.minItems", { defaultValue: "Debes calificar al menos una pregunta" }));
+        return;
+      }
+
+      if (items.some((item) => item.puntaje < 0)) {
+        toast.error(t("teacher.trabajos.gradeByQuestion.nonNegative", { defaultValue: "Cada puntaje por pregunta debe ser >= 0" }));
+        return;
+      }
     }
 
     const isOverride = Boolean(detalle.calificacion) && detalle.entrega.estado === "calificada";
@@ -146,30 +176,45 @@ export default function TeacherTrabajoCalificar() {
 
     setSaving(true);
     try {
-      const updated = await calificarEntregaPorPregunta(selected.entrega.id, {
-        items: items.map((item) => ({
-          pregunta_id: item.pregunta_id,
-          puntaje: Number(item.puntaje || 0),
-          feedback: (item.feedback || "").trim() || undefined,
-        })),
-        feedback: feedbackGeneral.trim() || undefined,
-        sugerencia_ia: {},
-        tipo_cambio: isOverride ? "manual_override" : "manual",
-        motivo: isOverride ? motivo : undefined,
-      });
+      if (isFileBased) {
+        // For file-based assignments, use the manual score
+        const updated = await calificarEntregaPorPregunta(selected.entrega.id, {
+          items: [],
+          feedback: feedbackGeneral.trim() || undefined,
+          sugerencia_ia: {},
+          tipo_cambio: isOverride ? "manual_override" : "manual",
+          motivo: isOverride ? motivo : undefined,
+          manual_score: manualScore,
+        });
+        setDetalle(updated);
+        setManualScore(updated.calificacion?.puntaje || 0);
+      } else {
+        // For question-based assignments, use question scores
+        const updated = await calificarEntregaPorPregunta(selected.entrega.id, {
+          items: items.map((item) => ({
+            pregunta_id: item.pregunta_id,
+            puntaje: Number(item.puntaje || 0),
+            feedback: (item.feedback || "").trim() || undefined,
+          })),
+          feedback: feedbackGeneral.trim() || undefined,
+          sugerencia_ia: {},
+          tipo_cambio: isOverride ? "manual_override" : "manual",
+          motivo: isOverride ? motivo : undefined,
+        });
 
-      setDetalle(updated);
-      setMotivoOverride("");
+        setDetalle(updated);
+        setMotivoOverride("");
 
-      const calByPregunta = new Map(updated.calificaciones_pregunta.map((item) => [item.pregunta_id, item]));
-      setItems(updated.preguntas.map((pregunta) => {
-        const existing = calByPregunta.get(pregunta.id);
-        return {
-          pregunta_id: pregunta.id,
-          puntaje: existing?.puntaje ?? 0,
-          feedback: existing?.feedback || "",
-        };
-      }));
+        const calByPregunta = new Map(updated.calificaciones_pregunta.map((item) => [item.pregunta_id, item]));
+        setItems(updated.preguntas.map((pregunta) => {
+          const existing = calByPregunta.get(pregunta.id);
+          return {
+            pregunta_id: pregunta.id,
+            puntaje: existing?.puntaje ?? 0,
+            feedback: existing?.feedback || "",
+          };
+        }));
+      }
 
       toast.success(t("teacher.trabajos.graded", { defaultValue: "Entrega calificada" }));
       await loadData();
@@ -210,6 +255,52 @@ export default function TeacherTrabajoCalificar() {
     } finally {
       setAutoGrading(false);
     }
+  };
+
+  const handleFilePreview = async (fileUrl: string) => {
+    const BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:9082";
+    const fullUrl = fileUrl.startsWith('http') ? fileUrl : `${BASE_URL}${fileUrl}`;
+    const extension = fileUrl.split('.').pop()?.toLowerCase();
+    
+    // File types that can be displayed directly
+    const viewableExtensions = ['pdf', 'jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'svg'];
+    
+    if (viewableExtensions.includes(extension || '')) {
+      setFilePreviewModal({ url: fullUrl, type: extension === 'pdf' ? 'pdf' : 'image' });
+      // Reset zoom and pan when opening new file
+      setImageZoom(1);
+      setImagePan({ x: 0, y: 0 });
+    } else if (extension === 'docx' || extension === 'pptx') {
+      setConvertingFile(true);
+      try {
+        const file = await fetch(fullUrl).then(r => r.blob());
+        const fileObj = new File([file], fileUrl.split('/').pop() || 'file.' + extension, { type: file.type });
+        
+        let pdfBlob: Blob;
+        if (extension === 'docx') {
+          pdfBlob = await convertDocxToPdf(fileObj);
+        } else {
+          pdfBlob = await convertPptxToPdf(fileObj);
+        }
+        
+        const pdfUrl = URL.createObjectURL(pdfBlob);
+        setFilePreviewModal({ url: pdfUrl, type: 'pdf' });
+      } catch (err) {
+        toast.error("No se pudo convertir el archivo a PDF");
+        setFilePreviewModal({ url: fullUrl, type: 'other' });
+      } finally {
+        setConvertingFile(false);
+      }
+    } else {
+      setFilePreviewModal({ url: fullUrl, type: 'other' });
+    }
+  };
+
+  const handleZoomIn = () => setImageZoom(prev => Math.min(prev + 0.25, 5));
+  const handleZoomOut = () => setImageZoom(prev => Math.max(prev - 0.25, 0.5));
+  const handleResetZoom = () => {
+    setImageZoom(1);
+    setImagePan({ x: 0, y: 0 });
   };
 
   if (loading) {
@@ -280,6 +371,35 @@ export default function TeacherTrabajoCalificar() {
           <div className="text-gray-500 text-sm">{t("teacher.trabajos.noTrabajo", { defaultValue: "Trabajo invalido" })}</div>
         ) : (
           <div className="space-y-3">
+            {/* Delivery Info */}
+            <div className="bg-gray-50 rounded-lg p-3">
+              <p className="text-sm font-medium mb-2">Información de entrega</p>
+              <p className="text-xs text-gray-600">
+                <span className="font-medium">Estudiante:</span> {selected?.estudiante_nombre || selected?.entrega.estudiante_id}
+              </p>
+              <p className="text-xs text-gray-600">
+                <span className="font-medium">Entregado el:</span> {new Date(detalle.entrega.submitted_at).toLocaleString()}
+              </p>
+              {trabajo?.fecha_vencimiento && (
+                <>
+                  <p className="text-xs text-gray-600">
+                    <span className="font-medium">Fecha límite:</span> {new Date(trabajo.fecha_vencimiento).toLocaleString()}
+                  </p>
+                  {(() => {
+                    const submittedDate = new Date(detalle.entrega.submitted_at);
+                    const fechaVencimiento = new Date(trabajo.fecha_vencimiento);
+                    const isLate = submittedDate > fechaVencimiento;
+                    return isLate ? (
+                      <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 mt-1">
+                        <Clock size={10} />
+                        Entregado atrasado
+                      </span>
+                    ) : null;
+                  })()}
+                </>
+              )}
+            </div>
+
             {detalle.preguntas.map((pregunta, index) => {
               const answer = detalle.respuestas_preguntas.find((item) => item.pregunta_id === pregunta.id);
               const itemIndex = items.findIndex((item) => item.pregunta_id === pregunta.id);
@@ -348,23 +468,52 @@ export default function TeacherTrabajoCalificar() {
             <div>
               <label className="block text-sm font-medium mb-1">Archivo entregado</label>
               {detalle.entrega.archivo_url ? (
-                <a href={detalle.entrega.archivo_url} target="_blank" rel="noreferrer" className="text-sm text-blue-600 underline break-all">
-                  {detalle.entrega.archivo_url}
-                </a>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => handleFilePreview(detalle.entrega.archivo_url!)}
+                    disabled={convertingFile}
+                    className="text-xs px-3 py-1.5 bg-blue-50 text-blue-600 rounded hover:bg-blue-100 transition-colors disabled:opacity-50"
+                  >
+                    {convertingFile ? "Convirtiendo..." : "Ver archivo"}
+                  </button>
+                  <a
+                    href={detalle.entrega.archivo_url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-sm text-gray-500 hover:text-gray-700"
+                    download
+                  >
+                    ⬇
+                  </a>
+                </div>
               ) : (
                 <p className="text-sm text-gray-500">Sin archivo</p>
               )}
             </div>
 
-            <div>
-              <label className="block text-sm font-medium mb-1">{t("teacher.trabajos.gradeByQuestion.total", { defaultValue: "Puntaje total (suma)" })}</label>
-              <input
-                type="number"
-                className="w-full border border-gray-300 rounded px-3 py-2"
-                value={Number(totalPuntaje.toFixed(2))}
-                readOnly
-              />
-            </div>
+            {detalle.preguntas.length === 0 || trabajo?.tipo_trabajo === "archivo" ? (
+              <div>
+                <label className="block text-sm font-medium mb-1">{t("teacher.trabajos.manualScore", { defaultValue: "Puntaje manual (archivo)" })}</label>
+                <input
+                  type="number"
+                  min={0}
+                  max={100}
+                  className="w-full border border-gray-300 rounded px-3 py-2"
+                  value={manualScore}
+                  onChange={(e) => setManualScore(Number(e.target.value || 0))}
+                />
+              </div>
+            ) : (
+              <div>
+                <label className="block text-sm font-medium mb-1">{t("teacher.trabajos.gradeByQuestion.total", { defaultValue: "Puntaje total (suma)" })}</label>
+                <input
+                  type="number"
+                  className="w-full border border-gray-300 rounded px-3 py-2"
+                  value={Number(totalPuntaje.toFixed(2))}
+                  readOnly
+                />
+              </div>
+            )}
 
             <div>
               <label className="block text-sm font-medium mb-1">{t("teacher.trabajos.feedback", { defaultValue: "Feedback" })} ({t("teacher.trabajos.gradeByQuestion.general", { defaultValue: "general" })})</label>
@@ -416,6 +565,118 @@ export default function TeacherTrabajoCalificar() {
           </div>
         )}
       </div>
+
+      {/* File Preview Modal */}
+      {filePreviewModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-2xl w-full max-w-6xl max-h-[95vh] flex flex-col">
+            <div className="flex items-center justify-between p-4 border-b">
+              <h3 className="text-lg font-semibold">Vista previa del archivo</h3>
+              <button
+                onClick={() => {
+                  setFilePreviewModal(null);
+                  if (filePreviewModal.url.startsWith('blob:')) {
+                    URL.revokeObjectURL(filePreviewModal.url);
+                  }
+                  setImageZoom(1);
+                  setImagePan({ x: 0, y: 0 });
+                }}
+                className="text-gray-500 hover:text-gray-700 text-2xl font-bold px-2"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="flex-1 overflow-auto p-0">
+              {filePreviewModal.type === 'pdf' ? (
+                <iframe
+                  src={filePreviewModal.url}
+                  className="w-full h-full border-0"
+                  style={{ height: '80vh' }}
+                  title="PDF Preview"
+                />
+              ) : filePreviewModal.type === 'image' ? (
+                <div className="relative w-full h-full flex items-center justify-center bg-gray-100" style={{ height: '80vh', overflow: 'hidden' }}>
+                  <div
+                    className="cursor-move"
+                    style={{
+                      transform: `scale(${imageZoom}) translate(${imagePan.x}px, ${imagePan.y}px)`,
+                      transformOrigin: 'center',
+                      transition: isDragging ? 'none' : 'transform 0.1s ease-out'
+                    }}
+                    onMouseDown={(e) => {
+                      setIsDragging(true);
+                      setDragStart({ x: e.clientX - imagePan.x, y: e.clientY - imagePan.y });
+                    }}
+                    onMouseMove={(e) => {
+                      if (isDragging) {
+                        setImagePan({
+                          x: e.clientX - dragStart.x,
+                          y: e.clientY - dragStart.y
+                        });
+                      }
+                    }}
+                    onMouseUp={() => setIsDragging(false)}
+                    onMouseLeave={() => setIsDragging(false)}
+                  >
+                    <img
+                      src={filePreviewModal.url}
+                      alt="Preview"
+                      className="max-w-full max-h-full object-contain"
+                      draggable={false}
+                    />
+                  </div>
+                  {/* Zoom Controls */}
+                  <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 flex gap-2 bg-white rounded-lg shadow-lg p-2">
+                    <button
+                      onClick={handleZoomOut}
+                      className="w-8 h-8 flex items-center justify-center bg-gray-100 hover:bg-gray-200 rounded"
+                    >
+                      −
+                    </button>
+                    <span className="w-12 flex items-center justify-center text-sm font-medium">
+                      {Math.round(imageZoom * 100)}%
+                    </span>
+                    <button
+                      onClick={handleZoomIn}
+                      className="w-8 h-8 flex items-center justify-center bg-gray-100 hover:bg-gray-200 rounded"
+                    >
+                      +
+                    </button>
+                    <button
+                      onClick={handleResetZoom}
+                      className="w-8 h-8 flex items-center justify-center bg-gray-100 hover:bg-gray-200 rounded text-xs"
+                    >
+                      ⟲
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex flex-col items-center justify-center h-full p-8" style={{ minHeight: '60vh' }}>
+                  <p className="text-gray-600 mb-4 text-center">
+                    Este formato de archivo no se puede visualizar directamente.
+                  </p>
+                  <div className="flex gap-3">
+                    <a
+                      href={filePreviewModal.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
+                    >
+                      Descargar archivo
+                    </a>
+                    <button
+                      onClick={() => setFilePreviewModal(null)}
+                      className="px-6 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors font-medium"
+                    >
+                      Cerrar
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

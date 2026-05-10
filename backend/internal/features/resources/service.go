@@ -104,6 +104,39 @@ func (s *Service) ConvertPptxToPdf(ctx context.Context, pptxBytes []byte) ([]byt
 	return pdfBytes, nil
 }
 
+func (s *Service) ConvertDocxToPdf(ctx context.Context, docxBytes []byte) ([]byte, error) {
+	tmpDir, err := os.MkdirTemp("", "docx-convert-*")
+	if err != nil {
+		return nil, fmt.Errorf("no se pudo crear directorio temporal: %w", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	inputPath := filepath.Join(tmpDir, "input.docx")
+	outputPath := filepath.Join(tmpDir, "input.pdf")
+
+	if err := os.WriteFile(inputPath, docxBytes, 0o600); err != nil {
+		return nil, fmt.Errorf("no se pudo escribir el archivo DOCX temporal: %w", err)
+	}
+
+	binary, err := s.findLibreOfficeExecutable()
+	if err != nil {
+		return nil, err
+	}
+
+	cmd := exec.CommandContext(ctx, binary, "--headless", "--convert-to", "pdf", "--outdir", tmpDir, inputPath)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return nil, fmt.Errorf("error al convertir DOCX con LibreOffice (%s): %w: %s", binary, err, string(output))
+	}
+
+	pdfBytes, err := os.ReadFile(outputPath)
+	if err != nil {
+		return nil, fmt.Errorf("no se pudo leer el PDF generado: %w", err)
+	}
+
+	return pdfBytes, nil
+}
+
 func (s *Service) convertPptxToPdfRemote(ctx context.Context, pptxBytes []byte) ([]byte, error) {
 	if s.conversionAPIFileField == "" {
 		s.conversionAPIFileField = "file"

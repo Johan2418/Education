@@ -17,6 +17,7 @@ import type {
   PaginatedEntregasResponse,
   RevisionLibroRequest,
   TrabajoAnalyticsV2Response,
+  TrabajoConEstadoEntrega,
   TrabajoReporte,
   TrabajoNotificacionesResponse,
   Trabajo,
@@ -51,6 +52,11 @@ function normalizeFechaVencimiento(fecha?: string): string | undefined {
 
 export async function listTrabajosByLeccion(leccionId: string): Promise<Trabajo[]> {
   const res = await api.get<ApiData<Trabajo[]>>(`/lecciones/${leccionId}/trabajos`);
+  return res.data || [];
+}
+
+export async function listTrabajosByMateria(materiaId: string): Promise<Trabajo[]> {
+  const res = await api.get<ApiData<Trabajo[]>>(`/materias/${materiaId}/trabajos`);
   return res.data || [];
 }
 
@@ -98,8 +104,8 @@ export async function getTrabajo(trabajoId: string): Promise<Trabajo> {
   return res.data;
 }
 
-export async function listMisTrabajos(): Promise<Trabajo[]> {
-  const res = await api.get<ApiData<Trabajo[]>>("/mis-trabajos");
+export async function listMisTrabajos(): Promise<TrabajoConEstadoEntrega[]> {
+  const res = await api.get<ApiData<TrabajoConEstadoEntrega[]>>("/mis-trabajos");
   return res.data || [];
 }
 
@@ -138,16 +144,10 @@ export async function listEntregasByTrabajo(
   pagination?: { limit?: number; offset?: number }
 ): Promise<EntregaConCalificacion[]> {
   const params = new URLSearchParams();
-  if (pagination?.limit != null) params.set("limit", String(pagination.limit));
-  if (pagination?.offset != null) params.set("offset", String(pagination.offset));
-
-  const suffix = params.toString() ? `?${params.toString()}` : "";
-  const res = await api.get<ApiData<EntregaConCalificacion[] | PaginatedEntregasResponse>>(`/trabajos/${trabajoId}/entregas${suffix}`);
-
-  if (Array.isArray(res.data)) {
-    return res.data;
-  }
-  return res.data?.items || [];
+  if (pagination?.limit) params.append("limit", pagination.limit.toString());
+  if (pagination?.offset) params.append("offset", pagination.offset.toString());
+  const res = await api.get<ApiData<EntregaConCalificacion[]>>(`/trabajos/${trabajoId}/entregas?${params}`);
+  return res.data || [];
 }
 
 export async function getTrabajoReporte(trabajoId: string): Promise<TrabajoReporte> {
@@ -273,4 +273,96 @@ export async function revisarLibro(trabajoId: string, payload: RevisionLibroRequ
 export async function confirmarLibro(trabajoId: string, payload: ConfirmarLibroRequest): Promise<ConfirmarLibroResponse> {
   const res = await api.put<ApiData<ConfirmarLibroResponse>>(`/trabajos/${trabajoId}/libro/confirmar`, payload);
   return res.data;
+}
+
+// New functions for enhanced assignment system
+export async function validarConfiguracionTrabajo(trabajoId: string): Promise<{ valid: boolean; errors: string[] }> {
+  const res = await api.get<ApiData<{ valid: boolean; errors: string[] }>>(`/trabajos/${trabajoId}/validar`);
+  return res.data;
+}
+
+export async function getTrabajoEstadisticas(trabajoId: string): Promise<Record<string, unknown>> {
+  const res = await api.get<ApiData<Record<string, unknown>>>(`/trabajos/${trabajoId}/estadisticas`);
+  return res.data;
+}
+
+export async function calificarLoteEntregas(trabajoId: string, entregaIds: string[]): Promise<EntregaDetalleResponse[]> {
+  const res = await api.post<ApiData<EntregaDetalleResponse[]>>(`/trabajos/${trabajoId}/calificar-lote`, { entrega_ids: entregaIds });
+  return res.data || [];
+}
+
+export async function cerrarTrabajosVencidos(): Promise<{ count: number }> {
+  const res = await api.post<ApiData<{ count: number }>>('/trabajos/cerrar-vencidos', {});
+  return res.data || { count: 0 };
+}
+
+export async function uploadFile(file: File): Promise<{ url: string }> {
+  const formData = new FormData();
+  formData.append("file", file);
+  
+  const token = localStorage.getItem("token");
+  const headers: Record<string, string> = {};
+  if (token) headers.Authorization = `Bearer ${token}`;
+
+  console.log("Uploading file to:", `${BASE_URL}/upload`);
+  const resp = await fetch(`${BASE_URL}/upload`, {
+    method: "POST",
+    headers,
+    body: formData,
+  });
+
+  console.log("Upload response status:", resp.status);
+
+  if (!resp.ok) {
+    const errorText = await resp.text();
+    console.error("Upload error response:", errorText);
+    throw new Error("No se pudo subir el archivo");
+  }
+
+  const data = await resp.json();
+  console.log("Upload response data:", data);
+  // Backend returns {data: {url: string}}
+  return data.data || data;
+}
+
+export async function convertDocxToPdf(file: File): Promise<Blob> {
+  const formData = new FormData();
+  formData.append("file", file);
+  
+  const token = localStorage.getItem("token");
+  const headers: Record<string, string> = {};
+  if (token) headers.Authorization = `Bearer ${token}`;
+
+  const resp = await fetch(`${BASE_URL}/recursos/docx-to-pdf`, {
+    method: "POST",
+    headers,
+    body: formData,
+  });
+
+  if (!resp.ok) {
+    throw new Error("No se pudo convertir el archivo DOCX a PDF");
+  }
+
+  return await resp.blob();
+}
+
+export async function convertPptxToPdf(file: File): Promise<Blob> {
+  const formData = new FormData();
+  formData.append("file", file);
+  
+  const token = localStorage.getItem("token");
+  const headers: Record<string, string> = {};
+  if (token) headers.Authorization = `Bearer ${token}`;
+
+  const resp = await fetch(`${BASE_URL}/recursos/pptx-to-pdf`, {
+    method: "POST",
+    headers,
+    body: formData,
+  });
+
+  if (!resp.ok) {
+    throw new Error("No se pudo convertir el archivo PPTX a PDF");
+  }
+
+  return await resp.blob();
 }

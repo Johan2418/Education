@@ -119,13 +119,26 @@ func (h *Handler) ConvertPptxToPdf(w http.ResponseWriter, r *http.Request) {
 	maxBytes := int64(100 << 20) // 100 MB
 	r.Body = http.MaxBytesReader(w, r.Body, maxBytes)
 
-	pptxBytes, err := io.ReadAll(r.Body)
-	if err != nil {
-		shared.Error(w, http.StatusBadRequest, "Error leyendo el archivo PPTX")
+	if err := r.ParseMultipartForm(maxBytes); err != nil {
+		shared.Error(w, http.StatusBadRequest, "Error parseando el formulario multipart")
 		return
 	}
-	if len(pptxBytes) == 0 {
+
+	file, header, err := r.FormFile("file")
+	if err != nil {
+		shared.Error(w, http.StatusBadRequest, "No se pudo leer el archivo PPTX")
+		return
+	}
+	defer file.Close()
+
+	if header.Size == 0 {
 		shared.Error(w, http.StatusBadRequest, "Archivo PPTX vacío")
+		return
+	}
+
+	pptxBytes, err := io.ReadAll(file)
+	if err != nil {
+		shared.Error(w, http.StatusBadRequest, "Error leyendo el archivo PPTX")
 		return
 	}
 
@@ -139,6 +152,44 @@ func (h *Handler) ConvertPptxToPdf(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Length", fmt.Sprintf("%d", len(pdfBytes)))
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(pdfBytes)
+}
+
+func (h *Handler) ConvertDocxToPdf(w http.ResponseWriter, r *http.Request) {
+	defer r.Body.Close()
+	maxBytes := int64(100 << 20) // 100 MB
+	r.Body = http.MaxBytesReader(w, r.Body, maxBytes)
+
+	if err := r.ParseMultipartForm(maxBytes); err != nil {
+		shared.Error(w, http.StatusBadRequest, "Error parseando el formulario multipart")
+		return
+	}
+
+	file, header, err := r.FormFile("file")
+	if err != nil {
+		shared.Error(w, http.StatusBadRequest, "No se pudo leer el archivo DOCX")
+		return
+	}
+	defer file.Close()
+
+	if header.Size == 0 {
+		shared.Error(w, http.StatusBadRequest, "Archivo DOCX vacío")
+		return
+	}
+
+	docxBytes, err := io.ReadAll(file)
+	if err != nil {
+		shared.Error(w, http.StatusBadRequest, "Error leyendo el archivo DOCX")
+		return
+	}
+
+	pdfBytes, err := h.svc.ConvertDocxToPdf(r.Context(), docxBytes)
+	if err != nil {
+		shared.Error(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/pdf")
+	w.Write(pdfBytes)
 }
 
 func (h *Handler) ListRecursosPersonales(w http.ResponseWriter, r *http.Request) {

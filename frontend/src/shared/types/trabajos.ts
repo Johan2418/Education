@@ -1,9 +1,13 @@
 export type EstadoTrabajo = "borrador" | "publicado" | "cerrado";
 export type EstadoEntregaTrabajo = "enviada" | "revisada" | "calificada";
 
+// New types for enhanced assignment system
+export type TipoTrabajo = "preguntas" | "archivo" | "mixto";
+
 export interface Trabajo {
   id: string;
-  leccion_id: string;
+  leccion_id: string | null;
+  materia_id: string | null;
   titulo: string;
   descripcion: string | null;
   instrucciones: string | null;
@@ -13,9 +17,24 @@ export interface Trabajo {
   estado: EstadoTrabajo;
   extraido_de_libro?: boolean;
   id_extraccion?: string | null;
+  // New fields for enhanced assignment system
+  tipo_trabajo: TipoTrabajo;
+  permite_archivo: boolean;
+  permite_entrega_tardia: boolean;
+  max_intentos?: number | null;
+  calificacion_automatica: boolean;
+  configuracion_calificacion: Record<string, unknown>;
   created_by: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface TrabajoConEstadoEntrega extends Trabajo {
+  entregada: boolean;
+  entrega_id?: string | null;
+  entrega_estado?: EstadoEntregaTrabajo | null;
+  calificacion?: number | null;
+  entregado_at?: string | null;
 }
 
 export type EstadoExtraccionLibro =
@@ -169,6 +188,7 @@ export interface TrabajoEntrega {
   archivo_url: string | null;
   comentario: string | null;
   estado: EstadoEntregaTrabajo;
+  intentos_usados: number;
   submitted_at: string;
   created_at: string;
   updated_at: string;
@@ -382,16 +402,24 @@ export interface TrabajoAnalyticsV2Response {
 }
 
 export interface CreateTrabajoRequest {
-  leccion_id: string;
+  leccion_id?: string;
+  materia_id?: string;
   titulo: string;
   descripcion?: string;
   instrucciones?: string;
   fecha_vencimiento?: string;
   nota_maxima?: number;
   peso_calificacion?: number;
+  // New fields for enhanced assignment system
+  tipo_trabajo?: TipoTrabajo;
+  permite_archivo?: boolean;
+  permite_entrega_tardia?: boolean;
+  max_intentos?: number | null;
+  calificacion_automatica?: boolean;
+  configuracion_calificacion?: Record<string, unknown>;
 }
 
-export type UpdateTrabajoRequest = Omit<CreateTrabajoRequest, "leccion_id">;
+export type UpdateTrabajoRequest = Omit<CreateTrabajoRequest, "">;
 
 export interface CreateEntregaRequest {
   respuestas?: Record<string, unknown>;
@@ -445,6 +473,7 @@ export interface CalificarEntregaPorPreguntaRequest {
   sugerencia_ia?: Record<string, unknown>;
   tipo_cambio?: "manual" | "manual_override" | "auto_objetiva" | "auto_heuristica";
   motivo?: string;
+  manual_score?: number;
 }
 
 export interface TrabajoFormularioResponse {

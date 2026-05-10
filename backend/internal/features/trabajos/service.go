@@ -4,8 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/arcanea/backend/internal/notifications"
 	"gorm.io/gorm"
@@ -21,8 +26,8 @@ func NewService(repo *Repository, notifier *notifications.Service) *Service {
 }
 
 func (s *Service) CreateTrabajo(ctx context.Context, req CreateTrabajoRequest, userID, userRole string) (*Trabajo, error) {
-	if req.LeccionID == "" || strings.TrimSpace(req.Titulo) == "" {
-		return nil, errors.New("leccion_id y titulo son requeridos")
+	if req.MateriaID == nil || strings.TrimSpace(req.Titulo) == "" {
+		return nil, errors.New("materia_id y titulo son requeridos")
 	}
 	if req.NotaMaxima != nil && *req.NotaMaxima <= 0 {
 		return nil, errors.New("nota_maxima debe ser > 0")
@@ -34,12 +39,12 @@ func (s *Service) CreateTrabajo(ctx context.Context, req CreateTrabajoRequest, u
 		return nil, errors.New("no autorizado")
 	}
 	if userRole == "teacher" {
-		ok, err := s.repo.IsTeacherOfLeccion(ctx, userID, req.LeccionID)
+		ok, err := s.repo.IsTeacherOfMateria(ctx, userID, *req.MateriaID)
 		if err != nil {
 			return nil, err
 		}
 		if !ok {
-			return nil, errors.New("no autorizado para esta lección")
+			return nil, errors.New("no autorizado para esta materia")
 		}
 	}
 	return s.repo.CreateTrabajo(ctx, req, userID)
@@ -64,8 +69,45 @@ func (s *Service) ListTrabajosByLeccion(ctx context.Context, leccionID, userID, 
 	return s.repo.ListTrabajosByLeccion(ctx, leccionID)
 }
 
+func (s *Service) ListTrabajosByMateria(ctx context.Context, materiaID, userID, userRole string) ([]Trabajo, error) {
+	if materiaID == "" {
+		return nil, errors.New("materia_id es requerido")
+	}
+	if !canManage(userRole) {
+		return nil, errors.New("no autorizado")
+	}
+	if userRole == "teacher" {
+		ok, err := s.repo.IsTeacherOfMateria(ctx, userID, materiaID)
+		if err != nil {
+			return nil, err
+		}
+		if !ok {
+			return nil, errors.New("no autorizado para esta materia")
+		}
+	}
+	return s.repo.ListTrabajosByMateria(ctx, materiaID)
+}
+
 func (s *Service) PublicarTrabajo(ctx context.Context, trabajoID, userID, userRole string) (*Trabajo, error) {
-	return s.updateTrabajoEstado(ctx, trabajoID, "publicado", userID, userRole)
+	trabajo, err := s.updateTrabajoEstado(ctx, trabajoID, "publicado", userID, userRole)
+	if err != nil {
+		return nil, err
+	}
+
+	// Notify enrolled students
+	if s.notifier != nil {
+		studentEmails, err := s.repo.GetEstudiantesEmailsForTrabajo(ctx, trabajoID)
+		if err != nil {
+			fmt.Printf("[DEBUG] Error getting student emails for trabajo %s: %v\n", trabajoID, err)
+		} else {
+			for _, email := range studentEmails {
+				s.notifier.NotifyTrabajoPublicado(trabajoID, email, trabajo.Titulo)
+			}
+			fmt.Printf("[DEBUG] Notified %d students for trabajo %s\n", len(studentEmails), trabajoID)
+		}
+	}
+
+	return trabajo, nil
 }
 
 func (s *Service) CerrarTrabajo(ctx context.Context, trabajoID, userID, userRole string) (*Trabajo, error) {
@@ -304,11 +346,42 @@ func (s *Service) GetTrabajo(ctx context.Context, trabajoID, userID, userRole st
 	return t, nil
 }
 
-func (s *Service) ListMisTrabajos(ctx context.Context, userID, userRole string) ([]Trabajo, error) {
+func (s *Service) ListMisTrabajos(ctx context.Context, userID, userRole string) ([]TrabajoConEstadoEntrega, error) {
 	if userRole != "student" {
 		return nil, errors.New("solo estudiantes pueden listar mis-trabajos")
 	}
 	return s.repo.ListMisTrabajos(ctx, userID)
+}
+
+func (s *Service) UploadFile(ctx context.Context, file io.Reader, filename, userID string) (string, error) {
+	// Generate unique filename
+	ext := filepath.Ext(filename)
+	if ext == "" {
+		ext = ".bin"
+	}
+	uniqueName := fmt.Sprintf("%s_%d%s", userID, time.Now().UnixNano(), ext)
+
+	// Create uploads directory if it doesn't exist (use current working directory)
+	uploadDir := filepath.Join(".", "uploads")
+	if err := os.MkdirAll(uploadDir, 0755); err != nil {
+		return "", fmt.Errorf("error creating upload directory: %w", err)
+	}
+
+	// Create the file
+	filePath := filepath.Join(uploadDir, uniqueName)
+	dst, err := os.Create(filePath)
+	if err != nil {
+		return "", fmt.Errorf("error creating file: %w", err)
+	}
+	defer dst.Close()
+
+	// Copy the uploaded file to the destination
+	if _, err := io.Copy(dst, file); err != nil {
+		return "", fmt.Errorf("error saving file: %w", err)
+	}
+
+	// Return the URL (for now, using relative path; in production use a proper CDN/storage URL)
+	return fmt.Sprintf("/uploads/%s", uniqueName), nil
 }
 
 func (s *Service) UpsertEntrega(ctx context.Context, trabajoID string, req CreateEntregaRequest, userID, userRole string) (*TrabajoEntrega, error) {
@@ -332,6 +405,12 @@ func (s *Service) UpsertEntrega(ctx context.Context, trabajoID string, req Creat
 	if t.Estado != "publicado" {
 		return nil, errors.New("el trabajo no está disponible para entregas")
 	}
+
+	// Check if trabajo is expired and late submissions are not allowed
+	if t.FechaVencimiento != nil && time.Now().After(*t.FechaVencimiento) && !t.PermiteEntregaTardia {
+		return nil, errors.New("el trabajo ha vencido y no se permiten entregas tardías")
+	}
+
 	entrega, err := s.repo.UpsertEntrega(ctx, trabajoID, userID, req)
 	if err != nil {
 		return nil, err
@@ -724,8 +803,9 @@ func (s *Service) CalificarEntregaPorPregunta(ctx context.Context, entregaID str
 	if entregaID == "" {
 		return nil, errors.New("entrega_id es requerido")
 	}
-	if len(req.Items) == 0 {
-		return nil, errors.New("items de calificacion son requeridos")
+	// Allow manual_score for file-based assignments (no items)
+	if len(req.Items) == 0 && req.ManualScore == nil {
+		return nil, errors.New("items de calificacion o manual_score son requeridos")
 	}
 	if !canManage(userRole) {
 		return nil, errors.New("no autorizado")
@@ -796,6 +876,97 @@ func (s *Service) CalificarEntregaPorPregunta(ctx context.Context, entregaID str
 }
 
 func (s *Service) AutoCalificarEntregaCerradas(ctx context.Context, entregaID, userID, userRole string) (*EntregaDetalleResponse, error) {
+	return s.AutoCalificarEntregaCerradasEnhanced(ctx, entregaID, userID, userRole, false)
+}
+
+// New method for batch grading multiple deliveries
+func (s *Service) CalificarLoteEntregas(ctx context.Context, trabajoID string, entregaIDs []string, userID, userRole string) ([]EntregaDetalleResponse, error) {
+	if strings.TrimSpace(trabajoID) == "" {
+		return nil, errors.New("trabajo_id es requerido")
+	}
+	if len(entregaIDs) == 0 {
+		return nil, errors.New("se requiere al menos una entrega para calificar en lote")
+	}
+	if !canManage(userRole) {
+		return nil, errors.New("no autorizado")
+	}
+	if userRole == "teacher" {
+		ok, err := s.repo.IsTeacherOfTrabajo(ctx, userID, trabajoID)
+		if err != nil {
+			return nil, err
+		}
+		if !ok {
+			return nil, errors.New("no autorizado para calificar este trabajo")
+		}
+	}
+
+	results := make([]EntregaDetalleResponse, 0, len(entregaIDs))
+	for _, entregaID := range entregaIDs {
+		// Try auto-grading first
+		detalle, err := s.AutoCalificarEntregaCerradasEnhanced(ctx, entregaID, userID, userRole, false)
+		if err != nil {
+			// If auto-grading fails, get delivery detail without grading
+			detalle, err = s.GetEntregaDetalle(ctx, entregaID, userID, userRole)
+			if err != nil {
+				// Continue with other deliveries even if one fails
+				continue
+			}
+		}
+		results = append(results, *detalle)
+	}
+
+	return results, nil
+}
+
+// New method to validate trabajo configuration
+func (s *Service) ValidarConfiguracionTrabajo(ctx context.Context, trabajoID, userID, userRole string) (bool, []string, error) {
+	if strings.TrimSpace(trabajoID) == "" {
+		return false, []string{"trabajo_id es requerido"}, nil
+	}
+	if !canManage(userRole) {
+		return false, []string{"no autorizado"}, nil
+	}
+	if userRole == "teacher" {
+		ok, err := s.repo.IsTeacherOfTrabajo(ctx, userID, trabajoID)
+		if err != nil {
+			return false, []string{"error verificando autorización"}, err
+		}
+		if !ok {
+			return false, []string{"no autorizado para este trabajo"}, nil
+		}
+	}
+
+	return s.repo.ValidarConfiguracionTrabajo(ctx, trabajoID)
+}
+
+// New method to get trabajo statistics
+func (s *Service) GetTrabajoEstadisticas(ctx context.Context, trabajoID, userID, userRole string) (map[string]interface{}, error) {
+	if strings.TrimSpace(trabajoID) == "" {
+		return nil, errors.New("trabajo_id es requerido")
+	}
+	if !canView(userRole) {
+		return nil, errors.New("no autorizado")
+	}
+	if userRole == "teacher" {
+		ok, err := s.repo.IsTeacherOfTrabajo(ctx, userID, trabajoID)
+		if err != nil {
+			return nil, err
+		}
+		if !ok {
+			return nil, errors.New("no autorizado para este trabajo")
+		}
+	}
+
+	return s.repo.GetTrabajoEstadisticas(ctx, trabajoID)
+}
+
+// New method to auto-close expired trabajos
+func (s *Service) CerrarTrabajosVencidos(ctx context.Context) (int, error) {
+	return s.repo.CerrarTrabajosVencidos(ctx)
+}
+
+// Enhanced auto-grading with better feedback and validation
+func (s *Service) AutoCalificarEntregaCerradasEnhanced(ctx context.Context, entregaID, userID, userRole string, forceRegrade bool) (*EntregaDetalleResponse, error) {
 	if strings.TrimSpace(entregaID) == "" {
 		return nil, errors.New("entrega_id es requerido")
 	}
@@ -815,6 +986,15 @@ func (s *Service) AutoCalificarEntregaCerradas(ctx context.Context, entregaID, u
 		if !ok {
 			return nil, errors.New("no autorizado para calificar esta entrega")
 		}
+	}
+
+	// Get trabajo to check if auto-grading is enabled
+	trabajo, err := s.repo.GetTrabajo(ctx, entrega.TrabajoID)
+	if err != nil {
+		return nil, err
+	}
+	if !trabajo.CalificacionAutomatica && !forceRegrade {
+		return nil, errors.New("este trabajo no tiene calificación automática habilitada")
 	}
 
 	preguntas, err := s.repo.ListTrabajoPreguntas(ctx, entrega.TrabajoID)
@@ -861,8 +1041,16 @@ func (s *Service) AutoCalificarEntregaCerradas(ctx context.Context, entregaID, u
 	}
 
 	totalAuto := 0
+	totalPuntajePosible := 0.0
+	totalPuntajeObtenido := 0.0
+
 	for _, pregunta := range preguntas {
 		if !isClosedQuestionType(pregunta.Tipo) {
+			// For open questions, preserve existing scores if any
+			if existing, exists := itemsByPregunta[pregunta.ID]; exists {
+				totalPuntajeObtenido += existing.Puntaje
+				totalPuntajePosible += pregunta.PuntajeMaximo
+			}
 			continue
 		}
 
@@ -881,20 +1069,55 @@ func (s *Service) AutoCalificarEntregaCerradas(ctx context.Context, entregaID, u
 		}
 
 		puntaje := 0.0
+		var feedback *string
+
+		// Enhanced feedback based on question type and answer
 		if isClosedAnswerCorrect(pregunta, respuesta, *correcta) {
 			puntaje = pregunta.PuntajeMaximo
 			if puntaje <= 0 {
 				puntaje = 1
 			}
-		}
 
-		var feedback *string
-		if puntaje > 0 {
-			msg := "Correcta"
-			feedback = &msg
+			// Enhanced positive feedback
+			switch pregunta.Tipo {
+			case "opcion_multiple":
+				msg := fmt.Sprintf("Correcta. La respuesta '%s' es la opción correcta.", *correcta)
+				feedback = &msg
+			case "verdadero_falso":
+				msg := fmt.Sprintf("Correcta. La afirmación es %s.", *correcta)
+				feedback = &msg
+			default:
+				msg := "Correcta."
+				feedback = &msg
+			}
 		} else {
-			msg := "Incorrecta"
-			feedback = &msg
+			// Enhanced negative feedback with correct answer
+			switch pregunta.Tipo {
+			case "opcion_multiple":
+				if respuesta != "" {
+					msg := fmt.Sprintf("Incorrecta. Tu respuesta fue '%s', la respuesta correcta es '%s'.", respuesta, *correcta)
+					feedback = &msg
+				} else {
+					msg := fmt.Sprintf("No respondida. La respuesta correcta es '%s'.", *correcta)
+					feedback = &msg
+				}
+			case "verdadero_falso":
+				if respuesta != "" {
+					msg := fmt.Sprintf("Incorrecta. La respuesta correcta es '%s'.", *correcta)
+					feedback = &msg
+				} else {
+					msg := fmt.Sprintf("No respondida. La respuesta correcta es '%s'.", *correcta)
+					feedback = &msg
+				}
+			default:
+				if respuesta != "" {
+					msg := fmt.Sprintf("Incorrecta. La respuesta correcta es '%s'.", *correcta)
+					feedback = &msg
+				} else {
+					msg := fmt.Sprintf("No respondida. La respuesta correcta es '%s'.", *correcta)
+					feedback = &msg
+				}
+			}
 		}
 
 		itemsByPregunta[pregunta.ID] = CalificarEntregaPreguntaItem{
@@ -903,10 +1126,28 @@ func (s *Service) AutoCalificarEntregaCerradas(ctx context.Context, entregaID, u
 			Feedback:   feedback,
 		}
 		totalAuto++
+		totalPuntajePosible += pregunta.PuntajeMaximo
+		totalPuntajeObtenido += puntaje
 	}
 
 	if totalAuto == 0 {
 		return nil, errors.New("no hay preguntas cerradas con respuesta_correcta configurada")
+	}
+
+	// Enhanced summary feedback for auto-grading
+	var enhancedFeedback *string
+	if totalPuntajePosible > 0 {
+		percentage := (totalPuntajeObtenido / totalPuntajePosible) * 100
+		summaryMsg := fmt.Sprintf("Calificación automática: %.1f/%.1f puntos (%.1f%%). %d preguntas evaluadas automáticamente.",
+			totalPuntajeObtenido, totalPuntajePosible, percentage, totalAuto)
+		enhancedFeedback = &summaryMsg
+
+		if feedbackGeneral != nil {
+			combinedMsg := fmt.Sprintf("%s\n\n%s", *feedbackGeneral, summaryMsg)
+			enhancedFeedback = &combinedMsg
+		}
+	} else if feedbackGeneral != nil {
+		enhancedFeedback = feedbackGeneral
 	}
 
 	finalItems := make([]CalificarEntregaPreguntaItem, 0, len(itemsByPregunta))
@@ -927,7 +1168,7 @@ func (s *Service) AutoCalificarEntregaCerradas(ctx context.Context, entregaID, u
 
 	autoReq := CalificarEntregaPorPreguntaRequest{
 		Items:        finalItems,
-		Feedback:     feedbackGeneral,
+		Feedback:     enhancedFeedback,
 		SugerenciaIA: json.RawMessage("{}"),
 		TipoCambio:   CalificacionTipoAutoObjetiva,
 	}
@@ -1231,3 +1472,6 @@ func canManage(role string) bool {
 	return role == "teacher" || role == "admin" || role == "super_admin"
 }
 
+func canView(role string) bool {
+	return role == "teacher" || role == "admin" || role == "super_admin" || role == "student"
+}

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { Loader2, Plus, Save, Trash2 } from "lucide-react";
+import { FileQuestion, Loader2, Plus, Save, Trash2, X } from "lucide-react";
 import toast from "react-hot-toast";
 
 import { getMe } from "@/shared/lib/auth";
@@ -17,16 +17,64 @@ function normalizeError(err: unknown): string {
   return "Error inesperado";
 }
 
+interface OptionDraft {
+  localId: string;
+  text: string;
+  isCorrect: boolean;
+}
+
+interface PreguntaInputWithDraftOptions extends TrabajoPreguntaInput {
+  optionDrafts?: OptionDraft[];
+}
+
 function isClosedType(tipo: TrabajoPreguntaInput["tipo"]): boolean {
   return tipo === "opcion_multiple" || tipo === "verdadero_falso";
 }
 
-function mapPreguntaToInput(pregunta: TrabajoPregunta): TrabajoPreguntaInput {
+function makeId(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return `id_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function createDefaultOptions(): OptionDraft[] {
+  return [
+    { localId: makeId(), text: "", isCorrect: true },
+    { localId: makeId(), text: "", isCorrect: false },
+    { localId: makeId(), text: "", isCorrect: false },
+    { localId: makeId(), text: "", isCorrect: false },
+  ];
+}
+
+function mapPreguntaToInput(pregunta: TrabajoPregunta): PreguntaInputWithDraftOptions {
+  const opciones = Array.isArray(pregunta.opciones) ? pregunta.opciones : [];
+  const respuestaCorrecta = pregunta.respuesta_correcta || "";
+  
+  // Create option drafts from the existing data
+  const optionDrafts: OptionDraft[] = opciones.map((text, idx) => ({
+    localId: makeId(),
+    text,
+    isCorrect: text === respuestaCorrecta,
+  }));
+  
+  // If no options but it's a closed type, create defaults
+  if (optionDrafts.length === 0 && isClosedType(pregunta.tipo)) {
+    if (pregunta.tipo === "verdadero_falso") {
+      optionDrafts.push(
+        { localId: makeId(), text: "Verdadero", isCorrect: respuestaCorrecta === "Verdadero" },
+        { localId: makeId(), text: "Falso", isCorrect: respuestaCorrecta === "Falso" }
+      );
+    } else {
+      optionDrafts.push(...createDefaultOptions());
+    }
+  }
+
   return {
     texto: pregunta.texto || "",
     tipo: pregunta.tipo,
-    opciones: Array.isArray(pregunta.opciones) ? pregunta.opciones : [],
-    respuesta_correcta: pregunta.respuesta_correcta || "",
+    opciones,
+    respuesta_correcta: respuestaCorrecta,
     puntaje_maximo: pregunta.puntaje_maximo || 1,
     pagina_libro: pregunta.pagina_libro ?? undefined,
     confianza_ia: pregunta.confianza_ia ?? undefined,
@@ -35,18 +83,22 @@ function mapPreguntaToInput(pregunta: TrabajoPregunta): TrabajoPreguntaInput {
     respuesta_esperada_tipo: pregunta.respuesta_esperada_tipo ?? undefined,
     placeholder: pregunta.placeholder ?? undefined,
     orden: pregunta.orden,
+    optionDrafts,
   };
 }
 
-function createEmptyPregunta(): TrabajoPreguntaInput {
+
+function createEmptyPregunta(trabajo?: Trabajo | null): PreguntaInputWithDraftOptions {
+  const isClosedEnded = trabajo?.calificacion_automatica;
   return {
     texto: "",
-    tipo: "respuesta_corta",
-    opciones: [],
-    respuesta_correcta: "",
+    tipo: isClosedEnded ? "opcion_multiple" : "respuesta_corta",
+    opciones: isClosedEnded ? ["Opción 1", "Opción 2"] : [],
+    respuesta_correcta: isClosedEnded ? "Opción 1" : "",
     puntaje_maximo: 1,
-    respuesta_esperada_tipo: "abierta",
+    respuesta_esperada_tipo: isClosedEnded ? "opciones" : "abierta",
     placeholder: "",
+    optionDrafts: isClosedEnded ? createDefaultOptions() : [],
   };
 }
 
@@ -57,7 +109,7 @@ export default function TeacherTrabajoPreguntas() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [trabajo, setTrabajo] = useState<Trabajo | null>(null);
-  const [preguntas, setPreguntas] = useState<TrabajoPreguntaInput[]>([]);
+  const [preguntas, setPreguntas] = useState<PreguntaInputWithDraftOptions[]>([]);
 
   const totalPuntaje = useMemo(
     () => preguntas.reduce((acc, pregunta) => acc + Number(pregunta.puntaje_maximo || 0), 0),
@@ -81,7 +133,7 @@ export default function TeacherTrabajoPreguntas() {
         const payload = await getTrabajoFormulario(trabajoId);
         setTrabajo(payload.trabajo);
         const initial = (payload.preguntas || []).map(mapPreguntaToInput);
-        setPreguntas(initial.length > 0 ? initial : [createEmptyPregunta()]);
+        setPreguntas(initial.length > 0 ? initial : [createEmptyPregunta(payload.trabajo)]);
       } catch (err) {
         toast.error(normalizeError(err));
         navigate("/teacher/trabajos");
@@ -91,8 +143,55 @@ export default function TeacherTrabajoPreguntas() {
     })();
   }, [navigate, trabajoId]);
 
-  const handleChange = (index: number, patch: Partial<TrabajoPreguntaInput>) => {
+  const handleChange = (index: number, patch: Partial<PreguntaInputWithDraftOptions>) => {
     setPreguntas((prev) => prev.map((item, idx) => (idx === index ? { ...item, ...patch } : item)));
+  };
+
+  const updateOption = (preguntaIndex: number, optionLocalId: string, updater: (prev: OptionDraft) => OptionDraft) => {
+    setPreguntas((prev) =>
+      prev.map((pregunta, idx) => {
+        if (idx !== preguntaIndex) return pregunta;
+        const updatedOptions = (pregunta.optionDrafts || []).map((opt) =>
+          opt.localId === optionLocalId ? updater(opt) : opt
+        );
+        return { ...pregunta, optionDrafts: updatedOptions };
+      })
+    );
+  };
+
+  const addOption = (preguntaIndex: number) => {
+    setPreguntas((prev) =>
+      prev.map((pregunta, idx) => {
+        if (idx !== preguntaIndex) return pregunta;
+        return {
+          ...pregunta,
+          optionDrafts: [...(pregunta.optionDrafts || []), { localId: makeId(), text: "", isCorrect: false }],
+        };
+      })
+    );
+  };
+
+  const removeOption = (preguntaIndex: number, optionLocalId: string) => {
+    setPreguntas((prev) =>
+      prev.map((pregunta, idx) => {
+        if (idx !== preguntaIndex) return pregunta;
+        const updatedOptions = (pregunta.optionDrafts || []).filter((opt) => opt.localId !== optionLocalId);
+        return { ...pregunta, optionDrafts: updatedOptions };
+      })
+    );
+  };
+
+  const setCorrectOption = (preguntaIndex: number, optionLocalId: string) => {
+    setPreguntas((prev) =>
+      prev.map((pregunta, idx) => {
+        if (idx !== preguntaIndex) return pregunta;
+        const updatedOptions = (pregunta.optionDrafts || []).map((opt) => ({
+          ...opt,
+          isCorrect: opt.localId === optionLocalId,
+        }));
+        return { ...pregunta, optionDrafts: updatedOptions };
+      })
+    );
   };
 
   const handleChangeTipo = (index: number, tipo: TrabajoPreguntaInput["tipo"]) => {
@@ -104,15 +203,24 @@ export default function TeacherTrabajoPreguntas() {
             ...item,
             tipo,
             opciones: ["Verdadero", "Falso"],
+            respuesta_correcta: "Verdadero",
             respuesta_esperada_tipo: "opciones",
+            optionDrafts: [
+              { localId: makeId(), text: "Verdadero", isCorrect: true },
+              { localId: makeId(), text: "Falso", isCorrect: false },
+            ],
           };
         }
         if (tipo === "opcion_multiple") {
+          const existingOptions = item.optionDrafts || [];
+          const hasValidOptions = existingOptions.length >= 2 && existingOptions.some((opt) => opt.text.trim() !== "");
           return {
             ...item,
             tipo,
-            opciones: item.opciones && item.opciones.length >= 2 ? item.opciones : ["Opción 1", "Opción 2"],
+            opciones: hasValidOptions ? existingOptions.map((opt) => opt.text).filter(Boolean) : ["Opción 1", "Opción 2"],
+            respuesta_correcta: hasValidOptions ? (existingOptions.find((opt) => opt.isCorrect)?.text || "Opción 1") : "Opción 1",
             respuesta_esperada_tipo: "opciones",
+            optionDrafts: hasValidOptions ? existingOptions : createDefaultOptions(),
           };
         }
         return {
@@ -121,6 +229,7 @@ export default function TeacherTrabajoPreguntas() {
           opciones: [],
           respuesta_correcta: "",
           respuesta_esperada_tipo: "abierta",
+          optionDrafts: [],
         };
       })
     );
@@ -133,8 +242,21 @@ export default function TeacherTrabajoPreguntas() {
       const tipo = pregunta.tipo;
       const texto = (pregunta.texto || "").trim();
       const puntaje = Number(pregunta.puntaje_maximo || 1);
-      const opciones = (pregunta.opciones || []).map((opt) => opt.trim()).filter(Boolean);
-      const respuestaCorrecta = (pregunta.respuesta_correcta || "").trim();
+      
+      // Get opciones from optionDrafts for closed types
+      let opciones: string[] = [];
+      let respuestaCorrecta = "";
+      
+      if (isClosedType(tipo) && pregunta.optionDrafts) {
+        opciones = pregunta.optionDrafts
+          .map((opt) => opt.text.trim())
+          .filter(Boolean);
+        const correctOption = pregunta.optionDrafts.find((opt) => opt.isCorrect);
+        respuestaCorrecta = correctOption?.text || "";
+      } else {
+        opciones = (pregunta.opciones || []).map((opt) => opt.trim()).filter(Boolean);
+        respuestaCorrecta = (pregunta.respuesta_correcta || "").trim();
+      }
 
       if (!texto) {
         throw new Error(`La pregunta ${index + 1} no tiene texto`);
@@ -168,6 +290,7 @@ export default function TeacherTrabajoPreguntas() {
       const updated = await updateTrabajoPreguntas(trabajoId, { preguntas: normalized });
       setPreguntas(updated.map(mapPreguntaToInput));
       toast.success("Preguntas actualizadas");
+      navigate("/teacher/trabajos");
     } catch (err) {
       toast.error(normalizeError(err));
     } finally {
@@ -228,10 +351,14 @@ export default function TeacherTrabajoPreguntas() {
                   value={pregunta.tipo}
                   onChange={(e) => handleChangeTipo(index, e.target.value as TrabajoPreguntaInput["tipo"])}
                 >
-                  <option value="opcion_multiple">Opción múltiple</option>
-                  <option value="verdadero_falso">Verdadero/Falso</option>
-                  <option value="respuesta_corta">Respuesta corta</option>
-                  <option value="completar">Completar</option>
+                  {trabajo?.calificacion_automatica ? (
+                    <>
+                      <option value="opcion_multiple">Opción múltiple</option>
+                      <option value="verdadero_falso">Verdadero/Falso</option>
+                    </>
+                  ) : (
+                    <option value="respuesta_corta">Respuesta corta</option>
+                  )}
                 </select>
               </label>
 
@@ -257,50 +384,57 @@ export default function TeacherTrabajoPreguntas() {
               </label>
             </div>
 
-            {pregunta.tipo === "opcion_multiple" && (
-              <label className="text-sm block">
-                Opciones (separadas por coma)
-                <input
-                  className="mt-1 w-full border rounded px-3 py-2"
-                  value={(pregunta.opciones || []).join(", ")}
-                  onChange={(e) =>
-                    handleChange(index, {
-                      opciones: e.target.value
-                        .split(",")
-                        .map((value) => value.trim())
-                        .filter(Boolean),
-                    })
-                  }
-                />
-              </label>
-            )}
-
-            {pregunta.tipo === "verdadero_falso" && (
-              <p className="text-sm text-gray-500">Opciones fijas: Verdadero, Falso</p>
-            )}
-
             {isClosedType(pregunta.tipo) && (
-              <label className="text-sm block">
-                Respuesta correcta
+              <div className="mt-3 space-y-2">
                 {pregunta.tipo === "verdadero_falso" ? (
-                  <select
-                    className="mt-1 w-full border rounded px-3 py-2"
-                    value={pregunta.respuesta_correcta || ""}
-                    onChange={(e) => handleChange(index, { respuesta_correcta: e.target.value })}
-                  >
-                    <option value="">Selecciona una opción</option>
-                    <option value="Verdadero">Verdadero</option>
-                    <option value="Falso">Falso</option>
-                  </select>
+                  <div className="space-y-2">
+                    {(pregunta.optionDrafts || []).map((option) => (
+                      <div key={option.localId} className="flex items-center gap-2">
+                        <input
+                          type="radio"
+                          name={`correct-${index}`}
+                          checked={option.isCorrect}
+                          onChange={() => setCorrectOption(index, option.localId)}
+                        />
+                        <span className="text-sm font-medium">{option.text}</span>
+                      </div>
+                    ))}
+                  </div>
                 ) : (
-                  <input
-                    className="mt-1 w-full border rounded px-3 py-2"
-                    value={pregunta.respuesta_correcta || ""}
-                    onChange={(e) => handleChange(index, { respuesta_correcta: e.target.value })}
-                    placeholder="Ejemplo: opción exacta, índice (1), letra (a)"
-                  />
+                  <>
+                    {(pregunta.optionDrafts || []).map((option) => (
+                      <div key={option.localId} className="flex items-center gap-2">
+                        <input
+                          type="radio"
+                          name={`correct-${index}`}
+                          checked={option.isCorrect}
+                          onChange={() => setCorrectOption(index, option.localId)}
+                        />
+                        <input
+                          value={option.text}
+                          onChange={(e) => updateOption(index, option.localId, (prev) => ({ ...prev, text: e.target.value }))}
+                          className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm"
+                          placeholder="Texto de opción"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => removeOption(index, option.localId)}
+                          className="rounded border border-red-200 px-2 py-1 text-xs text-red-700 hover:bg-red-50"
+                        >
+                          <X size={12} />
+                        </button>
+                      </div>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={() => addOption(index)}
+                      className="text-xs font-medium text-indigo-700 hover:underline"
+                    >
+                      + Agregar opción
+                    </button>
+                  </>
                 )}
-              </label>
+              </div>
             )}
           </div>
         ))}
@@ -309,7 +443,7 @@ export default function TeacherTrabajoPreguntas() {
       <div className="flex flex-wrap items-center gap-2">
         <button
           type="button"
-          onClick={() => setPreguntas((prev) => [...prev, createEmptyPregunta()])}
+          onClick={() => setPreguntas((prev) => [...prev, createEmptyPregunta(trabajo)])}
           className="inline-flex items-center gap-2 px-4 py-2 rounded bg-slate-700 text-white hover:bg-slate-800"
         >
           <Plus size={14} />
