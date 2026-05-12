@@ -1,6 +1,7 @@
 // Matches Go backend evaluations/model.go
 export interface Prueba {
   id: string;
+  materia_id?: string | null;
   leccion_id: string | null;
   titulo: string;
   descripcion?: string | null;
@@ -10,6 +11,10 @@ export interface Prueba {
   peso_calificacion: number;
   puntaje_minimo: number;
   activa?: boolean;
+  fecha_publicacion?: string | null;
+  fecha_activacion?: string | null;
+  mostrar_resultado_inmediato?: boolean;
+  requiere_revision_docente?: boolean;
   creado_por?: string | null;
   created_at: string;
   updated_at: string;
@@ -25,7 +30,7 @@ export interface Pregunta {
   id: string;
   prueba_id: string;
   texto: string;
-  tipo: "opcion_multiple" | "verdadero_falso";
+  tipo: "opcion_multiple" | "verdadero_falso" | "respuesta_corta" | "completar";
   puntaje_maximo: number;
   orden: number;
   created_at: string;
@@ -48,6 +53,11 @@ export interface ResultadoPrueba {
   respuestas: Record<string, unknown> | null;
   started_at: string | null;
   completed_at: string | null;
+  calificado_por_docente?: boolean;
+  calificado_by?: string | null;
+  calificado_at?: string | null;
+  feedback_docente?: string | null;
+  mostrar_puntaje_estudiante?: boolean;
   created_at: string;
   puntaje?: number;
   respuestas_json?: Record<string, unknown> | null;

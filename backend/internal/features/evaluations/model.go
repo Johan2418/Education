@@ -8,29 +8,43 @@ import (
 // ─── Prueba ─────────────────────────────────────────────────
 
 type Prueba struct {
-	ID            string    `json:"id" gorm:"column:id;primaryKey;default:gen_random_uuid()"`
-	LeccionID     *string   `json:"leccion_id" gorm:"column:leccion_id"`
-	Titulo        string    `json:"titulo" gorm:"column:titulo"`
-	TiempoLimite  *int      `json:"tiempo_limite" gorm:"column:tiempo_limite"`
-	NotaMaxima    float64   `json:"nota_maxima" gorm:"column:nota_maxima;default:10"`
-	PesoCalif     float64   `json:"peso_calificacion" gorm:"column:peso_calificacion;default:1"`
-	PuntajeMinimo float64   `json:"puntaje_minimo" gorm:"column:puntaje_minimo;default:0"`
-	Orden         int       `json:"orden" gorm:"column:orden;default:0"`
-	CreatedBy     *string   `json:"created_by" gorm:"column:created_by"`
-	CreatedAt     time.Time `json:"created_at" gorm:"column:created_at;autoCreateTime"`
-	UpdatedAt     time.Time `json:"updated_at" gorm:"column:updated_at;autoUpdateTime"`
+	ID                        string     `json:"id" gorm:"column:id;primaryKey;default:gen_random_uuid()"`
+	MateriaID                 *string    `json:"materia_id" gorm:"column:materia_id"`
+	LeccionID                 *string    `json:"leccion_id" gorm:"column:leccion_id"`
+	Titulo                    string     `json:"titulo" gorm:"column:titulo"`
+	Descripcion               *string    `json:"descripcion" gorm:"column:descripcion"`
+	TiempoLimite              *int       `json:"tiempo_limite" gorm:"column:tiempo_limite"`
+	NotaMaxima                float64    `json:"nota_maxima" gorm:"column:nota_maxima;default:10"`
+	PesoCalif                 float64    `json:"peso_calificacion" gorm:"column:peso_calificacion;default:1"`
+	PuntajeMinimo             float64    `json:"puntaje_minimo" gorm:"column:puntaje_minimo;default:0"`
+	Activa                    bool       `json:"activa" gorm:"column:activa;default:true"`
+	FechaPublicacion          *time.Time `json:"fecha_publicacion" gorm:"column:fecha_publicacion"`
+	FechaActivacion           *time.Time `json:"fecha_activacion" gorm:"column:fecha_activacion"`
+	MostrarResultadoInmediato bool       `json:"mostrar_resultado_inmediato" gorm:"column:mostrar_resultado_inmediato;default:true"`
+	RequiereRevisionDocente   bool       `json:"requiere_revision_docente" gorm:"column:requiere_revision_docente;default:false"`
+	Orden                     int        `json:"orden" gorm:"column:orden;default:0"`
+	CreatedBy                 *string    `json:"created_by" gorm:"column:created_by"`
+	CreatedAt                 time.Time  `json:"created_at" gorm:"column:created_at;autoCreateTime"`
+	UpdatedAt                 time.Time  `json:"updated_at" gorm:"column:updated_at;autoUpdateTime"`
 }
 
 func (Prueba) TableName() string { return "internal.prueba" }
 
 type PruebaRequest struct {
-	LeccionID     *string  `json:"leccion_id"`
-	Titulo        string   `json:"titulo"`
-	TiempoLimite  *int     `json:"tiempo_limite"`
-	NotaMaxima    *float64 `json:"nota_maxima"`
-	PesoCalif     *float64 `json:"peso_calificacion"`
-	PuntajeMinimo *float64 `json:"puntaje_minimo"`
-	Orden         *int     `json:"orden"`
+	MateriaID                 *string    `json:"materia_id"`
+	LeccionID                 *string    `json:"leccion_id"`
+	Titulo                    string     `json:"titulo"`
+	Descripcion               *string    `json:"descripcion"`
+	TiempoLimite              *int       `json:"tiempo_limite"`
+	NotaMaxima                *float64   `json:"nota_maxima"`
+	PesoCalif                 *float64   `json:"peso_calificacion"`
+	PuntajeMinimo             *float64   `json:"puntaje_minimo"`
+	Activa                    *bool      `json:"activa"`
+	FechaPublicacion          *time.Time `json:"fecha_publicacion"`
+	FechaActivacion           *time.Time `json:"fecha_activacion"`
+	MostrarResultadoInmediato *bool      `json:"mostrar_resultado_inmediato"`
+	RequiereRevisionDocente   *bool      `json:"requiere_revision_docente"`
+	Orden                     *int       `json:"orden"`
 }
 
 type PruebaCompleta struct {
@@ -94,15 +108,20 @@ type RespuestaRequest struct {
 // ─── Resultado Prueba ───────────────────────────────────────
 
 type ResultadoPrueba struct {
-	ID              string          `json:"id" gorm:"column:id;primaryKey;default:gen_random_uuid()"`
-	PruebaID        string          `json:"prueba_id" gorm:"column:prueba_id"`
-	UsuarioID       string          `json:"usuario_id" gorm:"column:usuario_id"`
-	PuntajeObtenido float64         `json:"puntaje_obtenido" gorm:"column:puntaje_obtenido"`
-	Aprobado        bool            `json:"aprobado" gorm:"column:aprobado"`
-	Respuestas      json.RawMessage `json:"respuestas" gorm:"column:respuestas;type:jsonb"`
-	StartedAt       *time.Time      `json:"started_at" gorm:"column:started_at"`
-	CompletedAt     *time.Time      `json:"completed_at" gorm:"column:completed_at"`
-	CreatedAt       time.Time       `json:"created_at" gorm:"column:created_at;autoCreateTime"`
+	ID                       string          `json:"id" gorm:"column:id;primaryKey;default:gen_random_uuid()"`
+	PruebaID                 string          `json:"prueba_id" gorm:"column:prueba_id"`
+	UsuarioID                string          `json:"usuario_id" gorm:"column:usuario_id"`
+	PuntajeObtenido          float64         `json:"puntaje_obtenido" gorm:"column:puntaje_obtenido"`
+	Aprobado                 bool            `json:"aprobado" gorm:"column:aprobado"`
+	Respuestas               json.RawMessage `json:"respuestas" gorm:"column:respuestas;type:jsonb"`
+	StartedAt                *time.Time      `json:"started_at" gorm:"column:started_at"`
+	CompletedAt              *time.Time      `json:"completed_at" gorm:"column:completed_at"`
+	CalificadoPorDocente     bool            `json:"calificado_por_docente" gorm:"column:calificado_por_docente;default:false"`
+	CalificadoBy             *string         `json:"calificado_by" gorm:"column:calificado_by"`
+	CalificadoAt             *time.Time      `json:"calificado_at" gorm:"column:calificado_at"`
+	FeedbackDocente          *string         `json:"feedback_docente" gorm:"column:feedback_docente"`
+	MostrarPuntajeEstudiante bool            `json:"mostrar_puntaje_estudiante" gorm:"column:mostrar_puntaje_estudiante;default:true"`
+	CreatedAt                time.Time       `json:"created_at" gorm:"column:created_at;autoCreateTime"`
 }
 
 func (ResultadoPrueba) TableName() string { return "internal.resultado_prueba" }
@@ -115,6 +134,13 @@ type ResultadoPruebaRequest struct {
 	StartedAt        *time.Time      `json:"started_at"`
 	LegacyPuntaje    *float64        `json:"puntaje,omitempty" gorm:"-"`
 	LegacyRespuestas json.RawMessage `json:"respuestas_json,omitempty" gorm:"-"`
+}
+
+type CalificarResultadoRequest struct {
+	PuntajeObtenido          *float64 `json:"puntaje_obtenido"`
+	Aprobado                 *bool    `json:"aprobado"`
+	FeedbackDocente          *string  `json:"feedback_docente"`
+	MostrarPuntajeEstudiante *bool    `json:"mostrar_puntaje_estudiante"`
 }
 
 // ─── Progreso (nivel lección) ───────────────────────────────

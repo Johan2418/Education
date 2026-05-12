@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math"
 	"strings"
+	"time"
 
 	"gorm.io/gorm"
 )
@@ -26,6 +27,9 @@ func NewService(repo *Repository) *Service {
 func (s *Service) ListPruebasByLeccion(ctx context.Context, leccionID string) ([]Prueba, error) {
 	return s.repo.ListPruebasByLeccion(ctx, leccionID)
 }
+func (s *Service) ListPruebasByMateria(ctx context.Context, materiaID string) ([]Prueba, error) {
+	return s.repo.ListPruebasByMateria(ctx, materiaID)
+}
 
 func (s *Service) GetPrueba(ctx context.Context, id string) (*Prueba, error) {
 	return s.repo.GetPrueba(ctx, id)
@@ -40,8 +44,8 @@ func (s *Service) GetPruebaCompleta(ctx context.Context, id string) (*PruebaComp
 }
 
 func (s *Service) CreatePrueba(ctx context.Context, req PruebaRequest, createdBy string) (*Prueba, error) {
-	if req.LeccionID == nil || req.Titulo == "" {
-		return nil, errors.New("leccion_id y titulo son requeridos")
+	if req.MateriaID == nil || strings.TrimSpace(*req.MateriaID) == "" || req.Titulo == "" {
+		return nil, errors.New("materia_id y titulo son requeridos")
 	}
 	if req.NotaMaxima != nil && *req.NotaMaxima <= 0 {
 		return nil, errors.New("nota_maxima debe ser > 0")
@@ -147,6 +151,9 @@ func (s *Service) SubmitResultado(ctx context.Context, req ResultadoPruebaReques
 	if err != nil {
 		return nil, err
 	}
+	if !pruebaDisponibleParaResolver(pruebaCompleta.Prueba, time.Now()) {
+		return nil, errors.New("el examen aún no está activo")
+	}
 
 	if autoPuntaje, calculado, err := calcularPuntajeObjetivo(pruebaCompleta.Preguntas, canonical.Respuestas); err != nil {
 		return nil, err
@@ -157,6 +164,21 @@ func (s *Service) SubmitResultado(ctx context.Context, req ResultadoPruebaReques
 	canonical.Aprobado = canonical.PuntajeObtenido >= pruebaCompleta.PuntajeMinimo
 
 	resultado, err := s.repo.CreateResultado(ctx, canonical, usuarioID)
+	if err != nil {
+		return nil, err
+	}
+	updates := map[string]interface{}{}
+	if pruebaCompleta.RequiereRevisionDocente {
+		updates["mostrar_puntaje_estudiante"] = false
+	} else if !pruebaCompleta.MostrarResultadoInmediato {
+		updates["mostrar_puntaje_estudiante"] = false
+	} else {
+		updates["mostrar_puntaje_estudiante"] = true
+	}
+	if err := s.repo.UpdateResultadoAfterSubmit(ctx, resultado.ID, updates); err != nil {
+		return nil, err
+	}
+	resultado, err = s.repo.GetResultadoByID(ctx, resultado.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -185,6 +207,13 @@ func (s *Service) SubmitResultado(ctx context.Context, req ResultadoPruebaReques
 	}
 
 	return resultado, nil
+}
+
+func (s *Service) CalificarResultado(ctx context.Context, resultadoID string, req CalificarResultadoRequest, docenteID string) (*ResultadoPrueba, error) {
+	if req.PuntajeObtenido != nil && (*req.PuntajeObtenido < 0 || *req.PuntajeObtenido > 100) {
+		return nil, errors.New("puntaje_obtenido debe estar entre 0 y 100")
+	}
+	return s.repo.UpdateResultadoByDocente(ctx, resultadoID, req, docenteID)
 }
 
 func (s *Service) ListResultadosByPrueba(ctx context.Context, pruebaID string) ([]ResultadoPrueba, error) {
@@ -316,4 +345,17 @@ func esRespuestaCorrecta(answerRaw any, respuestas []Respuesta) bool {
 
 func normalizeEvaluationAnswer(value string) string {
 	return strings.TrimSpace(strings.ToLower(value))
+}
+
+func pruebaDisponibleParaResolver(p Prueba, now time.Time) bool {
+	if !p.Activa {
+		return false
+	}
+	if p.FechaPublicacion != nil && now.Before(*p.FechaPublicacion) {
+		return false
+	}
+	if p.FechaActivacion != nil && now.Before(*p.FechaActivacion) {
+		return false
+	}
+	return true
 }

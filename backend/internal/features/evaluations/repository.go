@@ -30,15 +30,32 @@ func (r *Repository) ListPruebasByLeccion(ctx context.Context, leccionID string)
 func (r *Repository) ListMisPruebasByEstudiante(ctx context.Context, estudianteID string) ([]PruebaAsignada, error) {
 	var items []PruebaAsignada
 	err := r.db.WithContext(ctx).
-		Table("internal.prueba p").
-		Select("p.*, l.titulo AS leccion_titulo, m.id AS materia_id, m.nombre AS materia_nombre").
-		Joins("JOIN internal.leccion l ON l.id = p.leccion_id").
-		Joins("JOIN internal.tema t ON t.id = l.tema_id").
-		Joins("JOIN internal.unidad u ON u.id = t.unidad_id").
-		Joins("JOIN internal.materia m ON m.id = u.materia_id").
-		Joins("JOIN internal.estudiante_curso ec ON ec.curso_id = m.curso_id AND ec.estudiante_id = ?", strings.TrimSpace(estudianteID)).
+		Table("internal.prueba").
+		Select("DISTINCT ON (internal.prueba.id) internal.prueba.*, l.titulo AS leccion_titulo, m.id AS materia_id, m.nombre AS materia_nombre").
+		Joins("LEFT JOIN internal.leccion l ON l.id = internal.prueba.leccion_id").
+		Joins("LEFT JOIN internal.tema t ON t.id = l.tema_id").
+		Joins("LEFT JOIN internal.unidad u ON u.id = t.unidad_id").
+		Joins("JOIN internal.materia m ON m.id = COALESCE(internal.prueba.materia_id, u.materia_id)").
+		Joins("LEFT JOIN internal.estudiante_curso ec ON ec.curso_id = m.curso_id AND ec.estudiante_id = ?", strings.TrimSpace(estudianteID)).
+		Joins("LEFT JOIN internal.materia_seguimiento ms ON ms.materia_id = m.id AND ms.usuario_id = ?", strings.TrimSpace(estudianteID)).
+		Where("(ec.id IS NOT NULL OR ms.id IS NOT NULL)").
+		Where("(internal.prueba.fecha_publicacion IS NULL OR internal.prueba.fecha_publicacion <= ?)", time.Now()).
 		Where("COALESCE(m.activo, TRUE) = TRUE").
-		Order("p.created_at DESC").
+		Order("internal.prueba.id, internal.prueba.created_at DESC").
+		Find(&items).Error
+	return items, err
+}
+
+func (r *Repository) ListPruebasByMateria(ctx context.Context, materiaID string) ([]Prueba, error) {
+	var items []Prueba
+	err := r.db.WithContext(ctx).
+		Table("internal.prueba").
+		Select("internal.prueba.*").
+		Joins("LEFT JOIN internal.leccion l ON l.id = internal.prueba.leccion_id").
+		Joins("LEFT JOIN internal.tema t ON t.id = l.tema_id").
+		Joins("LEFT JOIN internal.unidad u ON u.id = t.unidad_id").
+		Where("internal.prueba.materia_id = ? OR u.materia_id = ?", materiaID, materiaID).
+		Order("internal.prueba.orden ASC, internal.prueba.created_at DESC").
 		Find(&items).Error
 	return items, err
 }
@@ -77,12 +94,18 @@ func (r *Repository) GetPruebaCompleta(ctx context.Context, id string) (*PruebaC
 
 func (r *Repository) CreatePrueba(ctx context.Context, req PruebaRequest, createdBy string) (*Prueba, error) {
 	p := Prueba{
-		LeccionID:    req.LeccionID,
-		Titulo:       req.Titulo,
-		TiempoLimite: req.TiempoLimite,
-		NotaMaxima:   10,
-		PesoCalif:    1,
-		CreatedBy:    &createdBy,
+		MateriaID:                 req.MateriaID,
+		LeccionID:                 req.LeccionID,
+		Titulo:                    req.Titulo,
+		Descripcion:               req.Descripcion,
+		TiempoLimite:              req.TiempoLimite,
+		NotaMaxima:                10,
+		PesoCalif:                 1,
+		Activa:                    true,
+		FechaPublicacion:          req.FechaPublicacion,
+		FechaActivacion:           req.FechaActivacion,
+		MostrarResultadoInmediato: true,
+		CreatedBy:                 &createdBy,
 	}
 	if req.NotaMaxima != nil {
 		p.NotaMaxima = *req.NotaMaxima
@@ -92,6 +115,15 @@ func (r *Repository) CreatePrueba(ctx context.Context, req PruebaRequest, create
 	}
 	if req.PuntajeMinimo != nil {
 		p.PuntajeMinimo = *req.PuntajeMinimo
+	}
+	if req.Activa != nil {
+		p.Activa = *req.Activa
+	}
+	if req.MostrarResultadoInmediato != nil {
+		p.MostrarResultadoInmediato = *req.MostrarResultadoInmediato
+	}
+	if req.RequiereRevisionDocente != nil {
+		p.RequiereRevisionDocente = *req.RequiereRevisionDocente
 	}
 	if req.Orden != nil {
 		p.Orden = *req.Orden
@@ -107,8 +139,14 @@ func (r *Repository) UpdatePrueba(ctx context.Context, id string, req PruebaRequ
 	if req.Titulo != "" {
 		updates["titulo"] = req.Titulo
 	}
+	if req.MateriaID != nil {
+		updates["materia_id"] = req.MateriaID
+	}
 	if req.TiempoLimite != nil {
 		updates["tiempo_limite"] = *req.TiempoLimite
+	}
+	if req.Descripcion != nil {
+		updates["descripcion"] = req.Descripcion
 	}
 	if req.NotaMaxima != nil {
 		updates["nota_maxima"] = *req.NotaMaxima
@@ -118,6 +156,21 @@ func (r *Repository) UpdatePrueba(ctx context.Context, id string, req PruebaRequ
 	}
 	if req.PuntajeMinimo != nil {
 		updates["puntaje_minimo"] = *req.PuntajeMinimo
+	}
+	if req.Activa != nil {
+		updates["activa"] = *req.Activa
+	}
+	if req.FechaPublicacion != nil {
+		updates["fecha_publicacion"] = req.FechaPublicacion
+	}
+	if req.FechaActivacion != nil {
+		updates["fecha_activacion"] = req.FechaActivacion
+	}
+	if req.MostrarResultadoInmediato != nil {
+		updates["mostrar_resultado_inmediato"] = *req.MostrarResultadoInmediato
+	}
+	if req.RequiereRevisionDocente != nil {
+		updates["requiere_revision_docente"] = *req.RequiereRevisionDocente
 	}
 	if req.Orden != nil {
 		updates["orden"] = *req.Orden
@@ -263,17 +316,57 @@ func (r *Repository) DeleteRespuesta(ctx context.Context, id string) error {
 
 func (r *Repository) CreateResultado(ctx context.Context, req ResultadoPruebaRequest, usuarioID string) (*ResultadoPrueba, error) {
 	res := ResultadoPrueba{
-		PruebaID:        req.PruebaID,
-		UsuarioID:       usuarioID,
-		PuntajeObtenido: req.PuntajeObtenido,
-		Aprobado:        req.Aprobado,
-		Respuestas:      req.Respuestas,
-		StartedAt:       req.StartedAt,
+		PruebaID:                 req.PruebaID,
+		UsuarioID:                usuarioID,
+		PuntajeObtenido:          req.PuntajeObtenido,
+		Aprobado:                 req.Aprobado,
+		Respuestas:               req.Respuestas,
+		StartedAt:                req.StartedAt,
+		MostrarPuntajeEstudiante: true,
 	}
 	if err := r.db.WithContext(ctx).Create(&res).Error; err != nil {
 		return nil, err
 	}
 	return &res, nil
+}
+
+func (r *Repository) UpdateResultadoAfterSubmit(ctx context.Context, resultadoID string, updates map[string]interface{}) error {
+	if len(updates) == 0 {
+		return nil
+	}
+	return r.db.WithContext(ctx).Model(&ResultadoPrueba{}).Where("id = ?", resultadoID).Updates(updates).Error
+}
+
+func (r *Repository) GetResultadoByID(ctx context.Context, id string) (*ResultadoPrueba, error) {
+	var res ResultadoPrueba
+	if err := r.db.WithContext(ctx).Where("id = ?", id).First(&res).Error; err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (r *Repository) UpdateResultadoByDocente(ctx context.Context, id string, req CalificarResultadoRequest, docenteID string) (*ResultadoPrueba, error) {
+	updates := map[string]interface{}{
+		"calificado_por_docente": true,
+		"calificado_by":          strings.TrimSpace(docenteID),
+		"calificado_at":          gorm.Expr("now()"),
+	}
+	if req.PuntajeObtenido != nil {
+		updates["puntaje_obtenido"] = *req.PuntajeObtenido
+	}
+	if req.Aprobado != nil {
+		updates["aprobado"] = *req.Aprobado
+	}
+	if req.FeedbackDocente != nil {
+		updates["feedback_docente"] = req.FeedbackDocente
+	}
+	if req.MostrarPuntajeEstudiante != nil {
+		updates["mostrar_puntaje_estudiante"] = *req.MostrarPuntajeEstudiante
+	}
+	if err := r.db.WithContext(ctx).Model(&ResultadoPrueba{}).Where("id = ?", id).Updates(updates).Error; err != nil {
+		return nil, err
+	}
+	return r.GetResultadoByID(ctx, id)
 }
 
 func (r *Repository) ListResultadosByPrueba(ctx context.Context, pruebaID string) ([]ResultadoPrueba, error) {

@@ -30,6 +30,16 @@ func (h *Handler) ListPruebas(w http.ResponseWriter, r *http.Request) {
 	shared.Success(w, items)
 }
 
+func (h *Handler) ListPruebasByMateria(w http.ResponseWriter, r *http.Request) {
+	materiaID := chi.URLParam(r, "materiaId")
+	items, err := h.svc.ListPruebasByMateria(r.Context(), materiaID)
+	if err != nil {
+		shared.Error(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	shared.Success(w, items)
+}
+
 func (h *Handler) GetPrueba(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "pruebaId")
 	item, err := h.svc.GetPrueba(r.Context(), id)
@@ -46,6 +56,14 @@ func (h *Handler) GetPruebaCompleta(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		shared.Error(w, http.StatusNotFound, "prueba no encontrada")
 		return
+	}
+	claims := middleware.GetClaims(r.Context())
+	if claims != nil && claims.UserRole == "student" {
+		for i := range item.Preguntas {
+			for j := range item.Preguntas[i].Respuestas {
+				item.Preguntas[i].Respuestas[j].EsCorrecta = false
+			}
+		}
 	}
 	shared.Success(w, item)
 }
@@ -218,6 +236,10 @@ func (h *Handler) SubmitResultado(w http.ResponseWriter, r *http.Request) {
 		shared.Error(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	if claims.UserRole == "student" && !item.MostrarPuntajeEstudiante {
+		item.PuntajeObtenido = 0
+		item.Aprobado = false
+	}
 	shared.Created(w, item)
 }
 
@@ -231,6 +253,26 @@ func (h *Handler) ListResultadosByPrueba(w http.ResponseWriter, r *http.Request)
 	shared.Success(w, items)
 }
 
+func (h *Handler) CalificarResultado(w http.ResponseWriter, r *http.Request) {
+	claims := middleware.GetClaims(r.Context())
+	if claims == nil || (claims.UserRole != "teacher" && claims.UserRole != "admin" && claims.UserRole != "super_admin") {
+		shared.Error(w, http.StatusForbidden, "No autorizado")
+		return
+	}
+	resultadoID := chi.URLParam(r, "resultadoId")
+	var req CalificarResultadoRequest
+	if err := shared.Decode(r, &req); err != nil {
+		shared.Error(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	item, err := h.svc.CalificarResultado(r.Context(), resultadoID, req, claims.Subject)
+	if err != nil {
+		shared.Error(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	shared.Success(w, item)
+}
+
 func (h *Handler) ListMisResultados(w http.ResponseWriter, r *http.Request) {
 	claims := middleware.GetClaims(r.Context())
 	pruebaID := chi.URLParam(r, "pruebaId")
@@ -238,6 +280,12 @@ func (h *Handler) ListMisResultados(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		shared.Error(w, http.StatusInternalServerError, err.Error())
 		return
+	}
+	for i := range items {
+		if claims.UserRole == "student" && !items[i].MostrarPuntajeEstudiante {
+			items[i].PuntajeObtenido = 0
+			items[i].Aprobado = false
+		}
 	}
 	shared.Success(w, items)
 }

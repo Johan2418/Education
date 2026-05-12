@@ -44,6 +44,7 @@ import TeacherRecursos from "@/features/resources/pages/teacherRecursos";
 import TeacherRecursoViewer from "@/features/resources/pages/teacherRecursoViewer";
 import TeacherRecursosPersonales from "@/features/resources/pages/teacherRecursosPersonales";
 import StudentDashboard from "@/features/student/pages/studentDashboard";
+import StudentExamenesPage from "@/features/student/pages/studentExamenes";
 import StudentTrabajos from "@/features/trabajos/pages/studentTrabajos";
 import StudentTrabajoDetail from "@/features/trabajos/pages/studentTrabajoDetail";
 import Molecules from "@/features/chemistry/pages/molecules";
@@ -154,6 +155,7 @@ function App() {
               <Route path="/lessons" element={<LessonsPage highContrast={highContrast} />} />
               <Route path="/lesson/:lessonId" element={<LessonDetailPage />} />
               <Route path="/lesson/:lessonId/prueba/:pruebaId" element={<PruebaPage />} />
+              <Route path="/prueba/:pruebaId" element={<PruebaPage />} />
               <Route path="/settings" element={<SettingsPage />} />
               <Route path="/teacher" element={<TeacherDashboard highContrast={highContrast} />} />
               <Route path="/teacher/lessons" element={<TeacherLessons />} />
@@ -182,6 +184,7 @@ function App() {
               <Route path="/admin/bulk-enroll" element={<AdminBulkEnroll />} />
               <Route path="/teacher/bulk-import" element={<TeacherBulkImport />} />
               <Route path="/student/dashboard" element={<StudentDashboard highContrast={highContrast} />} />
+              <Route path="/student/examenes" element={<StudentExamenesPage />} />
               <Route path="/student/trabajos" element={<StudentTrabajos />} />
               <Route path="/student/trabajos/:trabajoId" element={<StudentTrabajoDetail />} />
               <Route path="/molecules" element={<Molecules />} />

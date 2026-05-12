@@ -266,6 +266,7 @@ func main() {
 
 		// ── Evaluations: Pruebas ────────────────────────────
 		r.Get("/lecciones/{leccionId}/pruebas", evalH.ListPruebas)
+		r.Get("/materias/{materiaId}/pruebas", evalH.ListPruebasByMateria)
 		r.Get("/pruebas/{pruebaId}", evalH.GetPrueba)
 		r.Get("/pruebas/{pruebaId}/completa", evalH.GetPruebaCompleta)
 		r.Post("/pruebas", evalH.CreatePrueba)
@@ -285,6 +286,7 @@ func main() {
 
 		// Resultados
 		r.Post("/resultados", evalH.SubmitResultado)
+		r.Put("/resultados/{resultadoId}/calificar", evalH.CalificarResultado)
 		r.Get("/pruebas/{pruebaId}/resultados", evalH.ListResultadosByPrueba)
 		r.Get("/pruebas/{pruebaId}/mis-resultados", evalH.ListMisResultados)
 		r.Get("/pruebas/{pruebaId}/mejor-resultado", evalH.GetBestResultado)

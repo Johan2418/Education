@@ -1,4 +1,4 @@
-import { type FC } from "react";
+﻿import { type FC } from "react";
 import {
   Settings,
   BookOpenText,
@@ -17,6 +17,7 @@ import {
   LayoutDashboard,
   Library,
   CalendarDays,
+  ClipboardCheck,
 } from "lucide-react";
 import HelpModal from "./HelpModal";
 import { useSidebar } from "@/app/layout/hooks/useSidebar";
@@ -176,21 +177,23 @@ const Sidebar: FC<SidebarProps> = ({
           {hook.openMenus.aprende && (
             <div className="ml-3 mt-0.5 flex flex-col space-y-0.5 animate-fade-in">
               {!hook.profile ? (
-                <div className="px-3 py-2 text-xs text-white/50">Inicia sesión para visualizar tus cursos</div>
+                <div className="px-3 py-2 text-xs text-white/50">Inicia sesiÃ³n para visualizar tus cursos</div>
               ) : isStudent ? (
-                hook.studentMaterias.length > 0 ? (
-                  hook.studentMaterias.map((materia) => (
-                    <SidebarItem
-                      key={materia.id}
-                      onClick={() => hook.navigate(`/contents/${materia.id}`)}
-                      icon={BookOpenText}
-                      label={materia.nombre}
-                      iconSize={16}
-                    />
-                  ))
-                ) : (
-                  <div className="px-3 py-2 text-xs text-white/50">Sin materias matriculadas</div>
-                )
+                <>
+                  {hook.studentMaterias.length > 0 ? (
+                    hook.studentMaterias.map((materia) => (
+                      <SidebarItem
+                        key={materia.id}
+                        onClick={() => hook.navigate(`/contents/${materia.id}`)}
+                        icon={BookOpenText}
+                        label={materia.nombre}
+                        iconSize={16}
+                      />
+                    ))
+                  ) : (
+                    <div className="px-3 py-2 text-xs text-white/50">Sin materias matriculadas</div>
+                  )}
+                </>
               ) : isTeacher ? (
                 hook.teacherMaterias.length > 0 ? (
                   hook.teacherMaterias.map((materia) => (
@@ -311,7 +314,7 @@ const Sidebar: FC<SidebarProps> = ({
                 label={hook.t("teacher.subjects.navTitle", { defaultValue: "Mis materias" })}
                 iconSize={16}
               />
-              <SidebarItem onClick={() => hook.navigate("/teacher/pruebas")} icon={BookOpenText} label={isAdmin ? hook.t("teacher.pruebas.titleAll") : hook.t("teacher.pruebas.title")} iconSize={16} />
+              <SidebarItem onClick={() => hook.navigate("/teacher/pruebas")} icon={BookOpenText} label="ExÃ¡menes" iconSize={16} />
               <SidebarItem onClick={() => hook.navigate("/teacher/trabajos")} icon={BookOpenText} label={hook.t("teacher.trabajos.title", { defaultValue: "Trabajos" })} iconSize={16} />
               <SidebarItem onClick={() => hook.navigate("/teacher/trabajos/analytics")} icon={LayoutDashboard} label={hook.t("teacher.trabajos.analytics.nav", { defaultValue: "Analytics v2" })} iconSize={16} />
               <SidebarItem onClick={() => hook.navigate("/teacher/recursos")} icon={Library} label={hook.t("teacher.recursos.title", { defaultValue: "Recursos" })} iconSize={16} />
@@ -329,7 +332,7 @@ const Sidebar: FC<SidebarProps> = ({
           {/* Admin only */}
           {hook.profile && isAdmin && (
             <>
-              <SectionLabel label="Administración" />
+              <SectionLabel label="AdministraciÃ³n" />
               <SidebarItem onClick={() => hook.navigate("/admin/dashboard")} icon={LayoutDashboard} label={hook.t("admin.dashboard.title")} iconSize={16} />
               <SidebarItem onClick={() => hook.navigate("/admin/users")} icon={PersonStanding} label={hook.t("admin.users.title")} iconSize={16} />
               <SidebarItem onClick={() => hook.navigate("/admin/cursos")} icon={BookOpenText} label={hook.t("admin.cursos.title", { defaultValue: "Cursos" })} iconSize={16} />
@@ -343,6 +346,7 @@ const Sidebar: FC<SidebarProps> = ({
             <>
               <SectionLabel label="Estudiante" />
               <SidebarItem onClick={() => hook.navigate("/student/dashboard")} icon={LayoutDashboard} label="Dashboard" iconSize={16} />
+              <SidebarItem onClick={() => hook.navigate("/student/examenes")} icon={ClipboardCheck} label="Exámenes" iconSize={16} />
               <SidebarItem onClick={() => hook.navigate("/student/trabajos")} icon={BookOpenText} label={hook.t("student.trabajos.title", { defaultValue: "Mis Trabajos" })} iconSize={16} />
             </>
           )}
@@ -354,7 +358,7 @@ const Sidebar: FC<SidebarProps> = ({
             className="w-full flex items-center justify-center space-x-2 p-2.5 rounded-xl hover:bg-white/10 transition-all duration-200 text-sm text-white/60 hover:text-white"
             aria-label={hook.t("help")}
           >
-            <span>❔</span>
+            <span>â”</span>
             <span>{hook.t("help")}</span>
           </button>
         </div>
@@ -365,3 +369,4 @@ const Sidebar: FC<SidebarProps> = ({
 };
 
 export default Sidebar;
+
