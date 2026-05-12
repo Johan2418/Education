@@ -6,6 +6,7 @@ import api from "@/shared/lib/api";
 import toast from "react-hot-toast";
 import type { ModeloRA } from "@/shared/types";
 import { Plus, Pencil, Trash2, Search, Loader2 } from "lucide-react";
+import { useAppConfirm } from "@/shared/hooks/useAppConfirm";
 
 export default function AdminModelos() {
   const { t } = useTranslation();
@@ -13,6 +14,7 @@ export default function AdminModelos() {
   const [loading, setLoading] = useState(true);
   const [modelos, setModelos] = useState<ModeloRA[]>([]);
   const [search, setSearch] = useState("");
+  const { confirm } = useAppConfirm();
 
   useEffect(() => {
     (async () => {
@@ -33,7 +35,7 @@ export default function AdminModelos() {
   }, [navigate, t]);
 
   const handleDelete = async (id: string) => {
-    if (!confirm(t("common.confirmDelete", { defaultValue: "¿Estás seguro?" }))) return;
+    if (!await confirm(t("common.confirmDelete", { defaultValue: "¿Estás seguro?" }), { tone: "danger" })) return;
     try {
       await api.delete(`/modelos/${id}`);
       setModelos((prev) => prev.filter((m) => String(m.id) !== String(id)));

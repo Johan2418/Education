@@ -27,6 +27,7 @@ import {
   getTrabajo,
   revisarLibro,
 } from "@/features/trabajos/services/trabajos";
+import { useAppConfirm } from "@/shared/hooks/useAppConfirm";
 
 const WIZARD_DRAFT_KEY = "trabajos_libro_wizard_draft";
 const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
@@ -226,6 +227,7 @@ function statusBadgeClass(estado: EstadoExtraccionLibro | undefined): string {
 
 export default function TeacherTrabajoLibroWizard() {
   const { t } = useTranslation();
+  const { confirm } = useAppConfirm();
   const navigate = useNavigate();
   const { trabajoId = "" } = useParams();
   const storageKey = useMemo(() => `${WIZARD_DRAFT_KEY}:${trabajoId}`, [trabajoId]);
@@ -552,11 +554,11 @@ export default function TeacherTrabajoLibroWizard() {
   };
 
   const onConfirmar = async () => {
-    const shouldContinue = window.confirm(t("teacher.trabajos.libro.confirmPrompt", {
+    const shouldContinue = await confirm(t("teacher.trabajos.libro.confirmPrompt", {
       defaultValue: confirmReq.publicar
         ? "¿Confirmar extracción y publicar trabajo?"
         : "¿Confirmar extracción?"
-    }));
+    }), { tone: "danger" });
     if (!shouldContinue) return;
 
     setBusy(true);

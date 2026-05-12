@@ -6,6 +6,7 @@ import api from "@/shared/lib/api";
 import toast from "react-hot-toast";
 import type { Prueba, Curso, Materia, Unidad, Tema, Leccion } from "@/shared/types";
 import { Plus, Pencil, Trash2, Search, Loader2 } from "lucide-react";
+import { useAppConfirm } from "@/shared/hooks/useAppConfirm";
 
 interface PruebaConLeccion extends Prueba {
   leccion_titulo?: string;
@@ -17,6 +18,7 @@ export default function TeacherPruebas() {
   const [loading, setLoading] = useState(true);
   const [pruebas, setPruebas] = useState<PruebaConLeccion[]>([]);
   const [search, setSearch] = useState("");
+  const { confirm } = useAppConfirm();
 
   useEffect(() => {
     (async () => {
@@ -59,7 +61,7 @@ export default function TeacherPruebas() {
   }, [navigate, t]);
 
   const handleDelete = async (id: string) => {
-    if (!confirm(t("common.confirmDelete", { defaultValue: "¿Estás seguro?" }))) return;
+    if (!await confirm(t("common.confirmDelete", { defaultValue: "¿Estás seguro?" }), { tone: "danger" })) return;
     try {
       await api.delete(`/pruebas/${id}`);
       setPruebas((prev) => prev.filter((p) => p.id !== id));

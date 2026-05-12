@@ -26,6 +26,7 @@ import {
   revisarLibro,
   updateTrabajo,
 } from "@/features/trabajos/services/trabajos";
+import { useAppConfirm } from "@/shared/hooks/useAppConfirm";
 
 interface LeccionOption {
   id: string;
@@ -314,6 +315,7 @@ async function parseTxtPages(file: File, pageStart?: number): Promise<PageChunk[
 
 export default function TeacherTrabajos() {
   const { t } = useTranslation();
+  const { confirm } = useAppConfirm();
   const navigate = useNavigate();
 
   const [loading, setLoading] = useState(true);
@@ -813,7 +815,7 @@ export default function TeacherTrabajos() {
     if (reviewDirty) {
       const saved = await saveReviewProgress({ silent: true });
       if (!saved) {
-        const closeWithoutSaving = window.confirm(
+        const closeWithoutSaving = await confirm(
           t("teacher.trabajos.bookReview.discardChangesConfirm", { defaultValue: "No se pudo guardar el progreso. ¿Deseas cerrar y descartar cambios no guardados?" }),
         );
         if (!closeWithoutSaving) return;
@@ -1360,7 +1362,7 @@ export default function TeacherTrabajos() {
   };
 
   const handlePublicar = async (trabajoId: string) => {
-    if (!confirm(t("teacher.trabajos.confirmPublish", { defaultValue: "Deseas publicar este trabajo?" }))) {
+    if (!await confirm(t("teacher.trabajos.confirmPublish", { defaultValue: "Deseas publicar este trabajo?" }))) {
       return;
     }
     try {
@@ -1388,7 +1390,7 @@ export default function TeacherTrabajos() {
   };
 
   const handleCerrar = async (trabajoId: string) => {
-    if (!confirm(t("teacher.trabajos.confirmClose", { defaultValue: "Deseas cerrar este trabajo?" }))) {
+    if (!await confirm(t("teacher.trabajos.confirmClose", { defaultValue: "Deseas cerrar este trabajo?" }))) {
       return;
     }
     try {
@@ -1447,7 +1449,15 @@ export default function TeacherTrabajos() {
   };
 
   const handleEliminar = async (trabajoId: string) => {
-    if (!confirm(t("teacher.trabajos.confirmDelete", { defaultValue: "Deseas eliminar este trabajo? Esta accion no se puede deshacer." }))) {
+    if (!await confirm(
+      t("teacher.trabajos.confirmDelete", { defaultValue: "Deseas eliminar este trabajo? Esta accion no se puede deshacer." }),
+      {
+        tone: "danger",
+        title: "Eliminar trabajo",
+        confirmText: "Sí, eliminar",
+        cancelText: "Cancelar",
+      }
+    )) {
       return;
     }
     try {
@@ -2442,9 +2452,9 @@ export default function TeacherTrabajos() {
 
             <div className="p-6 border-t border-gray-100 flex justify-between items-center">
               <button
-                onClick={() => {
-                  if (selectedTrabajo && confirm("¿Estás seguro de eliminar este trabajo? Esta acción no se puede deshacer.")) {
-                    handleEliminar(selectedTrabajo.id);
+                onClick={async () => {
+                  if (selectedTrabajo) {
+                    await handleEliminar(selectedTrabajo.id);
                     setShowDetails(false);
                   }
                 }}
@@ -2585,3 +2595,4 @@ export default function TeacherTrabajos() {
     </div>
   );
 }
+

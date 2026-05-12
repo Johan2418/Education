@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { CalendarDays, Clock3, Loader2, Pencil, Plus, Trash2 } from "lucide-react";
 import toast from "react-hot-toast";
+import { useAppConfirm } from "@/shared/hooks/useAppConfirm";
 
 import { getMe } from "@/shared/lib/auth";
 import type { DocenteMateriaHorario, DocenteMateriaHorarioRequest, MisCursoDocente } from "@/shared/types";
@@ -56,6 +57,7 @@ const INITIAL_FORM: FormState = {
 
 export default function TeacherHorario() {
   const { t } = useTranslation();
+  const { confirm } = useAppConfirm();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
 
@@ -167,7 +169,7 @@ export default function TeacherHorario() {
   };
 
   const onDelete = async (id: string) => {
-    if (!confirm(t("teacher.horario.confirmDelete", { defaultValue: "Eliminar horario?" }))) return;
+    if (!await confirm(t("teacher.horario.confirmDelete", { defaultValue: "Eliminar horario?" }), { tone: "danger" })) return;
     try {
       await deleteHorarioAsignacion(id);
       setHorarios((prev) => prev.filter((x) => x.id !== id));

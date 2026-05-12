@@ -6,6 +6,7 @@ import api from "@/shared/lib/api";
 import toast from "react-hot-toast";
 import { Pencil, Trash2, Search, Plus, Loader2, Library } from "lucide-react";
 import type { Materia } from "@/shared/types";
+import { useAppConfirm } from "@/shared/hooks/useAppConfirm";
 
 export default function TeacherContents() {
   const { t } = useTranslation();
@@ -13,6 +14,7 @@ export default function TeacherContents() {
   const [loading, setLoading] = useState(true);
   const [materias, setMaterias] = useState<Materia[]>([]);
   const [search, setSearch] = useState("");
+  const { confirm } = useAppConfirm();
 
   useEffect(() => {
     (async () => {
@@ -41,7 +43,7 @@ export default function TeacherContents() {
   }, [navigate, t]);
 
   const handleDelete = async (id: string) => {
-    if (!confirm(t("common.confirmDelete", { defaultValue: "¿Estás seguro?" }))) return;
+    if (!await confirm(t("common.confirmDelete", { defaultValue: "¿Estás seguro?" }), { tone: "danger" })) return;
     try {
       await api.delete(`/materias/${id}`);
       setMaterias((prev) => prev.filter((m) => m.id !== id));

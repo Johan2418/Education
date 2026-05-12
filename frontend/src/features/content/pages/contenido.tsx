@@ -12,6 +12,7 @@ import type { Materia, Unidad, Tema, Leccion, Progreso, Prueba } from "@/shared/
 import { HierarchyViewer } from "../components/HierarchyViewer";
 import { TopicConfigurationModal } from "../components/TopicConfigurationModal";
 import { LessonFinalQuizModal } from "../components/LessonFinalQuizModal";
+import { useAppConfirm } from "@/shared/hooks/useAppConfirm";
 
 interface ApiEnvelope<T> {
   data: T;
@@ -74,6 +75,7 @@ export default function ContenidoPage() {
   const { materiaId } = useParams<{ materiaId: string }>();
   const [searchParams] = useSearchParams();
   const { t } = useTranslation();
+  const { confirm } = useAppConfirm();
   const navigate = useNavigate();
   const [materia, setMateria] = useState<Materia | null>(null);
   const [unidades, setUnidades] = useState<UnidadConTemas[]>([]);
@@ -731,7 +733,7 @@ export default function ContenidoPage() {
   }, [loadHierarchy]);
 
   const onDeleteUnidad = async (unidadId: string, nombre: string) => {
-    if (!window.confirm(
+    if (!await confirm(
       t("teacher.subjects.deleteSection.confirmUnit", {
         nombre,
         defaultValue: "¿Eliminar unidad \"{{nombre}}\" y todo su contenido? Esta acción no se puede deshacer.",
@@ -754,7 +756,7 @@ export default function ContenidoPage() {
   };
 
   const onDeleteTema = async (temaId: string, nombre: string) => {
-    if (!window.confirm(
+    if (!await confirm(
       t("teacher.subjects.deleteSection.confirmTopic", {
         nombre,
         defaultValue: "¿Eliminar tema \"{{nombre}}\" y todas sus lecciones? Esta acción no se puede deshacer.",
@@ -777,7 +779,7 @@ export default function ContenidoPage() {
   };
 
   const onDeleteLeccion = async (leccionId: string, titulo: string) => {
-    if (!window.confirm(
+    if (!await confirm(
       t("teacher.subjects.deleteSection.confirmLesson", {
         titulo,
         defaultValue: "¿Eliminar lección \"{{titulo}}\"? Esta acción no se puede deshacer.",
@@ -1750,5 +1752,6 @@ export default function ContenidoPage() {
     </div>
   );
 }
+
 
 

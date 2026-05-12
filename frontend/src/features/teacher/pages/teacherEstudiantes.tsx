@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import { getMe } from "@/shared/lib/auth";
 import api from "@/shared/lib/api";
 import toast from "react-hot-toast";
+import { useAppConfirm } from "@/shared/hooks/useAppConfirm";
 import {
   Loader2, Search, Plus, Trash2, Users, X, FileSpreadsheet,
 } from "lucide-react";
@@ -23,6 +24,7 @@ function Modal({ open, onClose, children }: { open: boolean; onClose: () => void
 
 export default function TeacherEstudiantes() {
   const { t } = useTranslation();
+  const { confirm } = useAppConfirm();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [loadingEnrolled, setLoadingEnrolled] = useState(false);
@@ -132,7 +134,7 @@ export default function TeacherEstudiantes() {
   /* ── Unenroll ───────────────────────────────────────────── */
   const handleUnenroll = async (enrollmentId: string, name: string) => {
     if (!selectedCurso) return;
-    if (!confirm(t("teacher.estudiantes.confirmUnenroll", { nombre: name, defaultValue: `¿Desinscribir a "${name}"?` }))) return;
+    if (!await confirm(t("teacher.estudiantes.confirmUnenroll", { nombre: name, defaultValue: `¿Desinscribir a "${name}"?` }), { tone: "danger" })) return;
     try {
       await api.delete(`/cursos/${selectedCurso.id}/estudiantes/${enrollmentId}`);
       setEnrolled((prev) => prev.filter((e) => e.id !== enrollmentId));

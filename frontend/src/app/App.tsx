@@ -11,6 +11,7 @@ import ResetPassword from "@/features/auth/pages/resetPassword";
 import VerifyEmail from "@/features/auth/pages/verifyEmail";
 import VisualAlert from "@/shared/components/VisualAlert";
 import { Toaster } from "react-hot-toast";
+import AppConfirmDialogProvider from "@/shared/components/AppConfirmDialogProvider";
 import SettingsPage from "@/features/settings/pages/settings";
 import ContentsPage from "@/features/content/pages/contents";
 import ContenidoPage from "@/features/content/pages/contenido";
@@ -121,7 +122,8 @@ function App() {
 
   return (
     <BrowserRouter>
-      <div className={`flex flex-col min-h-screen transition-colors duration-300 ${highContrast ? "bg-black text-yellow-300" : "bg-gray-50 text-gray-900"}`}>
+      <AppConfirmDialogProvider>
+        <div className={`flex flex-col min-h-screen transition-colors duration-300 ${highContrast ? "bg-black text-yellow-300" : "bg-gray-50 text-gray-900"}`}>
         <Navbar toggleSidebar={() => setSidebarOpen(!sidebarOpen)} sidebarOpen={sidebarOpen} highContrast={highContrast} />
 
         <div className="flex flex-1 relative">
@@ -195,7 +197,8 @@ function App() {
         </div>
 
         <Footer highContrast={highContrast} />
-      </div>
+        </div>
+      </AppConfirmDialogProvider>
     </BrowserRouter>
   );
 }

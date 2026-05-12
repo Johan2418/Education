@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import toast from "react-hot-toast";
+import { useAppConfirm } from "@/shared/hooks/useAppConfirm";
 import {
   Loader2,
   Plus,
@@ -156,6 +157,7 @@ function requiresTexto(tipo: RecursoPersonalTipo): boolean {
 }
 
 export default function TeacherRecursosPersonales() {
+  const { confirm } = useAppConfirm();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
 
@@ -257,7 +259,7 @@ export default function TeacherRecursosPersonales() {
   };
 
   const onDelete = async (item: RecursoPersonal) => {
-    const confirmed = window.confirm(`¿Eliminar el recurso "${item.titulo}"?`);
+    const confirmed = await confirm(`¿Eliminar el recurso "${item.titulo}"?`, { tone: "danger" });
     if (!confirmed) return;
 
     setSaving(true);
