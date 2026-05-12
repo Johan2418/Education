@@ -26,6 +26,19 @@ function expectsOptionsResponse(pregunta: TrabajoPregunta): boolean {
   return pregunta.respuesta_esperada_tipo === "opciones" || pregunta.tipo === "opcion_multiple" || pregunta.tipo === "verdadero_falso";
 }
 
+function formatDateTime(value: string | null | undefined): string {
+  if (!value) return "-";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "-";
+  return new Intl.DateTimeFormat(undefined, {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(date);
+}
+
 export default function StudentTrabajoDetail() {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -135,20 +148,20 @@ export default function StudentTrabajoDetail() {
 
   const handleFileUpload = async () => {
     if (!selectedFile) {
-      console.error("No file selected for upload");
       toast.error("No se ha seleccionado ningún archivo");
       return;
     }
-    console.log("Starting file upload:", selectedFile.name, selectedFile.size);
+    if (selectedFile.size > 50 * 1024 * 1024) {
+      toast.error(t("student.trabajos.maxSize", { defaultValue: "Maximo 50MB" }));
+      return;
+    }
     setUploading(true);
     try {
       const { url } = await uploadFile(selectedFile);
-      console.log("File upload successful, URL:", url);
       setArchivoUrl(url);
       setSelectedFile(null);
       toast.success(t("student.trabajos.fileUploaded", { defaultValue: "Archivo subido exitosamente" }));
     } catch (err) {
-      console.error("File upload error:", err);
       toast.error(normalizeError(err));
     } finally {
       setUploading(false);
@@ -281,6 +294,10 @@ export default function StudentTrabajoDetail() {
 
       // Auto-upload file if selectedFile is set
       if (hasFile && !hasUrl) {
+        if (selectedFile.size > 50 * 1024 * 1024) {
+          toast.error(t("student.trabajos.maxSize", { defaultValue: "Maximo 50MB" }));
+          return;
+        }
         setUploading(true);
         try {
           const { url } = await uploadFile(selectedFile);
@@ -344,8 +361,6 @@ export default function StudentTrabajoDetail() {
       setLastSavedSignature(JSON.stringify({ respuestas, comentario, archivoUrl }));
       localStorage.removeItem(draftKey);
       toast.success(t("student.trabajos.saved", { defaultValue: "Entrega guardada" }));
-      
-      // Redirect to Mis Trabajos page after successful submission
       navigate("/student/trabajos");
     } catch (err) {
       toast.error(normalizeError(err));
@@ -423,7 +438,7 @@ export default function StudentTrabajoDetail() {
           <div className="mt-3 flex items-center gap-2 text-sm text-gray-500">
             <Clock size={16} />
             <span>
-              {t("student.trabajos.due", { defaultValue: "Vence" })}: {new Date(trabajo.fecha_vencimiento).toLocaleString()}
+              {t("student.trabajos.due", { defaultValue: "Vence" })}: {formatDateTime(trabajo.fecha_vencimiento)}
             </span>
           </div>
         )}
@@ -668,7 +683,7 @@ export default function StudentTrabajoDetail() {
         <div className="flex items-center justify-between">
           <p className="text-xs text-gray-500">
             {entrega
-              ? t("student.trabajos.lastSubmit", { defaultValue: "Ultima actualizacion" }) + ": " + new Date(entrega.submitted_at).toLocaleString()
+              ? t("student.trabajos.lastSubmit", { defaultValue: "Ultima actualizacion" }) + ": " + formatDateTime(entrega.submitted_at)
               : t("student.trabajos.notSubmitted", { defaultValue: "Aun no has enviado esta entrega" })}
           </p>
 
@@ -681,7 +696,7 @@ export default function StudentTrabajoDetail() {
           )}
 
           <button
-            disabled={saving || trabajo.estado === "cerrado" || isLockedByGrade}
+            disabled={saving || !isEditable || isLockedByGrade}
             onClick={handleGuardar}
             className="inline-flex items-center gap-2 px-4 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
           >

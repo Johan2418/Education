@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { Loader2, Save, WandSparkles, Clock } from "lucide-react";
+import { Loader2, Save, Clock, Search, Filter, CheckCircle2 } from "lucide-react";
 import toast from "react-hot-toast";
 
 import { getMe } from "@/shared/lib/auth";
@@ -33,6 +33,8 @@ export default function TeacherTrabajoCalificar() {
   const [selectedEntrega, setSelectedEntrega] = useState<string>("");
   const [detalle, setDetalle] = useState<EntregaDetalleResponse | null>(null);
   const [loadingDetalle, setLoadingDetalle] = useState(false);
+  const [searchEntrega, setSearchEntrega] = useState("");
+  const [estadoFiltro, setEstadoFiltro] = useState<"all" | "calificada" | "pendiente">("all");
 
   const [items, setItems] = useState<CalificarEntregaPreguntaItem[]>([]);
   const [feedbackGeneral, setFeedbackGeneral] = useState("");
@@ -44,10 +46,40 @@ export default function TeacherTrabajoCalificar() {
   const [imagePan, setImagePan] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+  const [autoGradedEntregas, setAutoGradedEntregas] = useState<Record<string, boolean>>({});
 
   const selected = useMemo(() => entregas.find((item) => item.entrega.id === selectedEntrega), [entregas, selectedEntrega]);
+  const entregasFiltradas = useMemo(() => {
+    const q = searchEntrega.trim().toLowerCase();
+    return entregas.filter((item) => {
+      const matchesEstado =
+        estadoFiltro === "all" ||
+        (estadoFiltro === "calificada" && Boolean(item.calificacion)) ||
+        (estadoFiltro === "pendiente" && !item.calificacion);
+      const matchesSearch =
+        q.length === 0 ||
+        (item.estudiante_nombre || "").toLowerCase().includes(q) ||
+        (item.estudiante_email || "").toLowerCase().includes(q) ||
+        (item.entrega.estudiante_id || "").toLowerCase().includes(q);
+      return matchesEstado && matchesSearch;
+    });
+  }, [entregas, estadoFiltro, searchEntrega]);
+
+  const resumenEntregas = useMemo(() => {
+    const total = entregas.length;
+    const calificadas = entregas.filter((item) => Boolean(item.calificacion)).length;
+    return { total, calificadas, pendientes: total - calificadas };
+  }, [entregas]);
 
   const totalPuntaje = useMemo(() => items.reduce((acc, item) => acc + (Number.isFinite(item.puntaje) ? item.puntaje : 0), 0), [items]);
+  const isFileBased = useMemo(
+    () => (detalle?.preguntas.length ?? 0) === 0 || trabajo?.tipo_trabajo === "archivo",
+    [detalle?.preguntas.length, trabajo?.tipo_trabajo],
+  );
+  const isClosedAuto = useMemo(
+    () => !isFileBased && Boolean(trabajo?.calificacion_automatica),
+    [isFileBased, trabajo?.calificacion_automatica],
+  );
 
   const loadData = useCallback(async () => {
     if (!trabajoId) return;
@@ -152,9 +184,6 @@ export default function TeacherTrabajoCalificar() {
       return;
     }
 
-    // Check if it's a file-based assignment (no questions or tipo_trabajo is "archivo")
-    const isFileBased = detalle.preguntas.length === 0 || trabajo?.tipo_trabajo === "archivo";
-
     if (!isFileBased) {
       if (items.length === 0) {
         toast.error(t("teacher.trabajos.gradeByQuestion.minItems", { defaultValue: "Debes calificar al menos una pregunta" }));
@@ -225,7 +254,7 @@ export default function TeacherTrabajoCalificar() {
     }
   };
 
-  const handleAutoCalificar = async () => {
+  const handleAutoCalificar = async (silent = false) => {
     if (!selected) {
       toast.error(t("teacher.trabajos.selectEntrega", { defaultValue: "Selecciona una entrega" }));
       return;
@@ -249,7 +278,10 @@ export default function TeacherTrabajoCalificar() {
       }));
 
       await loadData();
-      toast.success(updated.entrega.estado === "calificada" ? "Autocalificación completada y entrega calificada" : "Autocalificación aplicada en preguntas cerradas");
+      setAutoGradedEntregas((prev) => ({ ...prev, [selected.entrega.id]: true }));
+      if (!silent) {
+        toast.success(updated.entrega.estado === "calificada" ? "Autocalificacion completada y entrega calificada" : "Autocalificacion aplicada en preguntas cerradas");
+      }
     } catch (err) {
       toast.error(normalizeError(err));
     } finally {
@@ -257,6 +289,12 @@ export default function TeacherTrabajoCalificar() {
     }
   };
 
+
+  useEffect(() => {
+    if (!selected || !detalle || !isClosedAuto || autoGrading) return;
+    if (autoGradedEntregas[selected.entrega.id]) return;
+    void handleAutoCalificar(true);
+  }, [autoGradedEntregas, autoGrading, detalle, isClosedAuto, selected]);
   const handleFilePreview = async (fileUrl: string) => {
     const BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:9082";
     const fullUrl = fileUrl.startsWith('http') ? fileUrl : `${BASE_URL}${fileUrl}`;
@@ -321,12 +359,44 @@ export default function TeacherTrabajoCalificar() {
           </div>
           <button className="text-sm text-blue-600" onClick={() => navigate("/teacher/trabajos")}>{t("common.back", { defaultValue: "Volver" })}</button>
         </div>
+        <div className="grid grid-cols-3 gap-2 mb-3">
+          <div className="rounded border border-slate-200 bg-slate-50 p-2">
+            <p className="text-[11px] text-slate-600">Total</p>
+            <p className="text-base font-semibold text-slate-900">{resumenEntregas.total}</p>
+          </div>
+          <div className="rounded border border-emerald-200 bg-emerald-50 p-2">
+            <p className="text-[11px] text-emerald-700">Calificadas</p>
+            <p className="text-base font-semibold text-emerald-900">{resumenEntregas.calificadas}</p>
+          </div>
+          <div className="rounded border border-amber-200 bg-amber-50 p-2">
+            <p className="text-[11px] text-amber-700">Pendientes</p>
+            <p className="text-base font-semibold text-amber-900">{resumenEntregas.pendientes}</p>
+          </div>
+        </div>
+        <div className="mb-3 space-y-2">
+          <div className="relative">
+            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+            <input
+              aria-label="Buscar entrega"
+              className="w-full border border-gray-300 rounded-lg py-2 pl-9 pr-3 text-sm"
+              value={searchEntrega}
+              onChange={(e) => setSearchEntrega(e.target.value)}
+              placeholder="Buscar por estudiante o email"
+            />
+          </div>
+          <div className="flex items-center gap-2">
+            <Filter size={14} className="text-gray-500" />
+            <button type="button" onClick={() => setEstadoFiltro("all")} className={`px-2.5 py-1 text-xs rounded-full border ${estadoFiltro === "all" ? "bg-slate-800 text-white border-slate-800" : "bg-white border-gray-300 text-gray-700"}`}>Todas</button>
+            <button type="button" onClick={() => setEstadoFiltro("pendiente")} className={`px-2.5 py-1 text-xs rounded-full border ${estadoFiltro === "pendiente" ? "bg-amber-600 text-white border-amber-600" : "bg-white border-gray-300 text-gray-700"}`}>Pendientes</button>
+            <button type="button" onClick={() => setEstadoFiltro("calificada")} className={`px-2.5 py-1 text-xs rounded-full border ${estadoFiltro === "calificada" ? "bg-emerald-600 text-white border-emerald-600" : "bg-white border-gray-300 text-gray-700"}`}>Calificadas</button>
+          </div>
+        </div>
 
         {entregas.length === 0 ? (
           <div className="text-center text-gray-500 py-10">{t("teacher.trabajos.noEntregas", { defaultValue: "No hay entregas para este trabajo" })}</div>
         ) : (
           <div className="space-y-2">
-            {entregas.map((item) => {
+            {entregasFiltradas.map((item) => {
               const isSelected = item.entrega.id === selectedEntrega;
               return (
                 <button
@@ -354,6 +424,9 @@ export default function TeacherTrabajoCalificar() {
                 </button>
               );
             })}
+            {entregasFiltradas.length === 0 && (
+              <div className="text-center text-gray-500 py-6 text-sm">No hay entregas para los filtros seleccionados.</div>
+            )}
           </div>
         )}
       </div>
@@ -439,8 +512,10 @@ export default function TeacherTrabajoCalificar() {
                         value={item.puntaje}
                         onChange={(e) => {
                           const value = Number(e.target.value || 0);
+                          if (isClosedAuto) return;
                           setItems((prev) => prev.map((it) => it.pregunta_id === pregunta.id ? { ...it, puntaje: value } : it));
                         }}
+                        disabled={isClosedAuto}
                       />
                     </label>
 
@@ -500,7 +575,10 @@ export default function TeacherTrabajoCalificar() {
                   max={100}
                   className="w-full border border-gray-300 rounded px-3 py-2"
                   value={manualScore}
-                  onChange={(e) => setManualScore(Number(e.target.value || 0))}
+                  onChange={(e) => {
+                    const value = Number(e.target.value || 0);
+                    setManualScore(Math.min(100, Math.max(0, value)));
+                  }}
                 />
               </div>
             ) : (
@@ -543,23 +621,24 @@ export default function TeacherTrabajoCalificar() {
               </div>
             )}
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <div className="space-y-2">
+              {isClosedAuto && (
+                <div className="inline-flex items-center gap-2 text-xs px-2.5 py-1.5 rounded-full bg-emerald-100 text-emerald-800">
+                  <CheckCircle2 size={13} />
+                  Calificacion automatica aplicada segun configuracion del docente
+                </div>
+              )}
               <button
-                disabled={autoGrading}
-                onClick={handleAutoCalificar}
-                className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded bg-amber-500 text-white hover:bg-amber-600 disabled:opacity-50"
-              >
-                <WandSparkles size={14} />
-                {autoGrading ? "Autocalificando..." : "Autocalificar cerradas"}
-              </button>
-
-              <button
-                disabled={saving}
+                disabled={saving || autoGrading}
                 onClick={handleGuardar}
                 className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
               >
                 <Save size={14} />
-                {saving ? t("common.saving", { defaultValue: "Guardando..." }) : t("teacher.trabajos.saveGrade", { defaultValue: "Guardar calificacion" })}
+                {saving
+                  ? t("common.saving", { defaultValue: "Guardando..." })
+                  : isClosedAuto
+                    ? "Guardar comentarios"
+                    : t("teacher.trabajos.saveGrade", { defaultValue: "Guardar calificacion" })}
               </button>
             </div>
           </div>
@@ -680,3 +759,6 @@ export default function TeacherTrabajoCalificar() {
     </div>
   );
 }
+
+
+

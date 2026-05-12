@@ -395,11 +395,13 @@ export default function TeacherTrabajos() {
     const cursosRes = await api.get<{ data: Curso[] }>("/cursos");
     const cursos = cursosRes.data || [];
 
-    // Cargar materias del profesor usando cursos existentes
+    // Cargar materias del profesor usando cursos existentes y reusar cache por curso.
     const allMaterias: Materia[] = [];
+    const materiasByCurso = new Map<string, Materia[]>();
     for (const curso of cursos) {
       const materiasRes = await api.get<{ data: Materia[] }>(`/cursos/${curso.id}/materias`);
       const materias = materiasRes.data || [];
+      materiasByCurso.set(curso.id, materias);
       allMaterias.push(...materias);
     }
     setMaterias(allMaterias);
@@ -408,8 +410,7 @@ export default function TeacherTrabajos() {
     const allTrabajos: TrabajoRow[] = [];
 
     for (const curso of cursos) {
-      const materiasRes = await api.get<{ data: Materia[] }>(`/cursos/${curso.id}/materias`);
-      const materias = materiasRes.data || [];
+      const materias = materiasByCurso.get(curso.id) || [];
 
       for (const materia of materias) {
         // Cargar trabajos por materia
@@ -472,7 +473,13 @@ export default function TeacherTrabajos() {
     }
 
     setLecciones(allLecciones);
-    setTrabajos(allTrabajos);
+    setTrabajos(
+      allTrabajos.sort((a, b) => {
+        const dateA = new Date(a.created_at || 0).getTime();
+        const dateB = new Date(b.created_at || 0).getTime();
+        return dateB - dateA;
+      }),
+    );
     setLibroReviewMetaByTrabajo(nextReviewMetaByTrabajo);
 
     setNewTrabajo((prev) => {
@@ -502,13 +509,28 @@ export default function TeacherTrabajos() {
   const filtered = useMemo(() => {
     const q = search.toLowerCase();
     return trabajos.filter((trabajo) => {
-      return (
+      const matchesMateria = !selectedMateria || trabajo.materia_id === selectedMateria;
+      const matchesSearch =
         (trabajo.titulo || "").toLowerCase().includes(q) ||
+        (trabajo.descripcion || "").toLowerCase().includes(q) ||
+        (trabajo.materia_titulo || "").toLowerCase().includes(q) ||
         (trabajo.leccion_titulo || "").toLowerCase().includes(q) ||
-        (trabajo.estado || "").toLowerCase().includes(q)
-      );
+        (trabajo.estado || "").toLowerCase().includes(q);
+      return matchesMateria && matchesSearch;
     });
-  }, [search, trabajos]);
+  }, [search, selectedMateria, trabajos]);
+
+  const trabajosSummary = useMemo(() => {
+    let publicados = 0;
+    let borradores = 0;
+    let cerrados = 0;
+    for (const trabajo of filtered) {
+      if (trabajo.estado === "publicado") publicados += 1;
+      else if (trabajo.estado === "cerrado") cerrados += 1;
+      else borradores += 1;
+    }
+    return { total: filtered.length, publicados, borradores, cerrados };
+  }, [filtered]);
 
   const isPendingManualReview = useCallback((trabajo: TrabajoRow): boolean => {
     if (!trabajo.extraido_de_libro || !trabajo.id_extraccion || trabajo.estado !== "borrador") {
@@ -1546,6 +1568,24 @@ export default function TeacherTrabajos() {
             <span>{t("teacher.trabajos.materiaSelected", { defaultValue: "Los estudiantes de esta materia verán este trabajo" })}</span>
           </div>
         )}
+      </div>
+      <div className="mb-5 grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div className="rounded-lg border border-slate-200 bg-white p-3">
+          <p className="text-xs text-slate-500">{t("common.total", { defaultValue: "Total" })}</p>
+          <p className="text-xl font-semibold text-slate-900">{trabajosSummary.total}</p>
+        </div>
+        <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3">
+          <p className="text-xs text-emerald-700">{t("teacher.trabajos.published", { defaultValue: "Publicados" })}</p>
+          <p className="text-xl font-semibold text-emerald-900">{trabajosSummary.publicados}</p>
+        </div>
+        <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
+          <p className="text-xs text-amber-700">{t("teacher.trabajos.draft", { defaultValue: "Borradores" })}</p>
+          <p className="text-xl font-semibold text-amber-900">{trabajosSummary.borradores}</p>
+        </div>
+        <div className="rounded-lg border border-slate-300 bg-slate-100 p-3">
+          <p className="text-xs text-slate-700">{t("teacher.trabajos.closed", { defaultValue: "Cerrados" })}</p>
+          <p className="text-xl font-semibold text-slate-900">{trabajosSummary.cerrados}</p>
+        </div>
       </div>
 
       {pendingManualReviewTrabajos.length > 0 && (

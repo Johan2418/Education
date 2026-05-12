@@ -313,14 +313,21 @@ export default function TeacherTrabajoPreguntas() {
       </button>
 
       <div className="bg-white rounded-lg shadow p-4">
-        <h1 className="text-2xl font-bold">Banco de preguntas</h1>
-        <p className="text-sm text-gray-500 mt-1">{trabajo?.titulo}</p>
-        <p className="text-sm text-gray-500">Puntaje total configurado: {totalPuntaje.toFixed(2)}</p>
+        <div className="flex items-start justify-between gap-3 flex-wrap">
+          <div>
+            <h1 className="text-2xl font-bold">Banco de preguntas</h1>
+            <p className="text-sm text-gray-500 mt-1">{trabajo?.titulo}</p>
+          </div>
+          <span className={`text-xs px-2.5 py-1 rounded-full ${trabajo?.calificacion_automatica ? "bg-emerald-100 text-emerald-700" : "bg-blue-100 text-blue-700"}`}>
+            {trabajo?.calificacion_automatica ? "Cerrada (autocalificable)" : "Abierta (revision manual)"}
+          </span>
+        </div>
+        <p className="text-sm text-gray-500 mt-2">Puntaje total configurado: {totalPuntaje.toFixed(2)}</p>
       </div>
 
       <div className="space-y-3">
         {preguntas.map((pregunta, index) => (
-          <div key={`pregunta-${index}`} className="bg-white rounded-lg shadow p-4 space-y-3 border border-gray-100">
+          <div key={`pregunta-${index}`} className="bg-white rounded-xl shadow p-4 space-y-3 border border-gray-100">
             <div className="flex items-center justify-between">
               <h2 className="font-semibold">Pregunta {index + 1}</h2>
               <button
@@ -337,7 +344,7 @@ export default function TeacherTrabajoPreguntas() {
               Enunciado
               <textarea
                 rows={2}
-                className="mt-1 w-full border rounded px-3 py-2"
+                className="mt-1 w-full border rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 value={pregunta.texto}
                 onChange={(e) => handleChange(index, { texto: e.target.value })}
               />
@@ -347,7 +354,7 @@ export default function TeacherTrabajoPreguntas() {
               <label className="text-sm block">
                 Tipo
                 <select
-                  className="mt-1 w-full border rounded px-3 py-2"
+                  className="mt-1 w-full border rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
                   value={pregunta.tipo}
                   onChange={(e) => handleChangeTipo(index, e.target.value as TrabajoPreguntaInput["tipo"])}
                 >
@@ -368,7 +375,7 @@ export default function TeacherTrabajoPreguntas() {
                   type="number"
                   min={0.1}
                   step="0.1"
-                  className="mt-1 w-full border rounded px-3 py-2"
+                  className="mt-1 w-full border rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
                   value={pregunta.puntaje_maximo ?? 1}
                   onChange={(e) => handleChange(index, { puntaje_maximo: Number(e.target.value || 1) })}
                 />
@@ -377,7 +384,7 @@ export default function TeacherTrabajoPreguntas() {
               <label className="text-sm block">
                 Placeholder
                 <input
-                  className="mt-1 w-full border rounded px-3 py-2"
+                  className="mt-1 w-full border rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
                   value={pregunta.placeholder || ""}
                   onChange={(e) => handleChange(index, { placeholder: e.target.value })}
                 />
@@ -385,11 +392,12 @@ export default function TeacherTrabajoPreguntas() {
             </div>
 
             {isClosedType(pregunta.tipo) && (
-              <div className="mt-3 space-y-2">
+              <div className="mt-3 space-y-2 rounded-lg border border-slate-200 bg-slate-50 p-3">
+                <p className="text-xs font-medium text-slate-700">Opciones y respuesta correcta</p>
                 {pregunta.tipo === "verdadero_falso" ? (
                   <div className="space-y-2">
                     {(pregunta.optionDrafts || []).map((option) => (
-                      <div key={option.localId} className="flex items-center gap-2">
+                      <div key={option.localId} className="flex items-center gap-2 rounded border border-slate-200 bg-white px-2 py-1.5">
                         <input
                           type="radio"
                           name={`correct-${index}`}
@@ -403,7 +411,7 @@ export default function TeacherTrabajoPreguntas() {
                 ) : (
                   <>
                     {(pregunta.optionDrafts || []).map((option) => (
-                      <div key={option.localId} className="flex items-center gap-2">
+                      <div key={option.localId} className="flex items-center gap-2 rounded border border-slate-200 bg-white px-2 py-1.5">
                         <input
                           type="radio"
                           name={`correct-${index}`}
@@ -413,7 +421,7 @@ export default function TeacherTrabajoPreguntas() {
                         <input
                           value={option.text}
                           onChange={(e) => updateOption(index, option.localId, (prev) => ({ ...prev, text: e.target.value }))}
-                          className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm"
+                          className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                           placeholder="Texto de opción"
                         />
                         <button
