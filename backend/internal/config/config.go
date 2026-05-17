@@ -17,6 +17,9 @@ type Config struct {
 	Email           EmailConfig
 	HuggingFace     HuggingFaceConfig
 	LibroIA         HuggingFaceConfig
+	LibroAnalysis   HuggingFaceConfig
+	LibroMCP        HuggingFaceConfig
+	LibroModel      LibroModelConfig
 	LibreOfficePath string
 	ConversionAPI   ConversionAPIConfig
 }
@@ -28,6 +31,13 @@ type HuggingFaceConfig struct {
 	EnableFallback bool
 	BaseURL        string
 	TimeoutSeconds int
+}
+
+type LibroModelConfig struct {
+	CandidateModels  []string
+	BenchEnabled     bool
+	TrainingRevision string
+	BenchmarkBatchID string
 }
 
 type ConversionAPIConfig struct {
@@ -114,6 +124,82 @@ func Load() *Config {
 			EnableFallback: envOrDefaultBool("LIBRO_IA_ENABLE_FALLBACK", envOrDefaultBool("HUGGINGFACE_ENABLE_FALLBACK", false)),
 			BaseURL:        envOrDefault("LIBRO_IA_BASE_URL", envOrDefault("HUGGINGFACE_BASE_URL", "https://router.huggingface.co")),
 			TimeoutSeconds: envOrDefaultInt("LIBRO_IA_TIMEOUT_SECONDS", envOrDefaultInt("HUGGINGFACE_TIMEOUT_SECONDS", 30)),
+		},
+		LibroAnalysis: HuggingFaceConfig{
+			APIKey: envOrDefault(
+				"LIBRO_ANALYSIS_API_KEY",
+				envOrDefault("LIBRO_IA_API_KEY", envOrDefault("HUGGINGFACE_API_KEY", "")),
+			),
+			Model: envOrDefault(
+				"LIBRO_ANALYSIS_MODEL",
+				envOrDefault("LIBRO_IA_MODEL", envOrDefault("HUGGINGFACE_MODEL", "mistralai/Mistral-7B-Instruct-v0.3")),
+			),
+			FallbackModel: envOrDefault(
+				"LIBRO_ANALYSIS_FALLBACK_MODEL",
+				envOrDefault("LIBRO_IA_FALLBACK_MODEL", envOrDefault("HUGGINGFACE_FALLBACK_MODEL", "")),
+			),
+			EnableFallback: envOrDefaultBool(
+				"LIBRO_ANALYSIS_ENABLE_FALLBACK",
+				envOrDefaultBool("LIBRO_IA_ENABLE_FALLBACK", envOrDefaultBool("HUGGINGFACE_ENABLE_FALLBACK", false)),
+			),
+			BaseURL: envOrDefault(
+				"LIBRO_ANALYSIS_BASE_URL",
+				envOrDefault("LIBRO_IA_BASE_URL", envOrDefault("HUGGINGFACE_BASE_URL", "https://router.huggingface.co")),
+			),
+			TimeoutSeconds: envOrDefaultInt(
+				"LIBRO_ANALYSIS_TIMEOUT_SECONDS",
+				envOrDefaultInt("LIBRO_IA_TIMEOUT_SECONDS", envOrDefaultInt("HUGGINGFACE_TIMEOUT_SECONDS", 30)),
+			),
+		},
+		LibroMCP: HuggingFaceConfig{
+			APIKey: envOrDefault(
+				"LIBRO_MCP_API_KEY",
+				envOrDefault("LIBRO_IA_API_KEY", envOrDefault("HUGGINGFACE_API_KEY", "")),
+			),
+			Model: envOrDefault(
+				"LIBRO_MCP_MODEL",
+				envOrDefault("LIBRO_IA_MODEL", envOrDefault("HUGGINGFACE_MODEL", "mistralai/Mistral-7B-Instruct-v0.3")),
+			),
+			FallbackModel: envOrDefault(
+				"LIBRO_MCP_FALLBACK_MODEL",
+				envOrDefault("LIBRO_IA_FALLBACK_MODEL", envOrDefault("HUGGINGFACE_FALLBACK_MODEL", "")),
+			),
+			EnableFallback: envOrDefaultBool(
+				"LIBRO_MCP_ENABLE_FALLBACK",
+				envOrDefaultBool("LIBRO_IA_ENABLE_FALLBACK", envOrDefaultBool("HUGGINGFACE_ENABLE_FALLBACK", false)),
+			),
+			BaseURL: envOrDefault(
+				"LIBRO_MCP_BASE_URL",
+				envOrDefault("LIBRO_IA_BASE_URL", envOrDefault("HUGGINGFACE_BASE_URL", "https://router.huggingface.co")),
+			),
+			TimeoutSeconds: envOrDefaultInt(
+				"LIBRO_MCP_TIMEOUT_SECONDS",
+				envOrDefaultInt("LIBRO_IA_TIMEOUT_SECONDS", envOrDefaultInt("HUGGINGFACE_TIMEOUT_SECONDS", 30)),
+			),
+		},
+		LibroModel: LibroModelConfig{
+			CandidateModels: envOrDefaultList(
+				"OLLAMA_CANDIDATE_MODELS",
+				[]string{
+					"qwen2.5:1.5b",
+					"qwen2.5:3b",
+					"qwen2.5:latest",
+					"llama3.2:3b",
+					"phi3:mini",
+				},
+			),
+			BenchEnabled: envOrDefaultBool("LIBRO_MODEL_BENCH_ENABLED", true),
+			TrainingRevision: envOrDefault(
+				"LIBRO_MODEL_TRAINING_REVISION",
+				"2026.05.0",
+			),
+			BenchmarkBatchID: envOrDefault(
+				"LIBRO_MODEL_BENCHMARK_BATCH_ID",
+				envOrDefault(
+					"LIBRO_MODEL_TRAINING_REVISION",
+					"2026.05.0",
+				),
+			),
 		},
 		LibreOfficePath: envOrDefault("LIBREOFFICE_PATH", ""),
 		ConversionAPI: ConversionAPIConfig{
@@ -209,4 +295,35 @@ func envOrDefaultBool(key string, fallback bool) bool {
 		return false
 	}
 	return fallback
+}
+
+func envOrDefaultList(key string, fallback []string) []string {
+	raw := strings.TrimSpace(os.Getenv(key))
+	if raw == "" {
+		copied := make([]string, len(fallback))
+		copy(copied, fallback)
+		return copied
+	}
+
+	parts := strings.Split(raw, ",")
+	out := make([]string, 0, len(parts))
+	seen := make(map[string]struct{}, len(parts))
+	for _, part := range parts {
+		item := strings.TrimSpace(part)
+		if item == "" {
+			continue
+		}
+		if _, ok := seen[item]; ok {
+			continue
+		}
+		seen[item] = struct{}{}
+		out = append(out, item)
+	}
+
+	if len(out) == 0 {
+		copied := make([]string, len(fallback))
+		copy(copied, fallback)
+		return copied
+	}
+	return out
 }

@@ -1633,4 +1633,143 @@
       "admin": "Administrador"
     }
   }
+,
+  "sidebar.teacherSection": "Seccion docente",
+  "sidebar.adminTeacherSection": "Seccion docente y administracion",
+  "sidebar.studentSection": "Seccion estudiante",
+  "sidebar.administration": "Administracion",
+  "sidebar.dashboard": "Panel del estudiante",
+  "sidebar.exams": "Examenes",
+  "sidebar.importStudents": "Importar estudiantes",
+  "sidebar.createAccountsBulk": "Crear cuentas masivamente",
+  "sidebar.enrollStudentsBulk": "Inscribir estudiantes masivamente",
+  "sidebar.loginToViewCourses": "Inicia sesion para ver tus cursos",
+  "sidebar.noEnrolledSubjects": "No tienes materias inscritas todavia.",
+  "sidebar.noAssignedSubjects": "No tienes materias asignadas todavia.",
+  "sidebar.noCoursesRegistered": "No hay cursos registrados.",
+  "sidebar.noSubjectsInCourse": "No hay materias en este curso.",
+  "sidebar.showSubjects": "Mostrar materias",
+  "sidebar.hideSubjects": "Ocultar materias",
+  "student.exams.title": "Examenes",
+  "student.exams.subtitle": "Revisa tus evaluaciones disponibles y sus resultados.",
+  "student.exams.summary.published": "Publicados",
+  "student.exams.summary.active": "Activos",
+  "student.exams.summary.scheduled": "Programados",
+  "student.exams.summary.solved": "Resueltos",
+  "student.exams.empty": "Aun no tienes examenes publicados.",
+  "student.exams.status.active": "Activo",
+  "student.exams.status.scheduled": "Programado",
+  "student.exams.status.inactive": "Inactivo",
+  "student.exams.subject": "Materia",
+  "student.exams.noSubject": "Sin materia",
+  "student.exams.activation": "Activacion",
+  "student.exams.resultScore": "Tu puntaje: {{score}}%",
+  "student.exams.resultPending": "Resultado pendiente de publicacion",
+  "student.exams.unsolved": "Aun no resuelto",
+  "student.exams.minimum": "Minimo",
+  "student.exams.review": "Revisar",
+  "student.exams.solve": "Resolver",
+  "teacher.bulkImport.title": "Importacion masiva de estudiantes",
+  "teacher.bulkImport.subtitle": "Sube un archivo para inscribir estudiantes en tu curso.",
+  "teacher.bulkImport.course": "Curso",
+  "teacher.bulkImport.backToStudents": "Volver a estudiantes",
+  "teacher.bulkImport.upload.dragHere": "Arrastra tu archivo aqui",
+  "teacher.bulkImport.upload.orClick": "o haz clic para seleccionarlo",
+  "teacher.bulkImport.upload.selectFile": "Seleccionar archivo",
+  "teacher.bulkImport.mapping.title": "Mapeo de columnas",
+  "teacher.bulkImport.mapping.minField": "Debes mapear al menos nombre o correo electronico.",
+  "teacher.bulkImport.preview.title": "Vista previa",
+  "teacher.bulkImport.preview.showing": "Mostrando las primeras 50 de {{count}} filas",
+  "teacher.bulkImport.preview.importAction": "Importar estudiantes",
+  "teacher.bulkImport.importing.title": "Importando estudiantes...",
+  "teacher.bulkImport.importing.hint": "Estamos procesando el archivo. Esto puede tomar unos segundos.",
+  "teacher.bulkImport.results.enrolled": "Inscritos",
+  "teacher.bulkImport.results.skipped": "Omitidos",
+  "teacher.bulkImport.results.notFound": "No encontrados",
+  "teacher.bulkImport.results.enrolledList": "Estudiantes inscritos",
+  "teacher.bulkImport.results.notFoundList": "Estudiantes no encontrados",
+  "teacher.bulkImport.results.notFoundHint": "Verifica que el correo o la cedula existan en la plataforma.",
+  "teacher.bulkImport.results.skippedList": "Estudiantes omitidos",
+  "teacher.bulkImport.goToStudents": "Ir a estudiantes",
+  "teacher.bulkImport.newImport": "Nueva importacion",
+  "teacher.bulkImport.noCourse.title": "No tienes cursos asignados",
+  "teacher.bulkImport.noCourse.hint": "Solicita a un administrador que te asigne un curso antes de importar estudiantes.",
+  "teacher.bulkImport.errors.loadData": "No se pudieron cargar los datos iniciales.",
+  "teacher.bulkImport.errors.noSheets": "El archivo no contiene hojas.",
+  "teacher.bulkImport.errors.unreadableSheet": "No se pudo leer la primera hoja.",
+  "teacher.bulkImport.errors.emptyFile": "El archivo esta vacio.",
+  "teacher.bulkImport.errors.readExcel": "No se pudo leer el archivo de Excel.",
+  "teacher.bulkImport.errors.aiMapping": "Fallo el mapeo automatico de columnas.",
+  "teacher.bulkImport.errors.importStudents": "No se pudieron importar los estudiantes.",
+  "teacher.subjects.grading.status.approved": "Aprobada",
+  "teacher.subjects.grading.status.failed": "Reprobada",
+  "teacher.subjects.grading.status.notCompleted": "Materia no completada",
+  "teacher.subjects.grading.status.ungraded": "Sin calificar",
+  "teacher.workQuestionBank.back": "Volver a trabajos",
+  "teacher.workQuestionBank.title": "Banco de preguntas",
+  "teacher.workQuestionBank.closed": "Calificacion automatica",
+  "teacher.workQuestionBank.open": "Calificacion manual",
+  "teacher.workQuestionBank.totalScore": "Puntaje total",
+  "teacher.workQuestionBank.question": "Pregunta",
+  "teacher.workQuestionBank.delete": "Eliminar",
+  "teacher.workQuestionBank.statement": "Enunciado",
+  "teacher.workQuestionBank.type": "Tipo de pregunta",
+  "teacher.workQuestionBank.types.multipleChoice": "Opcion multiple",
+  "teacher.workQuestionBank.types.trueFalse": "Verdadero / Falso",
+  "teacher.workQuestionBank.types.shortAnswer": "Respuesta corta",
+  "teacher.workQuestionBank.maxScore": "Puntaje maximo",
+  "teacher.workQuestionBank.placeholder": "Texto de ayuda para respuesta",
+  "teacher.workQuestionBank.optionsAndCorrect": "Opciones y respuesta correcta",
+  "teacher.workQuestionBank.optionText": "Texto de la opcion",
+  "teacher.workQuestionBank.addOption": "Agregar opcion",
+  "teacher.workQuestionBank.addQuestion": "Agregar pregunta",
+  "teacher.workQuestionBank.saving": "Guardando...",
+  "teacher.workQuestionBank.save": "Guardar banco de preguntas",
+  "teacher.workQuestionBank.toasts.updated": "Banco de preguntas actualizado."
+,
+  "dashboard.loadError": "Error al cargar el panel de estudiante"
+,
+  "teacher.recursos.title": "Recursos"
+,
+  "teacher.recursos.personal.title": "Recursos personales"
+,
+  "student.dashboard.welcome": "Hola"
+,
+  "student.dashboard.subtitle": "Continua tu camino de aprendizaje"
+,
+  "student.dashboard.completedLessons": "Lecciones completadas"
+,
+  "student.dashboard.pendingLessons": "Lecciones pendientes"
+,
+  "student.dashboard.averageScore": "Promedio de puntaje"
+,
+  "student.dashboard.pendingTasks": "Trabajos pendientes"
+,
+  "student.dashboard.approvedSubjects": "Materias aprobadas"
+,
+  "student.dashboard.history": "Historial"
+,
+  "student.dashboard.lastLesson": "Ultima leccion vista"
+,
+  "student.dashboard.lastAccess": "Ultimo acceso"
+,
+  "student.dashboard.lastScore": "Ultimo puntaje"
+,
+  "student.dashboard.continue": "Continuar aprendiendo"
+,
+  "student.dashboard.noHistory": "Aun no has iniciado ninguna leccion"
+,
+  "student.dashboard.quickStats": "Resumen rapido"
+,
+  "student.dashboard.totalLessons": "Lecciones disponibles"
+,
+  "student.dashboard.totalProgress": "Lecciones progresadas"
+,
+  "student.dashboard.enrolledSubjects": "Materias matriculadas"
+,
+  "student.dashboard.noFollowedContent": "No has iniciado ninguna leccion aun"
+,
+  "student.dashboard.noFollowedContentDesc": "Explora los contenidos disponibles para comenzar a aprender."
+,
+  "student.dashboard.browseContents": "Explorar contenidos"
 }

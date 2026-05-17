@@ -51,3 +51,8 @@ VALIDACION_LIMPIEZA_UI_VIEJAS.md
 CHANGES_SUMMARY.md
 
 trabajos-server
+
+tmp_*.txt
+tmp_*.ps1
+tmp_*.csv
+tmp_*.json

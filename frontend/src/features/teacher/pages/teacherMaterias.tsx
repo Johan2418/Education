@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+﻿import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { BookOpen, ChevronRight, Link2, Loader2, Paperclip, Plus, Search, SlidersHorizontal, X } from "lucide-react";
@@ -47,16 +47,16 @@ function estadoBadge(estado: string): string {
   }
 }
 
-function estadoLabel(estado: string): string {
+function estadoLabel(estado: string, t: (key: string, opts?: any) => string): string {
   switch (estado) {
     case "aprobada":
-      return "Aprobada";
+      return t("teacher.subjects.grading.status.approved");
     case "reprobada":
-      return "Reprobada";
+      return t("teacher.subjects.grading.status.failed");
     case "materia_no_completada":
-      return "Materia no completada";
+      return t("teacher.subjects.grading.status.notCompleted");
     default:
-      return "Sin calificar";
+      return t("teacher.subjects.grading.status.ungraded");
   }
 }
 
@@ -174,6 +174,12 @@ export default function TeacherMaterias() {
     setGradingData(null);
   };
 
+  const pesoContenidosInput = Number(gradingConfig.peso_contenidos_pct || 0);
+  const pesoExamenesInput = Number(gradingConfig.peso_lecciones_pct || 0);
+  const pesoTrabajosInput = Number(gradingConfig.peso_trabajos_pct || 0);
+  const totalPonderacion = pesoContenidosInput + pesoExamenesInput + pesoTrabajosInput;
+  const ponderacionValida = Math.abs(totalPonderacion - 100) <= 0.001;
+
   const handleSaveConfig = async () => {
     if (!gradingTarget) return;
 
@@ -184,23 +190,23 @@ export default function TeacherMaterias() {
     const puntajeMinimo = Number(gradingConfig.puntaje_minimo_aprobacion);
 
     if ([pesoContenidos, pesoLecciones, pesoTrabajos, puntajeTotal, puntajeMinimo].some((n) => !Number.isFinite(n))) {
-      toast.error("Todos los campos deben ser numéricos");
+      toast.error("Todos los campos deben ser numÃ©ricos");
       return;
     }
     if (pesoContenidos < 0 || pesoLecciones < 0 || pesoTrabajos < 0) {
-      toast.error("Las ponderaciones no pueden ser negativas");
+      toast.error(t("teacher.subjects.grading.errors.nonNegative", { defaultValue: "Las ponderaciones no pueden ser negativas" }));
       return;
     }
     if (Math.abs(pesoContenidos + pesoLecciones + pesoTrabajos - 100) > 0.001) {
-      toast.error("La suma de ponderaciones debe ser 100%");
+      toast.error(t("teacher.subjects.grading.errors.sum100", { defaultValue: "La suma de ponderaciones debe ser 100%" }));
       return;
     }
     if (puntajeTotal <= 0) {
-      toast.error("El puntaje total debe ser mayor a 0");
+      toast.error(t("teacher.subjects.grading.errors.totalPositive", { defaultValue: "El puntaje total debe ser mayor a 0" }));
       return;
     }
     if (puntajeMinimo < 0 || puntajeMinimo > puntajeTotal) {
-      toast.error("El mínimo de aprobación debe estar entre 0 y el puntaje total");
+      toast.error(t("teacher.subjects.grading.errors.minBetween", { defaultValue: "El m?nimo de aprobaci?n debe estar entre 0 y el puntaje total" }));
       return;
     }
 
@@ -216,7 +222,7 @@ export default function TeacherMaterias() {
 
       const refreshed = await getMateriaCalificaciones(gradingTarget.materia_id);
       setGradingData(refreshed);
-      toast.success("Configuración guardada");
+      toast.success("ConfiguraciÃ³n guardada");
     } catch (err) {
       toast.error(normalizeError(err));
     } finally {
@@ -309,7 +315,7 @@ export default function TeacherMaterias() {
 
                   <button type="button" onClick={() => openCalificaciones(item)} className="w-full inline-flex items-center justify-center gap-2 rounded-lg bg-amber-500 text-white px-3 py-2 text-sm font-medium hover:bg-amber-600 transition">
                     <SlidersHorizontal size={15} />
-                    Calificaciones
+                    {t("teacher.subjects.actions.grades", { defaultValue: "Calificaciones" })}
                   </button>
 
                   <button type="button" onClick={() => openVistaTemas(item)} className="w-full inline-flex items-center justify-center gap-2 rounded-lg border border-slate-300 text-slate-700 px-3 py-2 text-sm font-medium hover:bg-slate-50 transition">
@@ -329,8 +335,8 @@ export default function TeacherMaterias() {
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-5xl max-h-[90vh] overflow-hidden">
             <div className="flex items-center justify-between border-b px-4 py-3">
               <div>
-                <h3 className="font-semibold text-lg">Calificaciones y ponderación</h3>
-                <p className="text-sm text-gray-500">{gradingTarget?.materia_nombre} · {gradingTarget?.curso_nombre}</p>
+                <h3 className="font-semibold text-lg">{t("teacher.subjects.grading.title", { defaultValue: "Calificaciones y ponderaci?n" })}</h3>
+                <p className="text-sm text-gray-500">{gradingTarget?.materia_nombre} Â· {gradingTarget?.curso_nombre}</p>
               </div>
               <button type="button" onClick={closeCalificaciones} className="p-2 rounded hover:bg-gray-100">
                 <X size={18} />
@@ -343,51 +349,53 @@ export default function TeacherMaterias() {
               </div>
             ) : (
               <div className="p-4 space-y-4 overflow-auto max-h-[calc(90vh-64px)]">
+                <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                  Contenidos = unidades/temas/contenidos, Exámenes = pruebas del estudiante, Trabajos = tareas asignadas por el docente.
+                </div>
                 <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
                   <label className="text-sm">
-                    Contenidos (%)
+                    {t("teacher.subjects.grading.weights.contents", { defaultValue: "Contenidos (%)" })}
                     <input type="number" className="mt-1 w-full border rounded px-3 py-2" value={gradingConfig.peso_contenidos_pct} onChange={(e) => setGradingConfig((p) => ({ ...p, peso_contenidos_pct: e.target.value }))} />
                   </label>
                   <label className="text-sm">
-                    Lecciones (%)
+                    {t("teacher.subjects.grading.weights.lessons", { defaultValue: "Exámenes (%)" })}
                     <input type="number" className="mt-1 w-full border rounded px-3 py-2" value={gradingConfig.peso_lecciones_pct} onChange={(e) => setGradingConfig((p) => ({ ...p, peso_lecciones_pct: e.target.value }))} />
                   </label>
                   <label className="text-sm">
-                    Trabajos (%)
+                    {t("teacher.subjects.grading.weights.tasks", { defaultValue: "Trabajos (%)" })}
                     <input type="number" className="mt-1 w-full border rounded px-3 py-2" value={gradingConfig.peso_trabajos_pct} onChange={(e) => setGradingConfig((p) => ({ ...p, peso_trabajos_pct: e.target.value }))} />
                   </label>
                   <label className="text-sm">
-                    Puntaje total
+                    {t("teacher.subjects.grading.totalScore", { defaultValue: "Puntaje total" })}
                     <input type="number" className="mt-1 w-full border rounded px-3 py-2" value={gradingConfig.puntaje_total} onChange={(e) => setGradingConfig((p) => ({ ...p, puntaje_total: e.target.value }))} />
                   </label>
-                  <label className="text-sm">
-                    Mínimo aprobación
+                  <label className="text-sm">                    {t("teacher.subjects.grading.minApproval", { defaultValue: "Mínimo aprobación" })}
                     <input type="number" className="mt-1 w-full border rounded px-3 py-2" value={gradingConfig.puntaje_minimo_aprobacion} onChange={(e) => setGradingConfig((p) => ({ ...p, puntaje_minimo_aprobacion: e.target.value }))} />
                   </label>
                 </div>
 
-                <div className="flex items-center justify-between rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm">
-                  <span>Suma de ponderaciones: {Number(gradingConfig.peso_contenidos_pct || 0) + Number(gradingConfig.peso_lecciones_pct || 0) + Number(gradingConfig.peso_trabajos_pct || 0)}%</span>
+                <div className={`flex items-center justify-between rounded border px-3 py-2 text-sm ${ponderacionValida ? "border-emerald-200 bg-emerald-50" : "border-rose-200 bg-rose-50"}`}>
+                  <span>{t("teacher.subjects.grading.weightSum", { defaultValue: "Suma de ponderaciones" })}: {totalPonderacion}% {!ponderacionValida ? "(debe ser 100%)" : ""}</span>
                   <button type="button" disabled={gradingSaving} onClick={() => void handleSaveConfig()} className="px-3 py-1.5 rounded bg-amber-500 text-white hover:bg-amber-600 disabled:opacity-50">
-                    {gradingSaving ? "Guardando..." : "Guardar configuración"}
+                    {gradingSaving ? t("teacher.subjects.grading.saving", { defaultValue: "Guardando..." }) : t("teacher.subjects.grading.saveConfig", { defaultValue: "Guardar configuraciÃ³n" })}
                   </button>
                 </div>
 
                 <div className="border rounded-lg overflow-hidden">
-                  <div className="bg-slate-50 px-3 py-2 text-sm font-medium">Calificaciones registradas</div>
+                  <div className="bg-slate-50 px-3 py-2 text-sm font-medium">{t("teacher.subjects.grading.recordedGrades", { defaultValue: "Calificaciones registradas" })}</div>
                   {!gradingData || gradingData.items.length === 0 ? (
-                    <div className="p-4 text-sm text-gray-500">No hay estudiantes con calificación registrada en esta materia.</div>
+                    <div className="p-4 text-sm text-gray-500">{t("teacher.subjects.grading.noGrades", { defaultValue: "No hay estudiantes con calificaci?n registrada en esta materia." })}</div>
                   ) : (
                     <div className="overflow-auto">
                       <table className="w-full text-sm">
                         <thead className="bg-slate-100 text-slate-700">
                           <tr>
-                            <th className="text-left px-3 py-2">Estudiante</th>
-                            <th className="text-left px-3 py-2">Contenidos (10)</th>
-                            <th className="text-left px-3 py-2">Lecciones (10)</th>
-                            <th className="text-left px-3 py-2">Trabajos (10)</th>
-                            <th className="text-left px-3 py-2">Final</th>
-                            <th className="text-left px-3 py-2">Estado</th>
+                            <th className="text-left px-3 py-2">{t("teacher.subjects.grading.table.student", { defaultValue: "Estudiante" })}</th>
+                            <th className="text-left px-3 py-2">{t("teacher.subjects.grading.table.contents", { defaultValue: "Contenidos (10)" })}</th>
+                            <th className="text-left px-3 py-2">{t("teacher.subjects.grading.table.lessons", { defaultValue: "Exámenes (10)" })}</th>
+                            <th className="text-left px-3 py-2">{t("teacher.subjects.grading.table.tasks", { defaultValue: "Trabajos (10)" })}</th>
+                            <th className="text-left px-3 py-2">{t("teacher.subjects.grading.table.final", { defaultValue: "Final" })}</th>
+                            <th className="text-left px-3 py-2">{t("teacher.subjects.grading.table.status", { defaultValue: "Estado" })}</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -403,7 +411,7 @@ export default function TeacherMaterias() {
                               <td className="px-3 py-2 font-semibold">{row.nota_final.toFixed(2)} / {gradingData.puntaje_total.toFixed(2)}</td>
                               <td className="px-3 py-2">
                                 <span className={`inline-flex px-2 py-1 rounded-full text-xs font-medium ${estadoBadge(row.estado_final)}`}>
-                                  {estadoLabel(row.estado_final)}
+                                  {estadoLabel(row.estado_final, t)}
                                 </span>
                               </td>
                             </tr>
@@ -421,3 +429,4 @@ export default function TeacherMaterias() {
     </div>
   );
 }
+

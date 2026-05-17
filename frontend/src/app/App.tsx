@@ -32,7 +32,6 @@ import AdminBulkEnroll from "@/features/admin/pages/adminBulkEnroll";
 import TeacherEstudiantes from "@/features/teacher/pages/teacherEstudiantes";
 import TeacherBulkImport from "@/features/teacher/pages/teacherBulkImport";
 import TeacherMisCursos from "@/features/teacher/pages/teacherMisCursos";
-import TeacherHorario from "@/features/teacher/pages/teacherHorario";
 import TeacherMaterias from "@/features/teacher/pages/teacherMaterias";
 import TeacherTrabajos from "@/features/trabajos/pages/teacherTrabajos";
 import TeacherTrabajoCalificar from "@/features/trabajos/pages/teacherTrabajoCalificar";
@@ -42,6 +41,8 @@ import TeacherTrabajoReportes from "@/features/trabajos/pages/teacherTrabajoRepo
 import TeacherTrabajosAnalytics from "@/features/trabajos/pages/teacherTrabajosAnalytics";
 import TeacherRecursos from "@/features/resources/pages/teacherRecursos";
 import TeacherRecursoViewer from "@/features/resources/pages/teacherRecursoViewer";
+import StudentRecursos from "@/features/resources/pages/studentRecursos";
+import StudentRecursoViewer from "@/features/resources/pages/studentRecursoViewer";
 import TeacherRecursosPersonales from "@/features/resources/pages/teacherRecursosPersonales";
 import StudentDashboard from "@/features/student/pages/studentDashboard";
 import StudentExamenesPage from "@/features/student/pages/studentExamenes";
@@ -174,7 +175,6 @@ function App() {
               <Route path="/teacher/recursos/:recursoId" element={<TeacherRecursoViewer />} />
               <Route path="/teacher/performance" element={<TeacherPerformance />} />
               <Route path="/teacher/cursos" element={<TeacherMisCursos />} />
-              <Route path="/teacher/horario" element={<TeacherHorario />} />
               <Route path="/teacher/estudiantes" element={<TeacherEstudiantes />} />
               <Route path="/admin/users" element={<AdminUsers />} />
               <Route path="/admin/dashboard" element={<AdminDashboard highContrast={highContrast} />} />
@@ -184,6 +184,8 @@ function App() {
               <Route path="/admin/bulk-enroll" element={<AdminBulkEnroll />} />
               <Route path="/teacher/bulk-import" element={<TeacherBulkImport />} />
               <Route path="/student/dashboard" element={<StudentDashboard highContrast={highContrast} />} />
+              <Route path="/student/recursos" element={<StudentRecursos />} />
+              <Route path="/student/recursos/:recursoId" element={<StudentRecursoViewer />} />
               <Route path="/student/examenes" element={<StudentExamenesPage />} />
               <Route path="/student/trabajos" element={<StudentTrabajos />} />
               <Route path="/student/trabajos/:trabajoId" element={<StudentTrabajoDetail />} />

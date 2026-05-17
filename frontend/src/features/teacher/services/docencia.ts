@@ -3,8 +3,6 @@ import type {
   CursoAnioAsignarMaestrosRequest,
   CursoAnioAsignarMaestrosResult,
   DocenteMateriaAsignacion,
-  DocenteMateriaHorario,
-  DocenteMateriaHorarioRequest,
   MateriaCalificacionesResponse,
   MisCursoDocente,
 } from "@/shared/types";
@@ -42,30 +40,6 @@ function withDocenteQuery(path: string, docenteId?: string): string {
 export async function listMisCursosDocente(docenteId?: string): Promise<MisCursoDocente[]> {
   const resp = await api.get<unknown>(withDocenteQuery("/teacher/mis-cursos", docenteId));
   return ensureArray<MisCursoDocente>(unwrapDataRecursive(resp));
-}
-
-export async function listHorariosDocente(docenteId?: string): Promise<DocenteMateriaHorario[]> {
-  const resp = await api.get<unknown>(withDocenteQuery("/teacher/horarios", docenteId));
-  return ensureArray<DocenteMateriaHorario>(unwrapDataRecursive(resp));
-}
-
-export async function listHorariosByAsignacion(asignacionId: string): Promise<DocenteMateriaHorario[]> {
-  const resp = await api.get<unknown>(`/asignaciones-docente/${asignacionId}/horarios`);
-  return ensureArray<DocenteMateriaHorario>(unwrapDataRecursive(resp));
-}
-
-export async function createHorarioAsignacion(asignacionId: string, payload: DocenteMateriaHorarioRequest): Promise<DocenteMateriaHorario> {
-  const resp = await api.post<unknown>(`/asignaciones-docente/${asignacionId}/horarios`, payload);
-  return unwrapDataRecursive<DocenteMateriaHorario>(resp);
-}
-
-export async function updateHorarioAsignacion(horarioId: string, payload: Partial<DocenteMateriaHorarioRequest>): Promise<DocenteMateriaHorario> {
-  const resp = await api.put<unknown>(`/horarios-docente/${horarioId}`, payload);
-  return unwrapDataRecursive<DocenteMateriaHorario>(resp);
-}
-
-export async function deleteHorarioAsignacion(horarioId: string): Promise<void> {
-  await api.delete(`/horarios-docente/${horarioId}`);
 }
 
 export async function listAsignacionesDocente(params: {

@@ -1648,4 +1648,143 @@
     }
   }
 
+,
+  "sidebar.teacherSection": "Teacher section",
+  "sidebar.adminTeacherSection": "Teacher and administration section",
+  "sidebar.studentSection": "Student section",
+  "sidebar.administration": "Administration",
+  "sidebar.dashboard": "Dashboard",
+  "sidebar.exams": "Exams",
+  "sidebar.importStudents": "Import students",
+  "sidebar.createAccountsBulk": "Create accounts in bulk",
+  "sidebar.enrollStudentsBulk": "Enroll students in bulk",
+  "sidebar.loginToViewCourses": "Log in to view your courses",
+  "sidebar.noEnrolledSubjects": "You are not enrolled in any subjects yet.",
+  "sidebar.noAssignedSubjects": "You have no assigned subjects yet.",
+  "sidebar.noCoursesRegistered": "No courses registered.",
+  "sidebar.noSubjectsInCourse": "No subjects in this course.",
+  "sidebar.showSubjects": "Show subjects",
+  "sidebar.hideSubjects": "Hide subjects",
+  "student.exams.title": "Exams",
+  "student.exams.subtitle": "Check your available evaluations and results.",
+  "student.exams.summary.published": "Published",
+  "student.exams.summary.active": "Active",
+  "student.exams.summary.scheduled": "Scheduled",
+  "student.exams.summary.solved": "Solved",
+  "student.exams.empty": "You don't have published exams yet.",
+  "student.exams.status.active": "Active",
+  "student.exams.status.scheduled": "Scheduled",
+  "student.exams.status.inactive": "Inactive",
+  "student.exams.subject": "Subject",
+  "student.exams.noSubject": "No subject",
+  "student.exams.activation": "Activation",
+  "student.exams.resultScore": "Your score: {{score}}%",
+  "student.exams.resultPending": "Result pending publication",
+  "student.exams.unsolved": "Not solved yet",
+  "student.exams.minimum": "Minimum",
+  "student.exams.review": "Review",
+  "student.exams.solve": "Solve",
+  "teacher.bulkImport.title": "Bulk student import",
+  "teacher.bulkImport.subtitle": "Upload a file to enroll students in your course.",
+  "teacher.bulkImport.course": "Course",
+  "teacher.bulkImport.backToStudents": "Back to students",
+  "teacher.bulkImport.upload.dragHere": "Drag your file here",
+  "teacher.bulkImport.upload.orClick": "or click to select it",
+  "teacher.bulkImport.upload.selectFile": "Select file",
+  "teacher.bulkImport.mapping.title": "Column mapping",
+  "teacher.bulkImport.mapping.minField": "Map at least a name or email field.",
+  "teacher.bulkImport.preview.title": "Preview",
+  "teacher.bulkImport.preview.showing": "Showing the first 50 of {{count}} rows",
+  "teacher.bulkImport.preview.importAction": "Import students",
+  "teacher.bulkImport.importing.title": "Importing students...",
+  "teacher.bulkImport.importing.hint": "We are processing the file. This may take a few seconds.",
+  "teacher.bulkImport.results.enrolled": "Enrolled",
+  "teacher.bulkImport.results.skipped": "Skipped",
+  "teacher.bulkImport.results.notFound": "Not found",
+  "teacher.bulkImport.results.enrolledList": "Enrolled students",
+  "teacher.bulkImport.results.notFoundList": "Students not found",
+  "teacher.bulkImport.results.notFoundHint": "Verify that the email or ID exists in the platform.",
+  "teacher.bulkImport.results.skippedList": "Skipped students",
+  "teacher.bulkImport.goToStudents": "Go to students",
+  "teacher.bulkImport.newImport": "New import",
+  "teacher.bulkImport.noCourse.title": "You have no assigned courses",
+  "teacher.bulkImport.noCourse.hint": "Ask an administrator to assign you a course before importing students.",
+  "teacher.bulkImport.errors.loadData": "Could not load the initial data.",
+  "teacher.bulkImport.errors.noSheets": "The file has no sheets.",
+  "teacher.bulkImport.errors.unreadableSheet": "The first sheet could not be read.",
+  "teacher.bulkImport.errors.emptyFile": "The file is empty.",
+  "teacher.bulkImport.errors.readExcel": "Could not read the Excel file.",
+  "teacher.bulkImport.errors.aiMapping": "Automatic column mapping failed.",
+  "teacher.bulkImport.errors.importStudents": "Could not import students.",
+  "teacher.subjects.grading.status.approved": "Approved",
+  "teacher.subjects.grading.status.failed": "Failed",
+  "teacher.subjects.grading.status.notCompleted": "Subject not completed",
+  "teacher.subjects.grading.status.ungraded": "Ungraded",
+  "teacher.workQuestionBank.back": "Back to assignments",
+  "teacher.workQuestionBank.title": "Question bank",
+  "teacher.workQuestionBank.closed": "Auto-graded",
+  "teacher.workQuestionBank.open": "Manual grading",
+  "teacher.workQuestionBank.totalScore": "Total score",
+  "teacher.workQuestionBank.question": "Question",
+  "teacher.workQuestionBank.delete": "Delete",
+  "teacher.workQuestionBank.statement": "Statement",
+  "teacher.workQuestionBank.type": "Question type",
+  "teacher.workQuestionBank.types.multipleChoice": "Multiple choice",
+  "teacher.workQuestionBank.types.trueFalse": "True / False",
+  "teacher.workQuestionBank.types.shortAnswer": "Short answer",
+  "teacher.workQuestionBank.maxScore": "Maximum score",
+  "teacher.workQuestionBank.placeholder": "Response helper text",
+  "teacher.workQuestionBank.optionsAndCorrect": "Options and correct answer",
+  "teacher.workQuestionBank.optionText": "Option text",
+  "teacher.workQuestionBank.addOption": "Add option",
+  "teacher.workQuestionBank.addQuestion": "Add question",
+  "teacher.workQuestionBank.saving": "Saving...",
+  "teacher.workQuestionBank.save": "Save question bank",
+  "teacher.workQuestionBank.toasts.updated": "Question bank updated."
+,
+  "dashboard.loadError": "Error loading student dashboard"
+,
+  "teacher.recursos.title": "Resources"
+,
+  "teacher.recursos.personal.title": "Personal resources"
+,
+  "student.dashboard.welcome": "Welcome"
+,
+  "student.dashboard.subtitle": "Continue your learning path"
+,
+  "student.dashboard.completedLessons": "Completed lessons"
+,
+  "student.dashboard.pendingLessons": "Pending lessons"
+,
+  "student.dashboard.averageScore": "Average score"
+,
+  "student.dashboard.pendingTasks": "Pending assignments"
+,
+  "student.dashboard.approvedSubjects": "Approved subjects"
+,
+  "student.dashboard.history": "History"
+,
+  "student.dashboard.lastLesson": "Last viewed lesson"
+,
+  "student.dashboard.lastAccess": "Last access"
+,
+  "student.dashboard.lastScore": "Last score"
+,
+  "student.dashboard.continue": "Continue learning"
+,
+  "student.dashboard.noHistory": "You have not started any lesson yet"
+,
+  "student.dashboard.quickStats": "Quick stats"
+,
+  "student.dashboard.totalLessons": "Available lessons"
+,
+  "student.dashboard.totalProgress": "Lessons in progress"
+,
+  "student.dashboard.enrolledSubjects": "Enrolled subjects"
+,
+  "student.dashboard.noFollowedContent": "You have not started any lesson yet"
+,
+  "student.dashboard.noFollowedContentDesc": "Explore available contents to start learning."
+,
+  "student.dashboard.browseContents": "Browse contents"
 }

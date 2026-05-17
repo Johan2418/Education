@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import { getMe } from "@/shared/lib/auth";
 import toast from "react-hot-toast";
 import { BookOpen, Award, Clock, TrendingUp, ArrowRight, Sparkles } from "lucide-react";
+import { BarChart, Bar, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis, PieChart, Pie, Cell } from "recharts";
 import type { MateriaCalificacionEstudianteResponse, PruebaConLeccion, Progreso } from "@/shared/types";
 import { getStudentDashboardStats } from "@/features/student/services/dashboard";
 import { listMisPruebasEstudiante } from "@/features/pruebas/services/pruebas";
@@ -108,6 +109,20 @@ export default function StudentDashboard({ highContrast = false }: { highContras
       from: "from-green-500",
       to: "to-emerald-500",
     },
+  ];
+
+  const materiasChartData = materiaCalificaciones
+    .slice()
+    .sort((a, b) => b.nota_final - a.nota_final)
+    .map((item) => ({
+      materia: item.materia_nombre.length > 14 ? `${item.materia_nombre.slice(0, 14)}...` : item.materia_nombre,
+      nota: Number(item.nota_final.toFixed(2)),
+    }));
+
+  const estadoData = [
+    { name: "Aprobadas", value: materiasAprobadas, color: "#16a34a" },
+    { name: "Reprobadas", value: materiasReprobadas, color: "#dc2626" },
+    { name: "No completadas", value: materiasNoCompletadas, color: "#d97706" },
   ];
 
   return (
@@ -230,6 +245,39 @@ export default function StudentDashboard({ highContrast = false }: { highContras
             </aside>
           </div>
 
+          {(materiaCalificaciones.length > 0 || progresos.length > 0) && (
+            <section className="mt-8 grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <div className={`rounded-2xl shadow-md p-6 ${highContrast ? "bg-black border border-yellow-500" : "bg-white"}`}>
+                <h3 className={`font-bold text-lg mb-3 ${highContrast ? "text-yellow-200" : "text-gray-900"}`}>Rendimiento por materia (/10)</h3>
+                <div className="h-72">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={materiasChartData}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="materia" />
+                      <YAxis domain={[0, 10]} />
+                      <Tooltip />
+                      <Bar dataKey="nota" fill="#2563eb" radius={[8, 8, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+
+              <div className={`rounded-2xl shadow-md p-6 ${highContrast ? "bg-black border border-yellow-500" : "bg-white"}`}>
+                <h3 className={`font-bold text-lg mb-3 ${highContrast ? "text-yellow-200" : "text-gray-900"}`}>Estado de materias</h3>
+                <div className="h-72">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie data={estadoData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={95} label>
+                        {estadoData.map((entry) => <Cell key={entry.name} fill={entry.color} />)}
+                      </Pie>
+                      <Tooltip />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+            </section>
+          )}
+
           {materiaCalificaciones.length > 0 && (
             <section className={`mt-8 rounded-2xl shadow-md p-6 animate-fade-in-up ${highContrast ? "bg-black border border-yellow-500" : "bg-white"}`}>
               <h3 className={`font-bold text-lg mb-4 ${highContrast ? "text-yellow-200" : "text-gray-900"}`}>Calificaciones por materia</h3>
@@ -238,6 +286,9 @@ export default function StudentDashboard({ highContrast = false }: { highContras
                   <thead className={highContrast ? "text-yellow-300 border-b border-yellow-700" : "text-slate-700 border-b"}>
                     <tr>
                       <th className="text-left py-2 pr-3">Materia</th>
+                      <th className="text-left py-2 pr-3">Contenidos</th>
+                      <th className="text-left py-2 pr-3">Exámenes</th>
+                      <th className="text-left py-2 pr-3">Trabajos</th>
                       <th className="text-left py-2 pr-3">Nota final</th>
                       <th className="text-left py-2 pr-3">Estado</th>
                     </tr>
@@ -246,6 +297,9 @@ export default function StudentDashboard({ highContrast = false }: { highContras
                     {materiaCalificaciones.map((item) => (
                       <tr key={item.materia_id} className={highContrast ? "border-b border-yellow-900/40" : "border-b border-slate-100"}>
                         <td className="py-2 pr-3 font-medium">{item.materia_nombre}</td>
+                        <td className="py-2 pr-3">{item.promedio_contenidos_10 != null ? item.promedio_contenidos_10.toFixed(2) : "-"}</td>
+                        <td className="py-2 pr-3">{item.promedio_lecciones_10 != null ? item.promedio_lecciones_10.toFixed(2) : "-"}</td>
+                        <td className="py-2 pr-3">{item.promedio_trabajos_10 != null ? item.promedio_trabajos_10.toFixed(2) : "-"}</td>
                         <td className="py-2 pr-3">{item.nota_final.toFixed(2)} / {item.puntaje_total.toFixed(2)}</td>
                         <td className="py-2 pr-3">
                           {item.estado_final === "aprobada" ? "Aprobada" : item.estado_final === "reprobada" ? "Reprobada" : item.estado_final === "materia_no_completada" ? "Materia no completada" : "Sin calificar"}

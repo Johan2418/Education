@@ -112,10 +112,11 @@ export function useNavbar() {
         return isStudent ? `/student/trabajos/${trabajoId}` : "/teacher/trabajos";
       }
       if (item.tipo === "recurso") {
-        if (isStudent && item.leccion_id) {
-          return `/lesson/${item.leccion_id}`;
-        }
         const recursoId = item.recurso_id || item.id;
+        if (isStudent) {
+          if (recursoId) return `/student/recursos/${recursoId}`;
+          if (item.leccion_id) return `/lesson/${item.leccion_id}`;
+        }
         return `/teacher/recursos/${recursoId}`;
       }
       return "/";

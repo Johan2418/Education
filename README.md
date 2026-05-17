@@ -21,10 +21,13 @@ cp .env.example .env
 # 3. Levantar los servicios
 docker compose up -d
 
-# 4. Descargar modelo local (primera vez)
-docker compose exec ollama ollama pull qwen2.5:latest
+# 4. Crear modelos locales especializados (analysis + mcp)
+docker compose up ollama-bootstrap
 
-# 5. Verificar que todo está corriendo
+# 5. Ver modelos disponibles
+docker compose exec ollama ollama list
+
+# 6. Verificar que todo está corriendo
 docker compose ps
 ```
 
@@ -51,11 +54,42 @@ HUGGINGFACE_TIMEOUT_SECONDS=90
 LIBRO_IA_MODEL=qwen2.5:latest
 LIBRO_IA_BASE_URL=http://localhost:11434
 LIBRO_IA_TIMEOUT_SECONDS=120
+
+LIBRO_ANALYSIS_MODEL=arcanea-analysis:latest
+LIBRO_ANALYSIS_BASE_URL=http://localhost:11434
+LIBRO_ANALYSIS_TIMEOUT_SECONDS=120
+
+LIBRO_MCP_MODEL=arcanea-mcp:latest
+LIBRO_MCP_BASE_URL=http://localhost:11434
+LIBRO_MCP_TIMEOUT_SECONDS=90
+
+LIBRO_MODEL_BENCH_ENABLED=true
+LIBRO_MODEL_TRAINING_REVISION=2026.05.0
+LIBRO_MODEL_BENCHMARK_BATCH_ID=2026.05.0
+
+OLLAMA_CANDIDATE_MODELS=qwen2.5:1.5b,qwen2.5:3b,qwen2.5:latest,llama3.2:3b,phi3:mini
+LIBRO_ANALYSIS_BASE_MODEL=qwen2.5:latest
+LIBRO_MCP_BASE_MODEL=qwen2.5:3b
 ```
 
 Notas:
 - `HUGGINGFACE_API_KEY` y `LIBRO_IA_API_KEY` pueden quedar vacíos en modo local con Ollama.
 - Si luego quieres volver a Hugging Face remoto, ajusta `*_BASE_URL` a `https://router.huggingface.co` y configura API key.
+- El servicio `ollama-bootstrap` crea los modelos `arcanea-analysis:latest` y `arcanea-mcp:latest` desde `ops/ollama/modelfiles`.
+
+## Benchmark y mejora continua de modelos
+
+```bash
+# 1) Exportar dataset interno (snapshots + chat + feedback)
+cd backend
+go run ./cmd/libro_dataset_export --out-dir ../qa-reports/libro-datasets
+
+# 2) Evaluar candidatos de OLLAMA_CANDIDATE_MODELS
+go run ./cmd/libro_model_bench --out-dir ../qa-reports
+
+# 3) Métricas operativas por model_tag (producción)
+go run ./cmd/libro_eval --window-days 30
+```
 
 ## Jerarquía Académica
 

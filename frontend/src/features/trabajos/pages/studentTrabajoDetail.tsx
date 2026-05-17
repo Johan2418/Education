@@ -101,6 +101,29 @@ export default function StudentTrabajoDetail() {
     return trabajo.permite_archivo;
   }, [trabajo]);
 
+  const preguntasAgrupadasPorPagina = useMemo(() => {
+    if (!preguntas.length) return [] as Array<{ pagina: number | null; items: TrabajoPregunta[] }>;
+
+    const groups = new Map<number, TrabajoPregunta[]>();
+    for (const pregunta of preguntas) {
+      const page = typeof pregunta.pagina_libro === "number" && pregunta.pagina_libro > 0 ? pregunta.pagina_libro : -1;
+      const bucket = groups.get(page) || [];
+      bucket.push(pregunta);
+      groups.set(page, bucket);
+    }
+
+    const pages = Array.from(groups.keys()).sort((a, b) => {
+      if (a === -1) return 1;
+      if (b === -1) return -1;
+      return a - b;
+    });
+
+    return pages.map((page) => ({
+      pagina: page === -1 ? null : page,
+      items: (groups.get(page) || []).slice().sort((a, b) => (a.orden || 0) - (b.orden || 0)),
+    }));
+  }, [preguntas]);
+
   // Check if submission is editable based on permite_entrega_tardia and deadline
   const isEditable = useMemo(() => {
     if (!trabajo || isLockedByGrade) return false;
@@ -488,74 +511,83 @@ export default function StudentTrabajoDetail() {
                   <HelpCircle size={16} />
                   {t("student.trabajos.questions", { defaultValue: "Preguntas" })}
                 </h3>
-                {preguntas.map((pregunta, index) => {
-                  const answer = respuestas[pregunta.id] || "";
-                  const options = (pregunta.opciones || []) as string[];
-                  const expectsOptions = expectsOptionsResponse(pregunta);
-                  const useShortInput = (pregunta.tipo === "respuesta_corta" || pregunta.tipo === "completar") && !pregunta.imagen_base64;
-
-                  return (
-                    <div key={pregunta.id} className="border border-gray-200 rounded-lg p-3">
-                      {pregunta.imagen_base64 && (
-                        <img
-                          src={pregunta.imagen_base64}
-                          alt={t("student.trabajos.illustration", { defaultValue: "Ilustracion de apoyo" })}
-                          className="w-full max-h-72 object-contain rounded border border-gray-200 mb-2 bg-gray-50"
-                          loading="lazy"
-                        />
-                      )}
-                      <div className="flex items-start justify-between">
-                        <p className="text-sm font-medium text-gray-900 flex-1">{index + 1}. {pregunta.texto}</p>
-                        <span className="text-xs px-2 py-1 rounded-full bg-gray-100 text-gray-600">
-                          {pregunta.puntaje_maximo} {t("student.trabajos.points", { defaultValue: "puntos" })}
-                        </span>
-                      </div>
-
-                      {expectsOptions ? (
-                        <div className="mt-2 space-y-1">
-                          {options.map((option) => (
-                            <label key={option} className="flex items-center gap-2 text-sm">
-                              <input
-                                type="radio"
-                                name={`q-${pregunta.id}`}
-                                disabled={isLockedByGrade}
-                                checked={answer === option}
-                                onChange={() => setRespuestas((prev) => ({ ...prev, [pregunta.id]: option }))}
-                              />
-                              <span>{option}</span>
-                            </label>
-                          ))}
-                        </div>
-                      ) : useShortInput ? (
-                        <input
-                          className="mt-2 w-full border border-gray-300 rounded px-3 py-2"
-                          value={answer}
-                          disabled={isLockedByGrade}
-                          placeholder={pregunta.placeholder || t("student.trabajos.answerPlaceholder", { defaultValue: "Escribe tu respuesta" })}
-                          onChange={(e) => setRespuestas((prev) => ({ ...prev, [pregunta.id]: e.target.value }))}
-                        />
-                      ) : (
-                        <textarea
-                          rows={3}
-                          className="mt-2 w-full border border-gray-300 rounded px-3 py-2"
-                          disabled={isLockedByGrade}
-                          placeholder={pregunta.placeholder || t("student.trabajos.answerPlaceholder", { defaultValue: "Escribe tu respuesta" })}
-                          value={answer}
-                          onChange={(e) => setRespuestas((prev) => ({ ...prev, [pregunta.id]: e.target.value }))}
-                        />
-                      )}
-
-                      {calificacionesPorPregunta.get(pregunta.id) && (
-                        <div className="mt-2 rounded border border-emerald-200 bg-emerald-50 px-2 py-1 text-xs text-emerald-800">
-                          Puntaje: {calificacionesPorPregunta.get(pregunta.id)?.puntaje?.toFixed(2) ?? "0.00"}
-                          {calificacionesPorPregunta.get(pregunta.id)?.feedback
-                            ? ` · ${calificacionesPorPregunta.get(pregunta.id)?.feedback}`
-                            : ""}
-                        </div>
-                      )}
+                {preguntasAgrupadasPorPagina.map((group) => (
+                  <div key={group.pagina ?? "sin-pagina"} className="space-y-3">
+                    <div className="inline-flex items-center gap-2 rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1 text-xs font-semibold text-indigo-700">
+                      {group.pagina ? `Pagina ${group.pagina}` : "Preguntas sin pagina"}
                     </div>
-                  );
-                })}
+
+                    {group.items.map((pregunta, index) => {
+                      const answer = respuestas[pregunta.id] || "";
+                      const options = (pregunta.opciones || []) as string[];
+                      const expectsOptions = expectsOptionsResponse(pregunta);
+                      const useShortInput = (pregunta.tipo === "respuesta_corta" || pregunta.tipo === "completar") && !pregunta.imagen_base64;
+                      const questionNumber = pregunta.orden > 0 ? pregunta.orden : index + 1;
+
+                      return (
+                        <div key={pregunta.id} className="border border-gray-200 rounded-lg p-3">
+                          {pregunta.imagen_base64 && (
+                            <img
+                              src={pregunta.imagen_base64}
+                              alt={t("student.trabajos.illustration", { defaultValue: "Ilustracion de apoyo" })}
+                              className="w-full max-h-72 object-contain rounded border border-gray-200 mb-2 bg-gray-50"
+                              loading="lazy"
+                            />
+                          )}
+                          <div className="flex items-start justify-between">
+                            <p className="text-sm font-medium text-gray-900 flex-1">{questionNumber}. {pregunta.texto}</p>
+                            <span className="text-xs px-2 py-1 rounded-full bg-gray-100 text-gray-600">
+                              {pregunta.puntaje_maximo} {t("student.trabajos.points", { defaultValue: "puntos" })}
+                            </span>
+                          </div>
+
+                          {expectsOptions ? (
+                            <div className="mt-2 space-y-1">
+                              {options.map((option) => (
+                                <label key={option} className="flex items-center gap-2 text-sm">
+                                  <input
+                                    type="radio"
+                                    name={`q-${pregunta.id}`}
+                                    disabled={isLockedByGrade}
+                                    checked={answer === option}
+                                    onChange={() => setRespuestas((prev) => ({ ...prev, [pregunta.id]: option }))}
+                                  />
+                                  <span>{option}</span>
+                                </label>
+                              ))}
+                            </div>
+                          ) : useShortInput ? (
+                            <input
+                              className="mt-2 w-full border border-gray-300 rounded px-3 py-2"
+                              value={answer}
+                              disabled={isLockedByGrade}
+                              placeholder={pregunta.placeholder || t("student.trabajos.answerPlaceholder", { defaultValue: "Escribe tu respuesta" })}
+                              onChange={(e) => setRespuestas((prev) => ({ ...prev, [pregunta.id]: e.target.value }))}
+                            />
+                          ) : (
+                            <textarea
+                              rows={3}
+                              className="mt-2 w-full border border-gray-300 rounded px-3 py-2"
+                              disabled={isLockedByGrade}
+                              placeholder={pregunta.placeholder || t("student.trabajos.answerPlaceholder", { defaultValue: "Escribe tu respuesta" })}
+                              value={answer}
+                              onChange={(e) => setRespuestas((prev) => ({ ...prev, [pregunta.id]: e.target.value }))}
+                            />
+                          )}
+
+                          {calificacionesPorPregunta.get(pregunta.id) && (
+                            <div className="mt-2 rounded border border-emerald-200 bg-emerald-50 px-2 py-1 text-xs text-emerald-800">
+                              Puntaje: {calificacionesPorPregunta.get(pregunta.id)?.puntaje?.toFixed(2) ?? "0.00"}
+                              {calificacionesPorPregunta.get(pregunta.id)?.feedback
+                                ? ` - ${calificacionesPorPregunta.get(pregunta.id)?.feedback}`
+                                : ""}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                ))}
               </div>
             )}
           </div>

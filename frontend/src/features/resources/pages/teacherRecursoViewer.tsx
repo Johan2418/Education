@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, Bot, ChevronLeft, ChevronRight, Loader2, MessageSquare, Plus, Send, Shield } from "lucide-react";
+import { ArrowLeft, Bot, ChevronLeft, ChevronRight, Loader2, MessageSquare, Plus, Send, Shield, ThumbsDown, ThumbsUp } from "lucide-react";
 import toast from "react-hot-toast";
 
 import { getMe } from "@/shared/lib/auth";
@@ -13,6 +13,7 @@ import {
   getLibroRecursoPagina,
   listLibroChatMensajes,
   listLibroChatSesiones,
+  sendLibroChatFeedback,
   sendLibroChatMensaje,
   type LibroChatMessage,
   type LibroChatReportResponse,
@@ -22,7 +23,10 @@ import {
   type LibroRecursoPaginaResponse,
 } from "@/features/resources/services/libroRecursos";
 
-function roleAllowed(role?: string): boolean {
+function roleAllowed(role: string | undefined, mode: "teacher" | "student"): boolean {
+  if (mode === "student") {
+    return role === "student";
+  }
   return ["teacher", "admin", "super_admin", "resource_manager"].includes(role || "");
 }
 
@@ -54,10 +58,39 @@ function extractToolCalls(metadata?: Record<string, unknown>): MCPToolCall[] {
   return raw.filter((item) => typeof item === "object" && item !== null) as MCPToolCall[];
 }
 
-export default function TeacherRecursoViewer() {
+function extractPolicyMode(metadata?: Record<string, unknown>): string | null {
+  if (!metadata || typeof metadata !== "object") return null;
+  const value = (metadata as { policy_mode?: unknown }).policy_mode;
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function extractGuardrailInfo(metadata?: Record<string, unknown>): { applied: boolean; reason?: string } {
+  if (!metadata || typeof metadata !== "object") return { applied: false };
+  const appliedRaw = (metadata as { guardrail_applied?: unknown }).guardrail_applied;
+  const reasonRaw = (metadata as { guardrail_reason?: unknown }).guardrail_reason;
+  const applied = appliedRaw === true;
+  const reason = typeof reasonRaw === "string" && reasonRaw.trim() ? reasonRaw.trim() : undefined;
+  return { applied, reason };
+}
+
+function normalizeImageSource(raw?: string): string | null {
+  const value = raw?.trim();
+  if (!value) return null;
+  if (/^data:image\//i.test(value)) return value;
+  if (/^https?:\/\//i.test(value)) return value;
+  if (/^[a-zA-Z0-9+/=\r\n]+$/.test(value)) {
+    return `data:image/png;base64,${value.replace(/\s+/g, "")}`;
+  }
+  return value;
+}
+
+export default function TeacherRecursoViewer({ mode = "teacher" }: { mode?: "teacher" | "student" }) {
   const navigate = useNavigate();
   const { recursoId = "" } = useParams();
   const chatEndRef = useRef<HTMLDivElement | null>(null);
+  const isStudentMode = mode === "student";
+  const backPath = isStudentMode ? "/student/recursos" : "/teacher/recursos";
+  const backLabel = isStudentMode ? "Volver a recursos" : "Volver a recursos";
 
   const [checkingAuth, setCheckingAuth] = useState(true);
   const [loading, setLoading] = useState(true);
@@ -74,6 +107,8 @@ export default function TeacherRecursoViewer() {
   const [chatSending, setChatSending] = useState(false);
   const [chatInput, setChatInput] = useState("");
   const [chatReport, setChatReport] = useState<LibroChatReportResponse | null>(null);
+  const [feedbackByMessage, setFeedbackByMessage] = useState<Record<string, "up" | "down">>({});
+  const [feedbackSendingMessageId, setFeedbackSendingMessageId] = useState<string | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -84,7 +119,7 @@ export default function TeacherRecursoViewer() {
           navigate("/login");
           return;
         }
-        if (!roleAllowed(me.role)) {
+        if (!roleAllowed(me.role, mode)) {
           navigate("/");
           return;
         }
@@ -92,7 +127,7 @@ export default function TeacherRecursoViewer() {
         setCheckingAuth(false);
       }
     })();
-  }, [navigate]);
+  }, [mode, navigate]);
 
   const load = useCallback(async (targetPage: number) => {
     if (!recursoId) return;
@@ -168,6 +203,10 @@ export default function TeacherRecursoViewer() {
   }, [loadChatMessages, recursoId, selectedSessionId]);
 
   const loadChatReport = useCallback(async () => {
+    if (isStudentMode) {
+      setChatReport(null);
+      return;
+    }
     if (!recursoId) return;
     try {
       const report = await getLibroChatReporte(recursoId, 5);
@@ -176,7 +215,7 @@ export default function TeacherRecursoViewer() {
       // Keep viewer usable even if report endpoint is temporarily unavailable.
       setChatReport(null);
     }
-  }, [recursoId]);
+  }, [isStudentMode, recursoId]);
 
   useEffect(() => {
     if (checkingAuth || !recursoId) return;
@@ -184,9 +223,9 @@ export default function TeacherRecursoViewer() {
   }, [checkingAuth, recursoId, loadChatSessions]);
 
   useEffect(() => {
-    if (checkingAuth || !recursoId) return;
+    if (checkingAuth || !recursoId || isStudentMode) return;
     void loadChatReport();
-  }, [checkingAuth, recursoId, loadChatReport]);
+  }, [checkingAuth, isStudentMode, recursoId, loadChatReport]);
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -232,7 +271,9 @@ export default function TeacherRecursoViewer() {
       setChatMessages(messages);
       setChatSessions(sessionsRes.items || []);
       setSelectedSessionId(sessionId);
-      await loadChatReport();
+      if (!isStudentMode) {
+        await loadChatReport();
+      }
     } catch (err) {
       const apiErr = err as ApiError;
       if (apiErr?.status === 400) {
@@ -242,6 +283,31 @@ export default function TeacherRecursoViewer() {
       }
     } finally {
       setChatSending(false);
+    }
+  };
+
+  const handleChatFeedback = async (messageId: string, reaction: "up" | "down") => {
+    if (!recursoId || !selectedSessionId || !messageId) return;
+    if (feedbackSendingMessageId === messageId) return;
+
+    const previous = feedbackByMessage[messageId];
+    setFeedbackByMessage((prev) => ({ ...prev, [messageId]: reaction }));
+    setFeedbackSendingMessageId(messageId);
+    try {
+      await sendLibroChatFeedback(recursoId, selectedSessionId, messageId, { reaction });
+    } catch (err) {
+      if (previous) {
+        setFeedbackByMessage((prev) => ({ ...prev, [messageId]: previous }));
+      } else {
+        setFeedbackByMessage((prev) => {
+          const next = { ...prev };
+          delete next[messageId];
+          return next;
+        });
+      }
+      toast.error(normalizeError(err));
+    } finally {
+      setFeedbackSendingMessageId(null);
     }
   };
 
@@ -307,6 +373,7 @@ export default function TeacherRecursoViewer() {
   }, [chatReport]);
 
   const totalPaginas = useMemo(() => pageData?.total_paginas || detail?.paginas_totales || 1, [pageData, detail]);
+  const pageImageSrc = useMemo(() => normalizeImageSource(pageData?.imagen_base64), [pageData?.imagen_base64]);
   const controls = pageData?.controles;
 
   if (checkingAuth || loading) {
@@ -321,7 +388,7 @@ export default function TeacherRecursoViewer() {
     return (
       <div className="max-w-4xl mx-auto p-6">
         <button
-          onClick={() => navigate("/teacher/recursos")}
+          onClick={() => navigate(backPath)}
           className="inline-flex items-center gap-2 text-sm text-slate-600 hover:text-slate-900"
         >
           <ArrowLeft className="h-4 w-4" /> Volver
@@ -344,10 +411,10 @@ export default function TeacherRecursoViewer() {
     <main className="max-w-6xl mx-auto px-4 py-6 animate-fade-in-up">
       <div className="mb-4 flex items-center justify-between gap-3">
         <button
-          onClick={() => navigate("/teacher/recursos")}
+          onClick={() => navigate(backPath)}
           className="inline-flex items-center gap-2 text-sm text-slate-600 hover:text-slate-900"
         >
-          <ArrowLeft className="h-4 w-4" /> Volver a recursos
+          <ArrowLeft className="h-4 w-4" /> {backLabel}
         </button>
         <span className="inline-flex items-center gap-2 rounded-full bg-slate-900 text-white px-3 py-1 text-xs">
           <Shield className="h-3.5 w-3.5" /> Modo protegido
@@ -380,7 +447,7 @@ export default function TeacherRecursoViewer() {
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-5">
         <section className="xl:col-span-2 rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
           <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between">
-            <h2 className="font-semibold text-slate-900">Pagina {pageData.pagina}</h2>
+            <h2 className="font-semibold text-slate-900">Página {pageData.pagina}</h2>
             <p className="text-xs text-slate-500">
               Controles activos:
               {controls?.disable_download ? " sin descarga" : " descarga permitida"},
@@ -400,27 +467,32 @@ export default function TeacherRecursoViewer() {
             )}
 
             <div className="relative z-10 space-y-3">
-              {pageData.imagen_base64 ? (
+              {pageImageSrc ? (
                 <figure className="rounded-xl border border-slate-200 bg-white p-2 shadow-sm">
-                  <img src={pageData.imagen_base64} alt={`Pagina ${pageData.pagina}`} className="w-full rounded-lg" />
+                  <img
+                    src={pageImageSrc}
+                    alt={`Página ${pageData.pagina}`}
+                    className="w-full rounded-lg max-h-[68vh] object-contain bg-slate-50"
+                    loading="lazy"
+                  />
                 </figure>
               ) : null}
 
               {pageData.contenido?.trim() ? (
                 <article className="rounded-xl bg-white/90 border border-slate-200 p-4 shadow-sm">
-                  <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-2">Contenido de la pagina</h3>
+                  <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-2">Contenido de la página</h3>
                   <p className="text-slate-800 whitespace-pre-wrap leading-relaxed">{pageData.contenido}</p>
                 </article>
               ) : null}
 
               {pageData.preguntas.length === 0 ? (
-                !pageData.contenido?.trim() && !pageData.imagen_base64 ? (
+                !pageData.contenido?.trim() && !pageImageSrc ? (
                   <div className="rounded-xl border border-dashed border-slate-300 p-8 text-center text-slate-500 bg-white/80">
                     No hay contenido ni preguntas registradas para esta pagina.
                   </div>
                 ) : (
                   <div className="rounded-xl border border-dashed border-slate-300 p-6 text-center text-slate-500 bg-white/80">
-                    Esta pagina no tiene preguntas registradas, pero el contenido del libro si esta disponible.
+                    Esta página no tiene preguntas registradas, pero el contenido del libro sí está disponible.
                   </div>
                 )
               ) : (
@@ -446,7 +518,7 @@ export default function TeacherRecursoViewer() {
               <ChevronLeft className="h-4 w-4" /> Anterior
             </button>
 
-            <p className="text-sm text-slate-600">Pagina {page} de {Math.max(1, totalPaginas)}</p>
+            <p className="text-sm text-slate-600">Página {page} de {Math.max(1, totalPaginas)}</p>
 
             <button
               disabled={page >= totalPaginas}
@@ -504,41 +576,45 @@ export default function TeacherRecursoViewer() {
               )}
             </div>
 
-            <div className="mt-3 grid grid-cols-2 gap-2">
-              <div className="rounded-lg border border-slate-200 bg-white px-2.5 py-2">
-                <p className="text-[10px] uppercase tracking-wide text-slate-500">Vistas recurso</p>
-                <p className="text-sm font-semibold text-slate-900">{chatReport?.vistas_recurso_total ?? 0}</p>
-              </div>
-              <div className="rounded-lg border border-slate-200 bg-white px-2.5 py-2">
-                <p className="text-[10px] uppercase tracking-wide text-slate-500">Usuarios unicos</p>
-                <p className="text-sm font-semibold text-slate-900">{chatReport?.usuarios_vistas_total ?? 0}</p>
-              </div>
-              <div className="rounded-lg border border-slate-200 bg-white px-2.5 py-2">
-                <p className="text-[10px] uppercase tracking-wide text-slate-500">Sesiones</p>
-                <p className="text-sm font-semibold text-slate-900">{chatReport?.sesiones_total ?? 0}</p>
-              </div>
-              <div className="rounded-lg border border-slate-200 bg-white px-2.5 py-2">
-                <p className="text-[10px] uppercase tracking-wide text-slate-500">Mensajes</p>
-                <p className="text-sm font-semibold text-slate-900">{chatReport?.mensajes_total ?? 0}</p>
-              </div>
-              <div className="rounded-lg border border-slate-200 bg-white px-2.5 py-2">
-                <p className="text-[10px] uppercase tracking-wide text-slate-500">Fallback</p>
-                <p className="text-sm font-semibold text-amber-700">{chatReport?.fallback_total ?? 0}</p>
-              </div>
-              <div className="rounded-lg border border-slate-200 bg-white px-2.5 py-2">
-                <p className="text-[10px] uppercase tracking-wide text-slate-500">Latencia prom.</p>
-                <p className="text-sm font-semibold text-blue-700">{avgLatencyLabel}</p>
-              </div>
-            </div>
+            {!isStudentMode && (
+              <>
+                <div className="mt-3 grid grid-cols-2 gap-2">
+                  <div className="rounded-lg border border-slate-200 bg-white px-2.5 py-2">
+                    <p className="text-[10px] uppercase tracking-wide text-slate-500">Vistas recurso</p>
+                    <p className="text-sm font-semibold text-slate-900">{chatReport?.vistas_recurso_total ?? 0}</p>
+                  </div>
+                  <div className="rounded-lg border border-slate-200 bg-white px-2.5 py-2">
+                    <p className="text-[10px] uppercase tracking-wide text-slate-500">Usuarios unicos</p>
+                    <p className="text-sm font-semibold text-slate-900">{chatReport?.usuarios_vistas_total ?? 0}</p>
+                  </div>
+                  <div className="rounded-lg border border-slate-200 bg-white px-2.5 py-2">
+                    <p className="text-[10px] uppercase tracking-wide text-slate-500">Sesiones</p>
+                    <p className="text-sm font-semibold text-slate-900">{chatReport?.sesiones_total ?? 0}</p>
+                  </div>
+                  <div className="rounded-lg border border-slate-200 bg-white px-2.5 py-2">
+                    <p className="text-[10px] uppercase tracking-wide text-slate-500">Mensajes</p>
+                    <p className="text-sm font-semibold text-slate-900">{chatReport?.mensajes_total ?? 0}</p>
+                  </div>
+                  <div className="rounded-lg border border-slate-200 bg-white px-2.5 py-2">
+                    <p className="text-[10px] uppercase tracking-wide text-slate-500">Fallback</p>
+                    <p className="text-sm font-semibold text-amber-700">{chatReport?.fallback_total ?? 0}</p>
+                  </div>
+                  <div className="rounded-lg border border-slate-200 bg-white px-2.5 py-2">
+                    <p className="text-[10px] uppercase tracking-wide text-slate-500">Latencia prom.</p>
+                    <p className="text-sm font-semibold text-blue-700">{avgLatencyLabel}</p>
+                  </div>
+                </div>
 
-            {chatReport && chatReport.top_tools.length > 0 && (
-              <div className="mt-2 flex flex-wrap gap-1.5">
-                {chatReport.top_tools.slice(0, 3).map((tool) => (
-                  <span key={tool.name} className="rounded-full bg-emerald-100 text-emerald-800 px-2 py-0.5 text-[11px]">
-                    {tool.name} ({tool.usage_count})
-                  </span>
-                ))}
-              </div>
+                {chatReport && chatReport.top_tools.length > 0 && (
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {chatReport.top_tools.slice(0, 3).map((tool) => (
+                      <span key={tool.name} className="rounded-full bg-emerald-100 text-emerald-800 px-2 py-0.5 text-[11px]">
+                        {tool.name} ({tool.usage_count})
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </>
             )}
           </div>
 
@@ -580,6 +656,44 @@ export default function TeacherRecursoViewer() {
                           {toolCalls.length > 0 && (
                             <span className="rounded-full bg-emerald-100 text-emerald-700 px-2 py-0.5">tools {toolCalls.length}</span>
                           )}
+                          {extractPolicyMode(message.metadata) && (
+                            <span className="rounded-full bg-indigo-100 text-indigo-700 px-2 py-0.5">
+                              {extractPolicyMode(message.metadata)}
+                            </span>
+                          )}
+                          {extractGuardrailInfo(message.metadata).applied && (
+                            <span className="rounded-full bg-amber-100 text-amber-700 px-2 py-0.5">
+                              guardrail
+                            </span>
+                          )}
+                          <span className="ml-auto inline-flex items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => void handleChatFeedback(message.id, "up")}
+                              disabled={feedbackSendingMessageId === message.id}
+                              className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 transition ${
+                                feedbackByMessage[message.id] === "up"
+                                  ? "border-emerald-300 bg-emerald-100 text-emerald-700"
+                                  : "border-slate-300 bg-white text-slate-600 hover:bg-slate-50"
+                              } disabled:opacity-50`}
+                              title="Util"
+                            >
+                              <ThumbsUp className="h-3 w-3" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => void handleChatFeedback(message.id, "down")}
+                              disabled={feedbackSendingMessageId === message.id}
+                              className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 transition ${
+                                feedbackByMessage[message.id] === "down"
+                                  ? "border-rose-300 bg-rose-100 text-rose-700"
+                                  : "border-slate-300 bg-white text-slate-600 hover:bg-slate-50"
+                              } disabled:opacity-50`}
+                              title="No util"
+                            >
+                              <ThumbsDown className="h-3 w-3" />
+                            </button>
+                          </span>
                         </div>
                       )}
                     </div>

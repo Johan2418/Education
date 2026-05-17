@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { getMe } from "@/shared/lib/auth";
 import { useTranslation } from "react-i18next";
-import { BookMarked, BookOpen, HelpCircle, BarChart3, ArrowRight, CalendarDays, Layers3 } from "lucide-react";
+import { BookMarked, BookOpen, HelpCircle, BarChart3, ArrowRight, Layers3 } from "lucide-react";
 import { getTeacherDashboardStats, type TeacherDashboardStats } from "@/features/teacher/services/dashboard";
 
 const cardColors = [
@@ -40,7 +40,7 @@ export default function TeacherDashboard({ highContrast = false }: { highContras
           navigate("/login");
           return;
         }
-        setDisplayName(me.display_name || "Profesor");
+        setDisplayName(me.display_name || t("teacher.defaultName", { defaultValue: "Profesor" }));
         if (role === "teacher") {
           const nextStats = await getTeacherDashboardStats();
           setStats(nextStats);
@@ -58,17 +58,16 @@ export default function TeacherDashboard({ highContrast = false }: { highContras
   );
 
   const cards = [
-    { title: t("teacher.lessons", { defaultValue: "Gestión de Lecciones" }), desc: "Crear y administrar lecciones para tus estudiantes", icon: BookOpen, path: "/teacher/lessons" },
+    { title: t("teacher.lessons", { defaultValue: "Gestión de Lecciones" }), desc: t("teacher.dashboard.cards.lessonsDesc", { defaultValue: "Crear y administrar lecciones para tus estudiantes" }), icon: BookOpen, path: "/teacher/lessons" },
     {
       title: t("teacher.subjects.cardTitle", { defaultValue: "Mis materias" }),
       desc: t("teacher.subjects.cardDescription", { defaultValue: "Gestiona recursos y vista de temas por materia" }),
       icon: BookMarked,
       path: "/teacher/materias",
     },
-    { title: t("teacher.questions", { defaultValue: "Preguntas y Respuestas" }), desc: "Crear evaluaciones y pruebas", icon: HelpCircle, path: "/teacher/pruebas" },
-    { title: t("teacher.performance", { defaultValue: "Rendimiento Estudiantil" }), desc: "Analizar el progreso de tus estudiantes", icon: BarChart3, path: "/teacher/performance" },
+    { title: t("teacher.questions", { defaultValue: "Preguntas y Respuestas" }), desc: t("teacher.dashboard.cards.questionsDesc", { defaultValue: "Crear evaluaciones y pruebas" }), icon: HelpCircle, path: "/teacher/pruebas" },
+    { title: t("teacher.performance", { defaultValue: "Rendimiento Estudiantil" }), desc: t("teacher.dashboard.cards.performanceDesc", { defaultValue: "Analizar el progreso de tus estudiantes" }), icon: BarChart3, path: "/teacher/performance" },
     { title: t("teacher.cursos.title", { defaultValue: "Mis cursos" }), desc: "Ver materias asignadas con métricas clave", icon: Layers3, path: "/teacher/cursos" },
-    { title: t("teacher.horario.title", { defaultValue: "Mi horario" }), desc: "Organizar bloques semanales sin solapamientos", icon: CalendarDays, path: "/teacher/horario" },
   ];
 
   const summaryCards = [

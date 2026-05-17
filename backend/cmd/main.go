@@ -79,8 +79,10 @@ func main() {
 	trabH := trabajos.NewHandler(trabSvc)
 
 	libroRepo := libro.NewRepository(db)
-	libroAISvc := libro.NewAIService(cfg.LibroIA)
-	libroSvc := libro.NewService(libroRepo, libroAISvc)
+	libroAnalysisAISvc := libro.NewAIService(cfg.LibroAnalysis)
+	libroMCPAISvc := libro.NewAIService(cfg.LibroMCP)
+	libroSvc := libro.NewService(libroRepo, libroAnalysisAISvc, libroMCPAISvc)
+	libroSvc.SetModelLifecycleMetadata(cfg.LibroModel.TrainingRevision, cfg.LibroModel.BenchmarkBatchID)
 	libroH := libro.NewHandler(libroSvc)
 
 	aiSvc := bulkimport.NewAIService(cfg.HuggingFace)
@@ -341,6 +343,7 @@ func main() {
 		r.Post("/libro-recursos/{recursoId}/chat/sesiones", libroH.CreateLibroChatSession)
 		r.Get("/libro-recursos/{recursoId}/chat/sesiones/{sesionId}/mensajes", libroH.GetLibroChatMessages)
 		r.Post("/libro-recursos/{recursoId}/chat/sesiones/{sesionId}/mensajes", libroH.SendLibroChatMessage)
+		r.Post("/libro-recursos/{recursoId}/chat/sesiones/{sesionId}/mensajes/{mensajeId}/feedback", libroH.SendLibroChatFeedback)
 		r.Get("/libro-recursos/{recursoId}/chat/reportes", libroH.GetLibroChatReporte)
 
 		// ── Admin routes ────────────────────────────────────

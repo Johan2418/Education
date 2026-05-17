@@ -34,22 +34,13 @@ func (m *mcpOrchestrator) BuildChatContext(ctx context.Context, recursoID string
 	}
 	bundle.ToolCalls = append(bundle.ToolCalls, call)
 
-	views, viewsCall, err := m.toolGetResourceViews(ctx, recursoID)
-	if err != nil {
-		return nil, err
-	}
+	views, viewsCall, viewsErr := m.toolGetResourceViews(ctx, recursoID)
 	bundle.ToolCalls = append(bundle.ToolCalls, viewsCall)
 
-	preguntas, searchCall, err := m.toolSearchPreguntas(ctx, recursoID, userPrompt)
-	if err != nil {
-		return nil, err
-	}
+	preguntas, searchCall, preguntasErr := m.toolSearchPreguntas(ctx, recursoID, userPrompt)
 	bundle.ToolCalls = append(bundle.ToolCalls, searchCall)
 
-	contenidoPaginas, contentCall, err := m.toolSearchContenidoPaginas(ctx, recursoID, userPrompt)
-	if err != nil {
-		return nil, err
-	}
+	contenidoPaginas, contentCall, contenidoErr := m.toolSearchContenidoPaginas(ctx, recursoID, userPrompt)
 	bundle.ToolCalls = append(bundle.ToolCalls, contentCall)
 
 	var sb strings.Builder
@@ -59,10 +50,15 @@ func (m *mcpOrchestrator) BuildChatContext(ctx context.Context, recursoID string
 	sb.WriteString(fmt.Sprintf("- idioma: %s\n", detail.Idioma))
 	sb.WriteString(fmt.Sprintf("- estado: %s\n", detail.Estado))
 	sb.WriteString(fmt.Sprintf("- preguntas_totales: %d\n", detail.PreguntasTotales))
-	sb.WriteString(fmt.Sprintf("- vistas_recurso_total: %d\n", views.VistasTotal))
-	sb.WriteString(fmt.Sprintf("- usuarios_vistas_total: %d\n", views.UsuariosUnicos))
-	if views.UltimaVistaAt != nil {
-		sb.WriteString(fmt.Sprintf("- ultima_vista_recurso_at: %s\n", views.UltimaVistaAt.Format(time.RFC3339)))
+	if viewsErr == nil && views != nil {
+		sb.WriteString(fmt.Sprintf("- vistas_recurso_total: %d\n", views.VistasTotal))
+		sb.WriteString(fmt.Sprintf("- usuarios_vistas_total: %d\n", views.UsuariosUnicos))
+		if views.UltimaVistaAt != nil {
+			sb.WriteString(fmt.Sprintf("- ultima_vista_recurso_at: %s\n", views.UltimaVistaAt.Format(time.RFC3339)))
+		}
+	} else {
+		sb.WriteString("- vistas_recurso_total: no_disponible\n")
+		sb.WriteString("- usuarios_vistas_total: no_disponible\n")
 	}
 	if detail.PaginasTotales != nil {
 		sb.WriteString(fmt.Sprintf("- paginas_totales: %d\n", *detail.PaginasTotales))
@@ -95,6 +91,13 @@ func (m *mcpOrchestrator) BuildChatContext(ctx context.Context, recursoID string
 		sb.WriteString(fmt.Sprintf("%d) [pag %d] %s\n", idx+1, page.Pagina, content))
 	}
 
+	if preguntasErr != nil {
+		sb.WriteString("- aviso: busqueda de preguntas no disponible temporalmente.\n")
+	}
+	if contenidoErr != nil {
+		sb.WriteString("- aviso: busqueda de contenido de paginas no disponible temporalmente.\n")
+	}
+
 	bundle.PromptContext = sb.String()
 	return bundle, nil
 }
@@ -123,7 +126,12 @@ func (m *mcpOrchestrator) toolGetResourceViews(ctx context.Context, recursoID st
 
 	summary, err := m.repo.GetLibroRecursoViewsSummary(ctx, recursoID)
 	if err != nil {
-		return nil, MCPToolCall{}, err
+		return nil, MCPToolCall{
+			Name:          "libro.get_resource_views",
+			Input:         mustJSON(input),
+			OutputSummary: "error_al_obtener_vistas",
+			DurationMs:    time.Since(started).Milliseconds(),
+		}, err
 	}
 
 	output := fmt.Sprintf("vistas=%d, usuarios_unicos=%d", summary.VistasTotal, summary.UsuariosUnicos)
@@ -146,7 +154,12 @@ func (m *mcpOrchestrator) toolSearchPreguntas(ctx context.Context, recursoID str
 
 	items, err := m.repo.SearchPreguntasContextByLibroRecurso(ctx, recursoID, trimmed, 12)
 	if err != nil {
-		return nil, MCPToolCall{}, err
+		return nil, MCPToolCall{
+			Name:          "libro.search_questions",
+			Input:         mustJSON(input),
+			OutputSummary: "error_al_buscar_preguntas",
+			DurationMs:    time.Since(started).Milliseconds(),
+		}, err
 	}
 
 	output := fmt.Sprintf("preguntas_encontradas=%d", len(items))
@@ -169,7 +182,12 @@ func (m *mcpOrchestrator) toolSearchContenidoPaginas(ctx context.Context, recurs
 
 	items, err := m.repo.SearchLibroContenidoPaginas(ctx, recursoID, trimmed, 8)
 	if err != nil {
-		return nil, MCPToolCall{}, err
+		return nil, MCPToolCall{
+			Name:          "libro.search_content_pages",
+			Input:         mustJSON(input),
+			OutputSummary: "error_al_buscar_contenido_paginas",
+			DurationMs:    time.Since(started).Milliseconds(),
+		}, err
 	}
 
 	output := fmt.Sprintf("paginas_encontradas=%d", len(items))

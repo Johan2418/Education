@@ -29,6 +29,7 @@ type LibroExtraccion struct {
 	ConfianzaPromedio   *float64              `json:"confianza_promedio" gorm:"column:confianza_promedio"`
 	NotasExtraccion     *string               `json:"notas_extraccion" gorm:"column:notas_extraccion"`
 	NotasRevision       *string               `json:"notas_revision" gorm:"column:notas_revision"`
+	Snapshots           json.RawMessage       `json:"snapshots,omitempty" gorm:"column:snapshots;type:jsonb;default:'{}'"`
 	UsadoFallback       bool                  `json:"usado_fallback" gorm:"column:usado_fallback"`
 	CreatedBy           *string               `json:"created_by" gorm:"column:created_by"`
 	RevisadoPor         *string               `json:"revisado_por" gorm:"column:revisado_por"`
@@ -181,9 +182,16 @@ type LibroEstadoResponse struct {
 	Preguntas  []TrabajoPregunta `json:"preguntas"`
 }
 
+type LibroPageGroupSummary struct {
+	Pagina         int   `json:"pagina"`
+	PreguntasTotal int   `json:"preguntas_total"`
+	Ordenes        []int `json:"ordenes,omitempty"`
+}
+
 type ExtractLibroResponse struct {
 	Extraccion     *LibroExtraccion  `json:"extraccion"`
 	Preguntas      []TrabajoPregunta `json:"preguntas"`
+	PageGroups     []LibroPageGroupSummary `json:"page_groups,omitempty"`
 	Reutilizado    bool              `json:"reutilizado"`
 	LibroRecursoID *string           `json:"libro_recurso_id,omitempty"`
 }
@@ -426,4 +434,17 @@ type LibroChatSendMessageResponse struct {
 	UsedFallback bool          `json:"used_fallback"`
 	LatencyMs    int64         `json:"latency_ms"`
 	ToolCalls    []MCPToolCall `json:"tool_calls"`
+	PolicyMode   string        `json:"policy_mode,omitempty"`
+	GuardrailApplied bool      `json:"guardrail_applied"`
+	GuardrailReason  *string   `json:"guardrail_reason,omitempty"`
+}
+
+type LibroChatFeedbackRequest struct {
+	Reaction string  `json:"reaction"`
+	Comment  *string `json:"comment,omitempty"`
+}
+
+type LibroChatFeedbackResponse struct {
+	Ok        bool   `json:"ok"`
+	MessageID string `json:"message_id"`
 }

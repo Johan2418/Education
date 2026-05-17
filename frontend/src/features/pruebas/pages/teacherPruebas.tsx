@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+﻿import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { getMe } from "@/shared/lib/auth";
 import api from "@/shared/lib/api";
 import toast from "react-hot-toast";
@@ -30,14 +31,14 @@ const createQuestion = (type: QuestionType = "opcion_multiple"): QuestionDraft =
     : [],
 });
 
-function examStatus(p: PruebaConLeccion): { label: string; tone: string } {
+function examStatus(p: PruebaConLeccion, t: (key: string, opts?: any) => string): { label: string; tone: string } {
   const now = Date.now();
   const pubAt = p.fecha_publicacion ? new Date(p.fecha_publicacion).getTime() : null;
   const actAt = p.fecha_activacion ? new Date(p.fecha_activacion).getTime() : null;
-  if (pubAt && pubAt > now) return { label: "Próximo a publicarse", tone: "amber" };
-  if (p.activa === false) return { label: "Publicado (inactivo)", tone: "slate" };
-  if (actAt && actAt > now) return { label: "Publicado (pendiente de activación)", tone: "indigo" };
-  return { label: "Publicado y activo", tone: "emerald" };
+  if (pubAt && pubAt > now) return { label: t("teacher.exams.status.soonPublish", { defaultValue: "Próximo a publicarse" }), tone: "amber" };
+  if (p.activa === false) return { label: t("teacher.exams.status.publishedInactive", { defaultValue: "Publicado (inactivo)" }), tone: "slate" };
+  if (actAt && actAt > now) return { label: t("teacher.exams.status.publishedPending", { defaultValue: "Publicado (pendiente de activación)" }), tone: "indigo" };
+  return { label: t("teacher.exams.status.publishedActive", { defaultValue: "Publicado y activo" }), tone: "emerald" };
 }
 
 function badgeClasses(tone: string): string {
@@ -48,6 +49,7 @@ function badgeClasses(tone: string): string {
 }
 
 export default function TeacherPruebas() {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const { confirm } = useAppConfirm();
   const [loading, setLoading] = useState(true);
@@ -146,7 +148,7 @@ export default function TeacherPruebas() {
         }
         await Promise.all([loadData(), loadStudents()]);
       } catch {
-        toast.error("Error al cargar examenes");
+        toast.error(t("teacher.exams.errors.load", { defaultValue: "Error al cargar ex?menes" }));
       } finally {
         setLoading(false);
       }
@@ -156,20 +158,20 @@ export default function TeacherPruebas() {
   const filtered = useMemo(() => pruebas.filter((p) => (p.titulo || "").toLowerCase().includes(search.toLowerCase()) || (p.leccion_titulo || "").toLowerCase().includes(search.toLowerCase())), [pruebas, search]);
   const stats = useMemo(() => {
     const total = pruebas.length;
-    const active = pruebas.filter((p) => examStatus(p).tone === "emerald").length;
-    const scheduled = pruebas.filter((p) => examStatus(p).tone === "amber" || examStatus(p).tone === "indigo").length;
+    const active = pruebas.filter((p) => examStatus(p, t).tone === "emerald").length;
+    const scheduled = pruebas.filter((p) => examStatus(p, t).tone === "amber" || examStatus(p, t).tone === "indigo").length;
     const manual = pruebas.filter((p) => p.requiere_revision_docente === true).length;
     return { total, active, scheduled, manual };
   }, [pruebas]);
 
   const handleDelete = async (id: string) => {
-    if (!await confirm("Estas seguro?", { tone: "danger" })) return;
+    if (!await confirm(t("teacher.exams.confirm.delete", { defaultValue: "Estas seguro?" }), { tone: "danger" })) return;
     try {
       await api.delete(`/pruebas/${id}`);
       setPruebas((prev) => prev.filter((p) => p.id !== id));
-      toast.success("Examen eliminado");
+      toast.success(t("teacher.exams.deleted", { defaultValue: "Examen eliminado" }));
     } catch {
-      toast.error("No se pudo eliminar");
+      toast.error(t("teacher.exams.errors.delete", { defaultValue: "No se pudo eliminar" }));
     }
   };
 
@@ -210,7 +212,7 @@ export default function TeacherPruebas() {
       }
       setGrading(initial);
     } catch {
-      toast.error("No se pudieron cargar las entregas");
+      toast.error(t("teacher.exams.errors.loadSubmissions", { defaultValue: "No se pudieron cargar las entregas" }));
       setResultados([]);
       setGrading({});
     } finally {
@@ -230,7 +232,7 @@ export default function TeacherPruebas() {
   }));
 
   const validateQuestions = (): string | null => {
-    if (questions.length === 0) return "Agrega al menos una pregunta";
+    if (questions.length === 0) return t("teacher.exams.validation.minQuestion", { defaultValue: "Agrega al menos una pregunta" });
     for (let i = 0; i < questions.length; i++) {
       const q = questions[i];
       if (!q) continue;
@@ -245,7 +247,7 @@ export default function TeacherPruebas() {
   };
 
   const saveExam = async () => {
-    if (!form.titulo.trim() || !form.materia_id) return void toast.error("Titulo y materia son obligatorios");
+    if (!form.titulo.trim() || !form.materia_id) return void toast.error(t("teacher.exams.validation.titleSubjectRequired", { defaultValue: "Titulo y materia son obligatorios" }));
     if (!form.activa && !form.fecha_activacion) return void toast.error("Si el examen está inactivo, debes definir fecha de activación");
     const qError = validateQuestions();
     if (qError) return void toast.error(qError);
@@ -280,10 +282,10 @@ export default function TeacherPruebas() {
         }
       }
       await loadData();
-      toast.success(editing ? "Examen actualizado" : "Examen creado");
+      toast.success(editing ? t("teacher.exams.updated", { defaultValue: "Examen actualizado" }) : t("teacher.exams.created", { defaultValue: "Examen creado" }));
       setOpenForm(false);
     } catch (e: any) {
-      toast.error(e?.message || "No se pudo guardar el examen");
+      toast.error(e?.message || t("teacher.exams.errors.save", { defaultValue: "No se pudo guardar el examen" }));
     } finally {
       setSaving(false);
     }
@@ -314,13 +316,13 @@ export default function TeacherPruebas() {
     <div className="mx-auto max-w-7xl p-4">
       <section className="mb-6 rounded-2xl border border-slate-200 bg-gradient-to-r from-indigo-50 via-white to-cyan-50 p-5 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <div><h1 className="text-3xl font-bold text-slate-900">Gestión de Exámenes</h1><p className="mt-1 text-sm text-slate-600">Crea, programa, publica y revisa entregas de tus estudiantes.</p></div>
-          <button onClick={openCreate} className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow hover:bg-blue-700"><Plus size={16} /> Nuevo examen</button>
+          <div><h1 className="text-3xl font-bold text-slate-900">Gestión de Exámenes</h1><p className="mt-1 text-sm text-slate-600">{t("teacher.exams.subtitle", { defaultValue: "Crea, programa, publica y revisa entregas de tus estudiantes." })}</p></div>
+          <button onClick={openCreate} className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow hover:bg-blue-700"><Plus size={16} /> {t("teacher.exams.new", { defaultValue: "Nuevo examen" })}</button>
         </div>
         <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
           <div className="rounded-xl border border-slate-200 bg-white p-3"><p className="text-xs text-slate-500">Total</p><p className="text-xl font-semibold">{stats.total}</p></div>
-          <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3"><p className="text-xs text-emerald-700">Activos</p><p className="text-xl font-semibold text-emerald-700">{stats.active}</p></div>
-          <div className="rounded-xl border border-amber-200 bg-amber-50 p-3"><p className="text-xs text-amber-700">Programados</p><p className="text-xl font-semibold text-amber-700">{stats.scheduled}</p></div>
+          <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3"><p className="text-xs text-emerald-700">{t("teacher.exams.stats.active", { defaultValue: "Activos" })}</p><p className="text-xl font-semibold text-emerald-700">{stats.active}</p></div>
+          <div className="rounded-xl border border-amber-200 bg-amber-50 p-3"><p className="text-xs text-amber-700">{t("teacher.exams.stats.scheduled", { defaultValue: "Programados" })}</p><p className="text-xl font-semibold text-amber-700">{stats.scheduled}</p></div>
           <div className="rounded-xl border border-indigo-200 bg-indigo-50 p-3"><p className="text-xs text-indigo-700">Revisión manual</p><p className="text-xl font-semibold text-indigo-700">{stats.manual}</p></div>
         </div>
       </section>
@@ -328,39 +330,39 @@ export default function TeacherPruebas() {
       {filtered.length === 0 ? <div className="rounded-xl border border-slate-200 bg-white p-8 text-center text-slate-500 shadow-sm">No hay exámenes</div> : (
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
           {filtered.map((p) => {
-            const status = examStatus(p);
+            const status = examStatus(p, t);
             return (
               <article key={p.id} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition hover:shadow-md">
                 <div className="mb-3 flex items-start justify-between gap-2"><h3 className="line-clamp-2 text-lg font-semibold text-slate-900">{p.titulo}</h3><span className={`rounded-full border px-2.5 py-1 text-xs font-medium ${badgeClasses(status.tone)}`}>{status.label}</span></div>
-                <p className="text-sm text-slate-600">Materia: <span className="font-medium text-slate-800">{p.leccion_titulo || "Sin materia"}</span></p>
+                <p className="text-sm text-slate-600">{t("teacher.exams.subject", { defaultValue: "Materia" })}: <span className="font-medium text-slate-800">{p.leccion_titulo || t("teacher.exams.noSubject", { defaultValue: "Sin materia" })}</span></p>
                 <p className="mt-1 text-xs text-slate-500">Mínimo aprobatorio: {p.puntaje_minimo ?? 0}%</p>
                 <p className="mt-1 text-xs text-slate-500">Revisión: {p.requiere_revision_docente ? "Manual" : "Automática"}</p>
                 <div className="mt-4 flex flex-wrap gap-2">
-                  <button onClick={() => openReview(p)} className="inline-flex items-center gap-1 rounded-lg border border-indigo-200 bg-indigo-50 px-2.5 py-1.5 text-xs font-medium text-indigo-700 hover:bg-indigo-100"><ClipboardCheck size={14} /> Entregas</button>
-                  <button onClick={() => openEdit(p)} className="inline-flex items-center gap-1 rounded-lg border border-blue-200 bg-blue-50 px-2.5 py-1.5 text-xs font-medium text-blue-700 hover:bg-blue-100"><Pencil size={14} /> Editar</button>
-                  <button onClick={() => handleDelete(p.id)} className="inline-flex items-center gap-1 rounded-lg border border-rose-200 bg-rose-50 px-2.5 py-1.5 text-xs font-medium text-rose-700 hover:bg-rose-100"><Trash2 size={14} /> Eliminar</button>
+                  <button onClick={() => openReview(p)} className="inline-flex items-center gap-1 rounded-lg border border-indigo-200 bg-indigo-50 px-2.5 py-1.5 text-xs font-medium text-indigo-700 hover:bg-indigo-100"><ClipboardCheck size={14} /> {t("teacher.exams.submissions", { defaultValue: "Entregas" })}</button>
+                  <button onClick={() => openEdit(p)} className="inline-flex items-center gap-1 rounded-lg border border-blue-200 bg-blue-50 px-2.5 py-1.5 text-xs font-medium text-blue-700 hover:bg-blue-100"><Pencil size={14} /> {t("common.edit", { defaultValue: "Editar" })}</button>
+                  <button onClick={() => handleDelete(p.id)} className="inline-flex items-center gap-1 rounded-lg border border-rose-200 bg-rose-50 px-2.5 py-1.5 text-xs font-medium text-rose-700 hover:bg-rose-100"><Trash2 size={14} /> {t("common.delete", { defaultValue: "Eliminar" })}</button>
                 </div>
               </article>
             );
           })}
         </div>
       )}
-      {reviewOpen && <div className="fixed inset-0 z-50 flex items-start justify-center bg-slate-950/60 p-4 backdrop-blur-sm"><div className="max-h-[92vh] w-full max-w-5xl overflow-y-auto rounded-2xl border border-slate-200 bg-white shadow-2xl"><div className="sticky top-0 z-10 flex items-start justify-between border-b border-slate-200 bg-white px-5 py-4"><div><h3 className="text-xl font-bold text-slate-900">Entregas del examen</h3><p className="text-sm text-slate-600">{reviewExam?.titulo}</p></div><button onClick={() => setReviewOpen(false)} className="rounded-lg p-2 text-slate-500 transition hover:bg-slate-100 hover:text-slate-900"><X size={20} /></button></div><div className="p-5">{reviewLoading ? <div className="flex min-h-[180px] items-center justify-center"><Loader2 className="h-7 w-7 animate-spin text-blue-600" /></div> : resultados.length === 0 ? <div className="rounded-lg border border-slate-200 bg-slate-50 p-6 text-center text-slate-500">Aún no hay entregas para este examen.</div> : <div className="space-y-4">{resultados.map((r) => { const s = students[r.usuario_id]; const identity = s?.display_name || s?.email || r.usuario_id; const g = grading[r.id] || { score: String(r.puntaje_obtenido ?? ""), feedback: "", publish: r.mostrar_puntaje_estudiante !== false }; const approved = Number(g.score || 0) >= (reviewExam?.puntaje_minimo ?? 0); const isManualExam = reviewExam?.requiere_revision_docente === true; return <div key={r.id} className="rounded-xl border border-slate-200 bg-white p-4"><div className="mb-3 flex flex-wrap items-center justify-between gap-2"><div><p className="font-semibold text-slate-900">{identity}</p><p className="text-xs text-slate-500">Entrega: {r.completed_at ? new Date(r.completed_at).toLocaleString() : "sin fecha"}</p></div><div className="flex items-center gap-2 text-xs"><span className="rounded-full border border-slate-200 bg-slate-100 px-2 py-1">Actual: {r.puntaje_obtenido.toFixed(2)}%</span>{r.calificado_por_docente ? <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-1 text-emerald-700">Calificado</span> : <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-1 text-amber-700">Pendiente</span>}</div></div><div className="grid grid-cols-1 gap-3 md:grid-cols-3"><label className="text-sm">Puntaje (%)<input type="number" min={0} max={100} value={g.score} onChange={(e) => setGrading((prev) => ({ ...prev, [r.id]: { ...g, score: e.target.value } }))} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2" /></label><label className="text-sm md:col-span-2">Feedback docente<input value={g.feedback} onChange={(e) => setGrading((prev) => ({ ...prev, [r.id]: { ...g, feedback: e.target.value } }))} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2" placeholder="Observaciones para el estudiante" /></label></div><div className="mt-3 flex flex-wrap items-center justify-between gap-2"><div className="flex items-center gap-3 text-xs text-slate-600"><span className={`inline-flex items-center gap-1 rounded-full border px-2 py-1 ${approved ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-rose-200 bg-rose-50 text-rose-700"}`}><CheckCircle2 className="h-3.5 w-3.5" />{approved ? "Aprobado" : "Reprobado"}</span><label className="inline-flex items-center gap-1.5"><input type="checkbox" checked={g.publish} onChange={(e) => setGrading((prev) => ({ ...prev, [r.id]: { ...g, publish: e.target.checked } }))} />Mostrar puntaje al estudiante</label></div><button onClick={() => saveGrade(r)} className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-3 py-2 text-xs font-semibold text-white hover:bg-indigo-700"><Eye className="h-4 w-4" />{isManualExam ? "Calificar" : "Actualizar"}</button></div></div>; })}</div>}</div></div></div>}
+      {reviewOpen && <div className="fixed inset-0 z-50 flex items-start justify-center bg-slate-950/60 p-4 backdrop-blur-sm"><div className="max-h-[92vh] w-full max-w-5xl overflow-y-auto rounded-2xl border border-slate-200 bg-white shadow-2xl"><div className="sticky top-0 z-10 flex items-start justify-between border-b border-slate-200 bg-white px-5 py-4"><div><h3 className="text-xl font-bold text-slate-900">{t("teacher.exams.submissionsTitle", { defaultValue: "Entregas del examen" })}</h3><p className="text-sm text-slate-600">{reviewExam?.titulo}</p></div><button onClick={() => setReviewOpen(false)} className="rounded-lg p-2 text-slate-500 transition hover:bg-slate-100 hover:text-slate-900"><X size={20} /></button></div><div className="p-5">{reviewLoading ? <div className="flex min-h-[180px] items-center justify-center"><Loader2 className="h-7 w-7 animate-spin text-blue-600" /></div> : resultados.length === 0 ? <div className="rounded-lg border border-slate-200 bg-slate-50 p-6 text-center text-slate-500">Aún no hay entregas para este examen.</div> : <div className="space-y-4">{resultados.map((r) => { const s = students[r.usuario_id]; const identity = s?.display_name || s?.email || r.usuario_id; const g = grading[r.id] || { score: String(r.puntaje_obtenido ?? ""), feedback: "", publish: r.mostrar_puntaje_estudiante !== false }; const approved = Number(g.score || 0) >= (reviewExam?.puntaje_minimo ?? 0); const isManualExam = reviewExam?.requiere_revision_docente === true; return <div key={r.id} className="rounded-xl border border-slate-200 bg-white p-4"><div className="mb-3 flex flex-wrap items-center justify-between gap-2"><div><p className="font-semibold text-slate-900">{identity}</p><p className="text-xs text-slate-500">{t("teacher.exams.submissionDate", { defaultValue: "Entrega" })}: {r.completed_at ? new Date(r.completed_at).toLocaleString() : t("teacher.exams.noDate", { defaultValue: "sin fecha" })}</p></div><div className="flex items-center gap-2 text-xs"><span className="rounded-full border border-slate-200 bg-slate-100 px-2 py-1">{t("teacher.exams.current", { defaultValue: "Actual" })}: {r.puntaje_obtenido.toFixed(2)}%</span>{r.calificado_por_docente ? <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-1 text-emerald-700">{t("teacher.exams.graded", { defaultValue: "Calificado" })}</span> : <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-1 text-amber-700">{t("teacher.exams.pending", { defaultValue: "Pendiente" })}</span>}</div></div><div className="grid grid-cols-1 gap-3 md:grid-cols-3"><label className="text-sm">{t("teacher.exams.scorePct", { defaultValue: "Puntaje (%)" })}<input type="number" min={0} max={100} value={g.score} onChange={(e) => setGrading((prev) => ({ ...prev, [r.id]: { ...g, score: e.target.value } }))} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2" /></label><label className="text-sm md:col-span-2">{t("teacher.exams.teacherFeedback", { defaultValue: "Feedback docente" })}<input value={g.feedback} onChange={(e) => setGrading((prev) => ({ ...prev, [r.id]: { ...g, feedback: e.target.value } }))} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2" placeholder={t("teacher.exams.feedbackPlaceholder", { defaultValue: "Observaciones para el estudiante" })} /></label></div><div className="mt-3 flex flex-wrap items-center justify-between gap-2"><div className="flex items-center gap-3 text-xs text-slate-600"><span className={`inline-flex items-center gap-1 rounded-full border px-2 py-1 ${approved ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-rose-200 bg-rose-50 text-rose-700"}`}><CheckCircle2 className="h-3.5 w-3.5" />{approved ? t("teacher.exams.passed", { defaultValue: "Aprobado" }) : t("teacher.exams.failed", { defaultValue: "Reprobado" })}</span><label className="inline-flex items-center gap-1.5"><input type="checkbox" checked={g.publish} onChange={(e) => setGrading((prev) => ({ ...prev, [r.id]: { ...g, publish: e.target.checked } }))} />{t("teacher.exams.showScore", { defaultValue: "Mostrar puntaje al estudiante" })}</label></div><button onClick={() => saveGrade(r)} className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-3 py-2 text-xs font-semibold text-white hover:bg-indigo-700"><Eye className="h-4 w-4" />{isManualExam ? t("teacher.exams.grade", { defaultValue: "Calificar" }) : t("common.update", { defaultValue: "Actualizar" })}</button></div></div>; })}</div>}</div></div></div>}
       {openForm && (
         <div className="fixed inset-0 z-50 flex items-start justify-center bg-slate-950/60 p-4 backdrop-blur-sm">
           <div className="max-h-[92vh] w-full max-w-4xl overflow-y-auto rounded-2xl border border-slate-200 bg-white shadow-2xl">
             <div className="sticky top-0 z-10 flex items-start justify-between border-b border-slate-200 bg-gradient-to-r from-indigo-50 to-blue-50 px-6 py-5">
-              <div><h2 className="text-2xl font-bold text-slate-900">{editing ? "Editar examen" : "Crear examen"}</h2><p className="mt-1 text-sm text-slate-600">Este examen se vinculará a una materia, no a una lección.</p></div>
+              <div><h2 className="text-2xl font-bold text-slate-900">{editing ? t("teacher.exams.edit", { defaultValue: "Editar examen" }) : t("teacher.exams.create", { defaultValue: "Crear examen" })}</h2><p className="mt-1 text-sm text-slate-600">Este examen se vinculará a una materia, no a una lección.</p></div>
               <button onClick={() => setOpenForm(false)} className="rounded-lg p-2 text-slate-500 transition hover:bg-white hover:text-slate-900"><X size={20} /></button>
             </div>
             <div className="space-y-5 p-6">
               <section className="rounded-xl border border-slate-200 bg-slate-50/60 p-4">
                 <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-700">Información general</h3>
                 <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                  <label className="space-y-1.5"><span className="text-xs font-medium text-slate-600">Título del examen</span><input className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5" placeholder="Ej: Examen Unidad 1" value={form.titulo} onChange={(e) => setForm((s) => ({ ...s, titulo: e.target.value }))} /></label>
-                  <label className="space-y-1.5"><span className="text-xs font-medium text-slate-600">Materia</span><select className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5" value={form.materia_id} onChange={(e) => setForm((s) => ({ ...s, materia_id: e.target.value }))}><option value="">Selecciona materia</option>{materias.map((m) => <option key={m.id} value={m.id}>{m.nombre}</option>)}</select></label>
+                  <label className="space-y-1.5"><span className="text-xs font-medium text-slate-600">Título del examen</span><input className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5" placeholder={t("teacher.exams.titlePlaceholder", { defaultValue: "Ej: Examen Unidad 1" })} value={form.titulo} onChange={(e) => setForm((s) => ({ ...s, titulo: e.target.value }))} /></label>
+                  <label className="space-y-1.5"><span className="text-xs font-medium text-slate-600">{t("teacher.exams.subject", { defaultValue: "Materia" })}</span><select className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5" value={form.materia_id} onChange={(e) => setForm((s) => ({ ...s, materia_id: e.target.value }))}><option value="">{t("teacher.exams.selectSubject", { defaultValue: "Selecciona materia" })}</option>{materias.map((m) => <option key={m.id} value={m.id}>{m.nombre}</option>)}</select></label>
                 </div>
-                <label className="mt-4 block space-y-1.5"><span className="text-xs font-medium text-slate-600">Descripción (opcional)</span><textarea className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5" rows={3} placeholder="Describe el examen..." value={form.descripcion} onChange={(e) => setForm((s) => ({ ...s, descripcion: e.target.value }))} /></label>
+                <label className="mt-4 block space-y-1.5"><span className="text-xs font-medium text-slate-600">Descripción (opcional)</span><textarea className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5" rows={3} placeholder={t("teacher.exams.descriptionPlaceholder", { defaultValue: "Describe el examen..." })} value={form.descripcion} onChange={(e) => setForm((s) => ({ ...s, descripcion: e.target.value }))} /></label>
               </section>
               <section className="rounded-xl border border-slate-200 bg-white p-4">
                 <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-700">Publicación y evaluación</h3>
@@ -370,23 +372,26 @@ export default function TeacherPruebas() {
                   <label className="space-y-1.5"><span className="text-xs font-medium text-slate-600">Puntaje mínimo (%)</span><input type="number" min={0} max={100} className="w-full rounded-lg border border-slate-300 px-3 py-2.5" value={form.puntaje_minimo} onChange={(e) => setForm((s) => ({ ...s, puntaje_minimo: Number(e.target.value) }))} /></label>
                 </div>
                 <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3">
-                  <label className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm"><input type="checkbox" checked={form.activa} onChange={(e) => setForm((s) => ({ ...s, activa: e.target.checked, fecha_activacion: e.target.checked ? "" : s.fecha_activacion }))} />Activo</label>
-                  <label className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm"><input type="checkbox" checked={form.mostrar_resultado_inmediato} disabled={hasShortAnswerQuestion} onChange={(e) => setForm((s) => ({ ...s, mostrar_resultado_inmediato: e.target.checked, requiere_revision_docente: e.target.checked ? false : s.requiere_revision_docente }))} />Mostrar puntaje inmediato</label>
+                  <label className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm"><input type="checkbox" checked={form.activa} onChange={(e) => setForm((s) => ({ ...s, activa: e.target.checked, fecha_activacion: e.target.checked ? "" : s.fecha_activacion }))} />{t("teacher.exams.active", { defaultValue: "Activo" })}</label>
+                  <label className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm"><input type="checkbox" checked={form.mostrar_resultado_inmediato} disabled={hasShortAnswerQuestion} onChange={(e) => setForm((s) => ({ ...s, mostrar_resultado_inmediato: e.target.checked, requiere_revision_docente: e.target.checked ? false : s.requiere_revision_docente }))} />{t("teacher.exams.showImmediate", { defaultValue: "Mostrar puntaje inmediato" })}</label>
                   <label className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm"><input type="checkbox" checked={hasShortAnswerQuestion ? true : form.requiere_revision_docente} disabled={hasShortAnswerQuestion} onChange={(e) => setForm((s) => ({ ...s, requiere_revision_docente: e.target.checked, mostrar_resultado_inmediato: e.target.checked ? false : s.mostrar_resultado_inmediato }))} />Requiere revisión docente</label>
                 </div>
                 {!form.activa && <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 inline-flex items-center gap-2"><Clock3 className="h-4 w-4" />El examen está desactivado. Programa la fecha de activación.</div>}
                 {hasShortAnswerQuestion && <div className="mt-3 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-800">Hay al menos una pregunta de <strong>respuesta corta</strong>: se exige revisión docente y se desactiva el puntaje inmediato.</div>}
               </section>
               <section className="rounded-xl border border-indigo-100 bg-indigo-50/40 p-4">
-                <div className="mb-3 flex items-center justify-between"><h3 className="text-sm font-semibold uppercase tracking-wide text-indigo-800">Preguntas</h3><button type="button" onClick={() => setQuestions((prev) => [...prev, createQuestion()])} className="rounded-lg border border-indigo-300 bg-white px-3 py-2 text-xs font-medium text-indigo-700 hover:bg-indigo-50">+ Agregar pregunta</button></div>
-                <div className="space-y-3">{questions.map((q, qIdx) => <div key={qIdx} className="rounded-lg border border-indigo-200 bg-white p-3"><div className="mb-2 flex items-center justify-between gap-2"><span className="text-sm font-semibold text-slate-700">Pregunta {qIdx + 1}</span><button type="button" onClick={() => setQuestions((prev) => prev.filter((_, i) => i !== qIdx))} className="text-xs text-red-600">Eliminar</button></div><input className="mb-2 w-full rounded-lg border border-slate-300 px-3 py-2" placeholder="Escribe el enunciado" value={q.text} onChange={(e) => updateQuestion(qIdx, { text: e.target.value })} /><select className="mb-2 w-full rounded-lg border border-slate-300 px-3 py-2" value={q.type} onChange={(e) => { const nextType = e.target.value as QuestionType; updateQuestion(qIdx, { type: nextType, options: nextType === "verdadero_falso" ? [{ text: "Verdadero", correct: true }, { text: "Falso", correct: false }] : nextType === "opcion_multiple" ? [{ text: "", correct: true }, { text: "", correct: false }] : [] }); }}><option value="opcion_multiple">Opción múltiple</option><option value="verdadero_falso">Verdadero / Falso</option><option value="respuesta_corta">Respuesta corta</option></select>{(q.type === "opcion_multiple" || q.type === "verdadero_falso") && <div className="space-y-2">{q.options.map((opt, oIdx) => <div key={oIdx} className="flex items-center gap-2"><input type="radio" name={`q-${qIdx}-correct`} checked={!!opt.correct} onChange={() => setCorrectOption(qIdx, oIdx)} /><input className="flex-1 rounded-lg border border-slate-300 px-3 py-2" placeholder={`Opción ${oIdx + 1}`} value={opt.text} onChange={(e) => updateOption(qIdx, oIdx, { text: e.target.value })} disabled={q.type === "verdadero_falso"} />{q.type !== "verdadero_falso" && <button type="button" onClick={() => removeOption(qIdx, oIdx)} className="text-xs text-red-600">Quitar</button>}</div>)}{q.type !== "verdadero_falso" && <button type="button" onClick={() => addOption(qIdx)} className="text-xs font-medium text-indigo-700">+ Agregar opción</button>}</div>}</div>)}</div>
+                <div className="mb-3 flex items-center justify-between"><h3 className="text-sm font-semibold uppercase tracking-wide text-indigo-800">{t("teacher.exams.questions", { defaultValue: "Preguntas" })}</h3><button type="button" onClick={() => setQuestions((prev) => [...prev, createQuestion()])} className="rounded-lg border border-indigo-300 bg-white px-3 py-2 text-xs font-medium text-indigo-700 hover:bg-indigo-50">{t("teacher.exams.addQuestion", { defaultValue: "+ Agregar pregunta" })}</button></div>
+                <div className="space-y-3">{questions.map((q, qIdx) => <div key={qIdx} className="rounded-lg border border-indigo-200 bg-white p-3"><div className="mb-2 flex items-center justify-between gap-2"><span className="text-sm font-semibold text-slate-700">{t("teacher.exams.questionN", { defaultValue: "Pregunta" })} {qIdx + 1}</span><button type="button" onClick={() => setQuestions((prev) => prev.filter((_, i) => i !== qIdx))} className="text-xs text-red-600">{t("common.delete", { defaultValue: "Eliminar" })}</button></div><input className="mb-2 w-full rounded-lg border border-slate-300 px-3 py-2" placeholder={t("teacher.exams.promptPlaceholder", { defaultValue: "Escribe el enunciado" })} value={q.text} onChange={(e) => updateQuestion(qIdx, { text: e.target.value })} /><select className="mb-2 w-full rounded-lg border border-slate-300 px-3 py-2" value={q.type} onChange={(e) => { const nextType = e.target.value as QuestionType; updateQuestion(qIdx, { type: nextType, options: nextType === "verdadero_falso" ? [{ text: "Verdadero", correct: true }, { text: "Falso", correct: false }] : nextType === "opcion_multiple" ? [{ text: "", correct: true }, { text: "", correct: false }] : [] }); }}><option value="opcion_multiple">{t("teacher.exams.type.multiple", { defaultValue: "Opción múltiple" })}</option><option value="verdadero_falso">{t("teacher.exams.type.trueFalse", { defaultValue: "Verdadero / Falso" })}</option><option value="respuesta_corta">{t("teacher.exams.type.short", { defaultValue: "Respuesta corta" })}</option></select>{(q.type === "opcion_multiple" || q.type === "verdadero_falso") && <div className="space-y-2">{q.options.map((opt, oIdx) => <div key={oIdx} className="flex items-center gap-2"><input type="radio" name={`q-${qIdx}-correct`} checked={!!opt.correct} onChange={() => setCorrectOption(qIdx, oIdx)} /><input className="flex-1 rounded-lg border border-slate-300 px-3 py-2" placeholder={`Opción ${oIdx + 1}`} value={opt.text} onChange={(e) => updateOption(qIdx, oIdx, { text: e.target.value })} disabled={q.type === "verdadero_falso"} />{q.type !== "verdadero_falso" && <button type="button" onClick={() => removeOption(qIdx, oIdx)} className="text-xs text-red-600">{t("teacher.exams.removeOption", { defaultValue: "Quitar" })}</button>}</div>)}{q.type !== "verdadero_falso" && <button type="button" onClick={() => addOption(qIdx)} className="text-xs font-medium text-indigo-700">{t("teacher.exams.addOption", { defaultValue: "+ Agregar opción" })}</button>}</div>}</div>)}</div>
               </section>
             </div>
-            <div className="sticky bottom-0 flex items-center justify-end gap-3 border-t border-slate-200 bg-white px-6 py-4"><button onClick={() => setOpenForm(false)} className="rounded-lg border border-slate-300 px-4 py-2.5 font-medium text-slate-700 hover:bg-slate-50">Cancelar</button><button onClick={saveExam} disabled={saving} className="rounded-lg bg-blue-600 px-5 py-2.5 font-semibold text-white hover:bg-blue-700 disabled:opacity-50">{saving ? "Guardando..." : "Guardar examen"}</button></div>
+            <div className="sticky bottom-0 flex items-center justify-end gap-3 border-t border-slate-200 bg-white px-6 py-4"><button onClick={() => setOpenForm(false)} className="rounded-lg border border-slate-300 px-4 py-2.5 font-medium text-slate-700 hover:bg-slate-50">{t("common.cancel", { defaultValue: "Cancelar" })}</button><button onClick={saveExam} disabled={saving} className="rounded-lg bg-blue-600 px-5 py-2.5 font-semibold text-white hover:bg-blue-700 disabled:opacity-50">{saving ? t("common.saving", { defaultValue: "Guardando..." }) : t("teacher.exams.save", { defaultValue: "Guardar examen" })}</button></div>
           </div>
         </div>
       )}
     </div>
   );
 }
+
+
+
 

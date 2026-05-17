@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { BookOpen, CalendarDays, Loader2, Search, Users } from "lucide-react";
+import { BookOpen, Loader2, Search, Users } from "lucide-react";
 import toast from "react-hot-toast";
 
 import { getMe } from "@/shared/lib/auth";
@@ -166,15 +166,8 @@ export default function TeacherMisCursos() {
 
               <div className="flex items-center justify-between gap-2">
                 <button
-                  onClick={() => navigate(`/teacher/horario?asignacion=${encodeURIComponent(item.asignacion_id)}`)}
-                  className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition"
-                >
-                  <CalendarDays size={14} />
-                  {t("teacher.cursos.actions.schedule", { defaultValue: "Gestionar horario" })}
-                </button>
-                <button
                   onClick={() => navigate("/teacher/estudiantes")}
-                  className="inline-flex items-center gap-2 px-3 py-2 text-sm rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 transition"
+                  className="inline-flex items-center gap-2 px-3 py-2 text-sm rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 transition ml-auto"
                 >
                   <Users size={14} />
                   {t("teacher.cursos.actions.students", { defaultValue: "Estudiantes" })}

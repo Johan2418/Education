@@ -18,8 +18,6 @@ export type {
   EstudianteCursoDetail,
   DocenteMateriaAsignacion,
   MisCursoDocente,
-  DocenteMateriaHorario,
-  DocenteMateriaHorarioRequest,
   CursoAnioMateriaDocenteInput,
   CursoAnioAsignarMaestrosRequest,
   CursoAnioAsignarMaestrosDetalle,

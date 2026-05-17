@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { FileQuestion, Loader2, Plus, Save, Trash2, X } from "lucide-react";
 import toast from "react-hot-toast";
 
@@ -103,6 +104,7 @@ function createEmptyPregunta(trabajo?: Trabajo | null): PreguntaInputWithDraftOp
 }
 
 export default function TeacherTrabajoPreguntas() {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const { trabajoId = "" } = useParams();
 
@@ -289,7 +291,7 @@ export default function TeacherTrabajoPreguntas() {
     try {
       const updated = await updateTrabajoPreguntas(trabajoId, { preguntas: normalized });
       setPreguntas(updated.map(mapPreguntaToInput));
-      toast.success("Preguntas actualizadas");
+      toast.success(t("teacher.workQuestionBank.toasts.updated"));
       navigate("/teacher/trabajos");
     } catch (err) {
       toast.error(normalizeError(err));
@@ -309,39 +311,39 @@ export default function TeacherTrabajoPreguntas() {
   return (
     <div className="max-w-5xl mx-auto p-4 space-y-4">
       <button type="button" className="text-sm text-blue-600" onClick={() => navigate("/teacher/trabajos")}>
-        Volver
+        {t("teacher.workQuestionBank.back")}
       </button>
 
       <div className="bg-white rounded-lg shadow p-4">
         <div className="flex items-start justify-between gap-3 flex-wrap">
           <div>
-            <h1 className="text-2xl font-bold">Banco de preguntas</h1>
+            <h1 className="text-2xl font-bold">{t("teacher.workQuestionBank.title")}</h1>
             <p className="text-sm text-gray-500 mt-1">{trabajo?.titulo}</p>
           </div>
           <span className={`text-xs px-2.5 py-1 rounded-full ${trabajo?.calificacion_automatica ? "bg-emerald-100 text-emerald-700" : "bg-blue-100 text-blue-700"}`}>
-            {trabajo?.calificacion_automatica ? "Cerrada (autocalificable)" : "Abierta (revision manual)"}
+            {trabajo?.calificacion_automatica ? t("teacher.workQuestionBank.closed") : t("teacher.workQuestionBank.open")}
           </span>
         </div>
-        <p className="text-sm text-gray-500 mt-2">Puntaje total configurado: {totalPuntaje.toFixed(2)}</p>
+        <p className="text-sm text-gray-500 mt-2">{t("teacher.workQuestionBank.totalScore")}: {totalPuntaje.toFixed(2)}</p>
       </div>
 
       <div className="space-y-3">
         {preguntas.map((pregunta, index) => (
           <div key={`pregunta-${index}`} className="bg-white rounded-xl shadow p-4 space-y-3 border border-gray-100">
             <div className="flex items-center justify-between">
-              <h2 className="font-semibold">Pregunta {index + 1}</h2>
+              <h2 className="font-semibold">{t("teacher.workQuestionBank.question")} {index + 1}</h2>
               <button
                 type="button"
                 onClick={() => setPreguntas((prev) => prev.filter((_, idx) => idx !== index))}
                 className="inline-flex items-center gap-1 px-3 py-1.5 text-sm rounded bg-rose-600 text-white hover:bg-rose-700"
               >
                 <Trash2 size={14} />
-                Eliminar
+                {t("teacher.workQuestionBank.delete")}
               </button>
             </div>
 
             <label className="text-sm block">
-              Enunciado
+              {t("teacher.workQuestionBank.statement")}
               <textarea
                 rows={2}
                 className="mt-1 w-full border rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -352,7 +354,7 @@ export default function TeacherTrabajoPreguntas() {
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
               <label className="text-sm block">
-                Tipo
+                {t("teacher.workQuestionBank.type")}
                 <select
                   className="mt-1 w-full border rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
                   value={pregunta.tipo}
@@ -360,17 +362,17 @@ export default function TeacherTrabajoPreguntas() {
                 >
                   {trabajo?.calificacion_automatica ? (
                     <>
-                      <option value="opcion_multiple">Opción múltiple</option>
-                      <option value="verdadero_falso">Verdadero/Falso</option>
+                      <option value="opcion_multiple">{t("teacher.workQuestionBank.types.multipleChoice")}</option>
+                      <option value="verdadero_falso">{t("teacher.workQuestionBank.types.trueFalse")}</option>
                     </>
                   ) : (
-                    <option value="respuesta_corta">Respuesta corta</option>
+                    <option value="respuesta_corta">{t("teacher.workQuestionBank.types.shortAnswer")}</option>
                   )}
                 </select>
               </label>
 
               <label className="text-sm block">
-                Puntaje máximo
+                {t("teacher.workQuestionBank.maxScore")}
                 <input
                   type="number"
                   min={0.1}
@@ -382,7 +384,7 @@ export default function TeacherTrabajoPreguntas() {
               </label>
 
               <label className="text-sm block">
-                Placeholder
+                {t("teacher.workQuestionBank.placeholder")}
                 <input
                   className="mt-1 w-full border rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
                   value={pregunta.placeholder || ""}
@@ -393,7 +395,7 @@ export default function TeacherTrabajoPreguntas() {
 
             {isClosedType(pregunta.tipo) && (
               <div className="mt-3 space-y-2 rounded-lg border border-slate-200 bg-slate-50 p-3">
-                <p className="text-xs font-medium text-slate-700">Opciones y respuesta correcta</p>
+                <p className="text-xs font-medium text-slate-700">{t("teacher.workQuestionBank.optionsAndCorrect")}</p>
                 {pregunta.tipo === "verdadero_falso" ? (
                   <div className="space-y-2">
                     {(pregunta.optionDrafts || []).map((option) => (
@@ -422,7 +424,7 @@ export default function TeacherTrabajoPreguntas() {
                           value={option.text}
                           onChange={(e) => updateOption(index, option.localId, (prev) => ({ ...prev, text: e.target.value }))}
                           className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          placeholder="Texto de opción"
+                          placeholder={t("teacher.workQuestionBank.optionText")}
                         />
                         <button
                           type="button"
@@ -438,7 +440,7 @@ export default function TeacherTrabajoPreguntas() {
                       onClick={() => addOption(index)}
                       className="text-xs font-medium text-indigo-700 hover:underline"
                     >
-                      + Agregar opción
+                      {t("teacher.workQuestionBank.addOption")}
                     </button>
                   </>
                 )}
@@ -455,7 +457,7 @@ export default function TeacherTrabajoPreguntas() {
           className="inline-flex items-center gap-2 px-4 py-2 rounded bg-slate-700 text-white hover:bg-slate-800"
         >
           <Plus size={14} />
-          Agregar pregunta
+          {t("teacher.workQuestionBank.addQuestion")}
         </button>
 
         <button
@@ -465,7 +467,7 @@ export default function TeacherTrabajoPreguntas() {
           className="inline-flex items-center gap-2 px-4 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
         >
           <Save size={14} />
-          {saving ? "Guardando..." : "Guardar banco de preguntas"}
+          {saving ? t("teacher.workQuestionBank.saving") : t("teacher.workQuestionBank.save")}
         </button>
       </div>
     </div>

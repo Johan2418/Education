@@ -122,7 +122,7 @@ export default function TeacherRecursos() {
 
   const totalPages = useMemo(() => Math.max(1, Math.ceil(total / pageSize)), [total]);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (targetPage = page) => {
     setLoading(true);
     setCompatWarning(null);
     try {
@@ -130,7 +130,7 @@ export default function TeacherRecursos() {
         q: q.trim() || undefined,
         estado: estado || undefined,
         es_publico: esPublico === "all" ? undefined : esPublico === "true",
-        page,
+        page: targetPage,
         page_size: pageSize,
       });
       setItems(res.items || []);
@@ -159,8 +159,9 @@ export default function TeacherRecursos() {
   }, [checkingAuth, load]);
 
   const onApplyFilters = async () => {
-    setPage(1);
-    await load();
+    const nextPage = 1;
+    setPage(nextPage);
+    await load(nextPage);
   };
 
   if (checkingAuth) {
@@ -198,6 +199,12 @@ export default function TeacherRecursos() {
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
                 placeholder="Titulo del libro"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    void onApplyFilters();
+                  }
+                }}
                 className="w-full rounded-xl border border-slate-300 pl-9 pr-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>

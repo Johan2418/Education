@@ -17,6 +17,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/arcanea/backend/internal/config"
 )
@@ -61,6 +62,20 @@ func NewAIService(cfg config.HuggingFaceConfig) *AIService {
 			Timeout: time.Duration(timeoutSeconds) * time.Second,
 		},
 	}
+}
+
+func (s *AIService) ConfiguredModelTag() string {
+	if s == nil {
+		return ""
+	}
+	return strings.TrimSpace(s.model)
+}
+
+func (s *AIService) FallbackModelTag() string {
+	if s == nil {
+		return ""
+	}
+	return strings.TrimSpace(s.fallbackModel)
 }
 
 func (s *AIService) ExtractQuestions(ctx context.Context, req ExtractLibroRequest) ([]TrabajoPregunta, bool, string, error) {
@@ -191,16 +206,8 @@ func (s *AIService) aiExtractChat(ctx context.Context, prompt string, sourceText
 		return nil, fmt.Errorf("no se encontro JSON")
 	}
 
-	var raw []struct {
-		Texto                 string          `json:"texto"`
-		Tipo                  string          `json:"tipo"`
-		Opciones              json.RawMessage `json:"opciones"`
-		PaginaLibro           *int            `json:"pagina_libro"`
-		ConfianzaIA           *float64        `json:"confianza_ia"`
-		RespuestaEsperadaTipo *string         `json:"respuesta_esperada_tipo"`
-		Placeholder           *string         `json:"placeholder"`
-	}
-	if err := json.Unmarshal([]byte(content[start:end+1]), &raw); err != nil {
+	raw, err := parseModelQuestionsPayload(content[start : end+1])
+	if err != nil {
 		return nil, err
 	}
 
@@ -254,6 +261,177 @@ func (s *AIService) aiExtractChat(ctx context.Context, prompt string, sourceText
 	return out, nil
 }
 
+type modelQuestionPayload struct {
+	Texto                 string
+	Tipo                  string
+	Opciones              json.RawMessage
+	PaginaLibro           *int
+	ConfianzaIA           *float64
+	RespuestaEsperadaTipo *string
+	Placeholder           *string
+}
+
+func parseModelQuestionsPayload(rawJSON string) ([]modelQuestionPayload, error) {
+	clean := sanitizeModelText(rawJSON)
+	if clean == "" {
+		return nil, fmt.Errorf("json vacio")
+	}
+
+	var rawItems []map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(clean), &rawItems); err != nil {
+		return nil, err
+	}
+
+	out := make([]modelQuestionPayload, 0, len(rawItems))
+	for _, item := range rawItems {
+		texto := sanitizeModelText(extractJSONString(item, "texto"))
+		if texto == "" {
+			continue
+		}
+
+		out = append(out, modelQuestionPayload{
+			Texto:                 texto,
+			Tipo:                  sanitizeModelText(extractJSONString(item, "tipo")),
+			Opciones:              extractJSONRawArray(item, "opciones"),
+			PaginaLibro:           extractJSONIntPtr(item, "pagina_libro"),
+			ConfianzaIA:           extractJSONFloatPtr(item, "confianza_ia"),
+			RespuestaEsperadaTipo: extractJSONStringPtr(item, "respuesta_esperada_tipo"),
+			Placeholder:           extractJSONStringPtr(item, "placeholder"),
+		})
+	}
+
+	return out, nil
+}
+
+func extractJSONString(item map[string]json.RawMessage, key string) string {
+	raw, ok := item[key]
+	if !ok || len(raw) == 0 {
+		return ""
+	}
+
+	var asString string
+	if err := json.Unmarshal(raw, &asString); err == nil {
+		return strings.TrimSpace(asString)
+	}
+
+	var asNumber json.Number
+	if err := json.Unmarshal(raw, &asNumber); err == nil {
+		return strings.TrimSpace(asNumber.String())
+	}
+
+	var asBool bool
+	if err := json.Unmarshal(raw, &asBool); err == nil {
+		if asBool {
+			return "true"
+		}
+		return "false"
+	}
+
+	return strings.TrimSpace(string(raw))
+}
+
+func extractJSONStringPtr(item map[string]json.RawMessage, key string) *string {
+	value := strings.TrimSpace(sanitizeModelText(extractJSONString(item, key)))
+	if value == "" || strings.EqualFold(value, "null") {
+		return nil
+	}
+	return &value
+}
+
+func extractJSONIntPtr(item map[string]json.RawMessage, key string) *int {
+	raw, ok := item[key]
+	if !ok || len(raw) == 0 {
+		return nil
+	}
+
+	var asInt int
+	if err := json.Unmarshal(raw, &asInt); err == nil {
+		return &asInt
+	}
+
+	var asNumber json.Number
+	if err := json.Unmarshal(raw, &asNumber); err == nil {
+		if parsed, convErr := strconv.Atoi(strings.TrimSpace(asNumber.String())); convErr == nil {
+			return &parsed
+		}
+	}
+
+	var asString string
+	if err := json.Unmarshal(raw, &asString); err == nil {
+		if parsed, convErr := strconv.Atoi(strings.TrimSpace(asString)); convErr == nil {
+			return &parsed
+		}
+	}
+
+	return nil
+}
+
+func extractJSONFloatPtr(item map[string]json.RawMessage, key string) *float64 {
+	raw, ok := item[key]
+	if !ok || len(raw) == 0 {
+		return nil
+	}
+
+	var asFloat float64
+	if err := json.Unmarshal(raw, &asFloat); err == nil {
+		return &asFloat
+	}
+
+	var asNumber json.Number
+	if err := json.Unmarshal(raw, &asNumber); err == nil {
+		if parsed, convErr := strconv.ParseFloat(strings.TrimSpace(asNumber.String()), 64); convErr == nil {
+			return &parsed
+		}
+	}
+
+	var asString string
+	if err := json.Unmarshal(raw, &asString); err == nil {
+		if parsed, convErr := strconv.ParseFloat(strings.TrimSpace(asString), 64); convErr == nil {
+			return &parsed
+		}
+	}
+
+	return nil
+}
+
+func extractJSONRawArray(item map[string]json.RawMessage, key string) json.RawMessage {
+	raw, ok := item[key]
+	if !ok || len(raw) == 0 {
+		return []byte("[]")
+	}
+	trimmed := strings.TrimSpace(string(raw))
+	if trimmed == "" || strings.EqualFold(trimmed, "null") {
+		return []byte("[]")
+	}
+	if strings.HasPrefix(trimmed, "[") && strings.HasSuffix(trimmed, "]") {
+		return json.RawMessage(trimmed)
+	}
+
+	// Allow options emitted as a single string "A|B|C|D".
+	var asString string
+	if err := json.Unmarshal(raw, &asString); err == nil {
+		parts := strings.Split(asString, "|")
+		opts := make([]string, 0, len(parts))
+		for _, part := range parts {
+			value := strings.TrimSpace(sanitizeModelText(part))
+			if value == "" {
+				continue
+			}
+			opts = append(opts, value)
+		}
+		if len(opts) == 0 {
+			return []byte("[]")
+		}
+		b, err := json.Marshal(opts)
+		if err != nil {
+			return []byte("[]")
+		}
+		return b
+	}
+
+	return []byte("[]")
+}
+
 func splitCompositeQuestionText(input string) []string {
 	text := strings.TrimSpace(strings.ReplaceAll(input, "\r\n", "\n"))
 	if text == "" {
@@ -299,6 +477,7 @@ var numberedMarkerRe = regexp.MustCompile(`(?m)(?:^|\n)\s*(?:\d{1,2}[\.)]|[A-Da-
 var numberedPrefixRe = regexp.MustCompile(`^\s*(?:\d{1,2}[\.)]|[A-Da-d][\.)]|(?:pregunta|ejercicio)\s*\d+[:\.-])\s*`)
 var inlineNumberedMarkerRe = regexp.MustCompile(`(?i)(\s+)(\d{1,2}[\.)]|[A-Da-d][\.)]|(?:pregunta|ejercicio)\s*\d+[:\.-])\s+`)
 var optionLiteralRe = regexp.MustCompile(`(?m)(?:^|\n)\s*[A-Da-d][\.)]\s*([^\n]+)`)
+var nonAlnumSpaceRe = regexp.MustCompile(`[^a-z0-9\s]+`)
 
 func splitByNumberedMarkers(text string) []string {
 	indices := numberedMarkerRe.FindAllStringIndex(text, -1)
@@ -529,7 +708,7 @@ func (s *AIService) requestChatCompletion(ctx context.Context, model string, pro
 		return "", fmt.Errorf("respuesta vacia")
 	}
 
-	return chatResp.Choices[0].Message.Content, nil
+	return sanitizeModelText(chatResp.Choices[0].Message.Content), nil
 }
 
 func (s *AIService) shouldUseHeuristicFallback() bool {
@@ -667,7 +846,7 @@ func (s *AIService) requestChatCompletionWithMessages(ctx context.Context, model
 			continue
 		}
 
-		content := strings.TrimSpace(chatResp.Choices[0].Message.Content)
+		content := sanitizeModelText(chatResp.Choices[0].Message.Content)
 		if content == "" {
 			lastErr = fmt.Errorf("respuesta vacia")
 			continue
@@ -707,7 +886,10 @@ Reglas:
 - Extrae SOLO preguntas de ejercicios/evaluacion, no resumas teoria
 - Si no hay preguntas de ejercicios claras, devuelve []
 - No reformules ni inventes: copia literalmente la pregunta desde el texto fuente
+- Usa solamente estos valores exactos para "tipo": opcion_multiple, verdadero_falso, respuesta_corta, completar
+- Nunca uses tipos alternos como "definicion", "escritura", "abierta" o "pregunta_abierta"
 - Usa respuesta_esperada_tipo="opciones" si la pregunta es de seleccionar opcion; en caso contrario "abierta"
+- Mantén texto UTF-8 legible (sin caracteres corruptos como Ã¡, Ã±, Â¿)
 - No incluyas markdown ni comentarios`, content, maxPreguntas)
 }
 
@@ -738,7 +920,10 @@ Reglas:
 - Extrae SOLO preguntas de ejercicios/evaluacion, no resumas teoria
 - Si no hay preguntas de ejercicios claras, devuelve []
 - No reformules ni inventes: copia literalmente la pregunta desde el texto fuente
+- Usa solamente estos valores exactos para "tipo": opcion_multiple, verdadero_falso, respuesta_corta, completar
+- Nunca uses tipos alternos como "definicion", "escritura", "abierta" o "pregunta_abierta"
 - Usa respuesta_esperada_tipo="opciones" si la pregunta es de seleccionar opcion; en caso contrario "abierta"
+- Mantén texto UTF-8 legible (sin caracteres corruptos como Ã¡, Ã±, Â¿)
 - No incluyas markdown ni comentarios`, page, page, content, maxPreguntas, page, page)
 }
 
@@ -822,10 +1007,100 @@ func tokenOverlapRatio(question string, source string) float64 {
 }
 
 func normalizeForMatch(text string) string {
-	lower := strings.ToLower(text)
-	re := regexp.MustCompile(`[^a-z0-9áéíóúñü\s]+`)
-	clean := re.ReplaceAllString(lower, " ")
+	normalized := normalizeSpanishText(text)
+	if normalized == "" {
+		return ""
+	}
+	clean := nonAlnumSpaceRe.ReplaceAllString(normalized, " ")
 	return strings.Join(strings.Fields(clean), " ")
+}
+
+func normalizeSpanishText(text string) string {
+	fixed := sanitizeModelText(text)
+	if fixed == "" {
+		return ""
+	}
+	lower := strings.ToLower(strings.TrimSpace(fixed))
+	if lower == "" {
+		return ""
+	}
+	replacer := strings.NewReplacer(
+		"á", "a",
+		"é", "e",
+		"í", "i",
+		"ó", "o",
+		"ú", "u",
+		"ü", "u",
+		"ñ", "n",
+		"ç", "c",
+		"ä", "a",
+		"ë", "e",
+		"ï", "i",
+		"ö", "o",
+	)
+	return replacer.Replace(lower)
+}
+
+func sanitizeModelText(raw string) string {
+	text := strings.TrimSpace(raw)
+	if text == "" {
+		return ""
+	}
+	text = strings.ToValidUTF8(text, "")
+	text = repairCommonMojibake(text)
+	return strings.TrimSpace(text)
+}
+
+func repairCommonMojibake(text string) string {
+	if text == "" {
+		return ""
+	}
+
+	out := text
+	for i := 0; i < 2; i++ {
+		decoded, ok := decodeLatin1AsUTF8(out)
+		if !ok || decoded == out {
+			break
+		}
+		out = decoded
+	}
+
+	out = strings.NewReplacer(
+		"â€œ", "\"",
+		"â€", "\"",
+		"â€˜", "'",
+		"â€™", "'",
+		"â€“", "-",
+		"â€”", "-",
+		"Â¿", "¿",
+		"Â¡", "¡",
+		"Â ", " ",
+		"\u00a0", " ",
+	).Replace(out)
+	return out
+}
+
+func decodeLatin1AsUTF8(value string) (string, bool) {
+	if value == "" {
+		return "", false
+	}
+
+	buffer := make([]byte, 0, len(value))
+	for _, r := range value {
+		if r > 0xFF {
+			return value, false
+		}
+		buffer = append(buffer, byte(r))
+	}
+	if !utf8.Valid(buffer) {
+		return value, false
+	}
+
+	decoded := string(buffer)
+	if decoded == value {
+		return value, false
+	}
+	return decoded, true
 }
 
 func splitContentByPageMarkers(content string, paginaInicio *int, imageByPage map[int]string, metadataByPage map[int]PdfPaginaMetadata) []pageChunk {
@@ -959,7 +1234,7 @@ func heuristicExtract(content string, maxPreguntas int, paginaInicio *int) []Tra
 		}
 
 		lower := strings.ToLower(s)
-		hasQuestionMark := strings.Contains(s, "?") || strings.Contains(s, "¿")
+		hasQuestionMark := strings.Contains(s, "?") || strings.Contains(s, "\u00bf")
 		startsWithInstruction, _ := regexp.MatchString(`^(responde|responda|calcula|complete|completa|selecciona|marca|indica|justifica|define|menciona|enumera|relaciona)\b`, lower)
 		startsWithNumber, _ := regexp.MatchString(`^\d{1,2}[\.)]\s+`, s)
 		if !hasQuestionMark && !startsWithInstruction && !startsWithNumber {
@@ -1001,7 +1276,7 @@ func extractQuestionCandidatesFromLines(content string) []string {
 		}
 		lower := strings.ToLower(l)
 
-		hasQuestionMark := strings.Contains(l, "?") || strings.Contains(l, "¿")
+		hasQuestionMark := strings.Contains(l, "?") || strings.Contains(l, "\u00bf")
 		hasNumbering, _ := regexp.MatchString(`(^|\s)(\d{1,2}[\.)]|[a-dA-D][\.)])\s+`, l)
 		hasInstruction, _ := regexp.MatchString(`\b(responde|responda|calcula|complete|completa|selecciona|marca|indica|justifica|define|menciona|enumera|relaciona)\b`, lower)
 
@@ -1030,14 +1305,18 @@ func extractQuestionCandidatesFromLines(content string) []string {
 }
 
 func normalizeTipoPregunta(in string) string {
-	v := strings.ToLower(strings.TrimSpace(in))
+	v := normalizeSpanishText(in)
+	v = strings.ReplaceAll(v, "-", "_")
+	v = strings.ReplaceAll(v, " ", "_")
 	switch v {
 	case "opcion_multiple", "multiple_choice", "multiple":
 		return "opcion_multiple"
 	case "verdadero_falso", "true_false", "vf":
 		return "verdadero_falso"
-	case "completar", "fill_blank":
+	case "completar", "fill_blank", "llenar_espacios":
 		return "completar"
+	case "definicion", "escritura", "abierta", "pregunta_abierta", "texto", "respuesta_larga":
+		return "respuesta_corta"
 	default:
 		return "respuesta_corta"
 	}
@@ -1429,12 +1708,12 @@ func truncateAtWordBoundary(content string, maxLen int) string {
 }
 
 func calculateVisualCueScore(text string, pageContent string) float64 {
-	lower := strings.ToLower(strings.TrimSpace(text))
+	lower := normalizeSpanishText(text)
 	if lower == "" {
 		return 0
 	}
 
-	pageLower := strings.ToLower(pageContent)
+	pageLower := normalizeSpanishText(pageContent)
 	score := 0.0
 
 	positiveSignals := map[string]float64{
@@ -1442,15 +1721,12 @@ func calculateVisualCueScore(text string, pageContent string) float64 {
 		"ilustracion":              0.35,
 		"imagen":                   0.30,
 		"grafico":                  0.30,
-		"gráfico":                  0.30,
 		"figura":                   0.30,
 		"diagrama":                 0.35,
 		"esquema":                  0.30,
 		"foto":                     0.25,
 		"basandote en la imagen":   0.45,
-		"basándote en la imagen":   0.45,
 		"segun la figura":          0.40,
-		"según la figura":          0.40,
 		"de acuerdo con la imagen": 0.40,
 	}
 	for signal, weight := range positiveSignals {
@@ -1459,7 +1735,7 @@ func calculateVisualCueScore(text string, pageContent string) float64 {
 		}
 	}
 
-	visualRefRe := regexp.MustCompile(`\b(figura|imagen|grafico|gráfico|diagrama)\s*\d+\b`)
+	visualRefRe := regexp.MustCompile(`\b(figura|imagen|grafico|diagrama)\s*\d+\b`)
 	refs := visualRefRe.FindAllString(lower, -1)
 	if len(refs) > 0 {
 		score += 0.20
@@ -1480,7 +1756,6 @@ func calculateVisualCueScore(text string, pageContent string) float64 {
 		"resuma":   0.20,
 		"concepto": 0.15,
 		"teoria":   0.15,
-		"teoría":   0.15,
 	}
 	for signal, weight := range negativeSignals {
 		if strings.Contains(lower, signal) {

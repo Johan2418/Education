@@ -67,6 +67,10 @@ services:
       LIBREOFFICE_PATH: soffice
       DB_HOST: db
       DB_PORT: 5432
+      HUGGINGFACE_BASE_URL: http://ollama:11434
+      LIBRO_IA_BASE_URL: http://ollama:11434
+      LIBRO_ANALYSIS_BASE_URL: http://ollama:11434
+      LIBRO_MCP_BASE_URL: http://ollama:11434
 
   # ─── Ollama (LLM local) ───────────────────────────────────
   ollama:
@@ -85,6 +89,28 @@ services:
       interval: 15s
       timeout: 10s
       retries: 10
+
+  ollama-bootstrap:
+    image: alpine:3.20
+    container_name: arcanea-ollama-bootstrap
+    restart: "no"
+    depends_on:
+      ollama:
+        condition: service_healthy
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+      OLLAMA_CANDIDATE_MODELS: ${OLLAMA_CANDIDATE_MODELS:-qwen2.5:1.5b,qwen2.5:3b,qwen2.5:latest,llama3.2:3b,phi3:mini}
+      LIBRO_ANALYSIS_MODEL: ${LIBRO_ANALYSIS_MODEL:-arcanea-analysis:latest}
+      LIBRO_MCP_MODEL: ${LIBRO_MCP_MODEL:-arcanea-mcp:latest}
+      LIBRO_ANALYSIS_BASE_MODEL: ${LIBRO_ANALYSIS_BASE_MODEL:-qwen2.5:latest}
+      LIBRO_MCP_BASE_MODEL: ${LIBRO_MCP_BASE_MODEL:-qwen2.5:3b}
+      LIBRO_MODEL_TRAINING_REVISION: ${LIBRO_MODEL_TRAINING_REVISION:-2026.05.0}
+    volumes:
+      - ./ops/ollama:/opt/arcanea/ollama:ro
+    entrypoint:
+      - /bin/sh
+      - -lc
+      - apk add --no-cache curl jq >/dev/null && /bin/sh /opt/arcanea/ollama/bootstrap-models.sh
 
 volumes:
   pgdata:

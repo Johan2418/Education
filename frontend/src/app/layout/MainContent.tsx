@@ -81,11 +81,15 @@ export default function MainContent({
     }
 
     if (item.tipo === "recurso") {
-      if (isStudent && item.leccion_id) {
-        navigate(`/lesson/${item.leccion_id}`);
+      const recursoId = item.recurso_id || item.id;
+      if (isStudent) {
+        if (recursoId) {
+          navigate(`/student/recursos/${recursoId}`);
+        } else if (item.leccion_id) {
+          navigate(`/lesson/${item.leccion_id}`);
+        }
         return;
       }
-      const recursoId = item.recurso_id || item.id;
       navigate(`/teacher/recursos/${recursoId}`);
     }
   };

@@ -197,7 +197,7 @@ export default function TeacherEstudiantes() {
             </select>
           )}
           <button onClick={() => navigate("/teacher/bulk-import")} className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition">
-            <FileSpreadsheet size={16} /> Importar Excel
+            <FileSpreadsheet size={16} /> {t("teacher.estudiantes.importExcel", { defaultValue: "Importar Excel" })}
           </button>
           <button onClick={openEnrollModal} className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition">
             <Plus size={16} /> {t("teacher.estudiantes.enroll", { defaultValue: "Inscribir" })}

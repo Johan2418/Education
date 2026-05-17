@@ -401,7 +401,7 @@ func (r *Repository) listMateriaCalificacionBaseRows(ctx context.Context, materi
 			p.display_name AS estudiante_nombre,
 			p.email AS estudiante_email,
 			contenidos.promedio_contenidos_10,
-			lecciones.promedio_lecciones_10,
+			examenes.promedio_lecciones_10,
 			trabajos.promedio_trabajos_10
 		FROM students st
 		CROSS JOIN materia_cfg m
@@ -428,22 +428,31 @@ func (r *Repository) listMateriaCalificacionBaseRows(ctx context.Context, materi
 			  AND ps.puntuacion IS NOT NULL
 		) contenidos ON TRUE
 		LEFT JOIN LATERAL (
+			WITH best_resultados AS (
+				SELECT DISTINCT ON (rp.usuario_id, rp.prueba_id)
+					rp.usuario_id,
+					rp.prueba_id,
+					rp.puntaje_obtenido
+				FROM internal.resultado_prueba rp
+				ORDER BY rp.usuario_id, rp.prueba_id, rp.puntaje_obtenido DESC, COALESCE(rp.completed_at, rp.created_at) DESC
+			)
 			SELECT
 				AVG(
 					CASE
-						WHEN pr.puntaje IS NULL THEN NULL
-						WHEN pr.puntaje <= 10 THEN GREATEST(pr.puntaje, 0)::double precision
-						ELSE (LEAST(GREATEST(pr.puntaje, 0), 100) / 10.0)::double precision
+						WHEN br.puntaje_obtenido IS NULL THEN NULL
+						WHEN br.puntaje_obtenido <= 10 THEN GREATEST(br.puntaje_obtenido, 0)::double precision
+						ELSE (LEAST(GREATEST(br.puntaje_obtenido, 0), 100) / 10.0)::double precision
 					END
 				) AS promedio_lecciones_10
-			FROM internal.progreso pr
-			JOIN internal.leccion l ON l.id = pr.leccion_id
+			FROM best_resultados br
+			JOIN internal.prueba p ON p.id = br.prueba_id
+			JOIN internal.leccion l ON l.id = p.leccion_id
 			JOIN internal.tema t ON t.id = l.tema_id
 			JOIN internal.unidad u ON u.id = t.unidad_id
-			WHERE pr.usuario_id = st.estudiante_id
+			WHERE br.usuario_id = st.estudiante_id
 			  AND u.materia_id = m.id
-			  AND pr.puntaje IS NOT NULL
-		) lecciones ON TRUE
+			  AND br.puntaje_obtenido IS NOT NULL
+		) examenes ON TRUE
 		LEFT JOIN LATERAL (
 			SELECT
 				AVG((LEAST(GREATEST(tc.puntaje, 0), 100) / 10.0)::double precision) AS promedio_trabajos_10

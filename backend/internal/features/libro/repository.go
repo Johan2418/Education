@@ -56,26 +56,43 @@ func (r *Repository) GetExtraccionByTrabajo(ctx context.Context, trabajoID strin
 }
 
 func (r *Repository) UpsertExtraccion(ctx context.Context, ext LibroExtraccion) (*LibroExtraccion, error) {
-	err := r.db.WithContext(ctx).
-		Clauses(clause.OnConflict{
-			Columns: []clause.Column{{Name: "trabajo_id"}},
-			DoUpdates: clause.Assignments(map[string]interface{}{
-				"libro_recurso_id":     ext.LibroRecursoID,
-				"archivo_url":          ext.ArchivoURL,
-				"idioma":               ext.Idioma,
-				"pagina_inicio":        ext.PaginaInicio,
-				"pagina_fin":           ext.PaginaFin,
-				"estado":               gorm.Expr("?::internal.estado_extraccion_libro", string(ext.Estado)),
-				"preguntas_detectadas": ext.PreguntasDetectadas,
-				"confianza_promedio":   ext.ConfianzaPromedio,
-				"notas_extraccion":     ext.NotasExtraccion,
-				"notas_revision":       ext.NotasRevision,
-				"usado_fallback":       ext.UsadoFallback,
-				"revisado_por":         ext.RevisadoPor,
-				"confirmado_por":       ext.ConfirmadoPor,
-			}),
-		}).
-		Create(&ext).Error
+	buildAssignments := func(includeSnapshots bool) map[string]interface{} {
+		assignments := map[string]interface{}{
+			"libro_recurso_id":     ext.LibroRecursoID,
+			"archivo_url":          ext.ArchivoURL,
+			"idioma":               ext.Idioma,
+			"pagina_inicio":        ext.PaginaInicio,
+			"pagina_fin":           ext.PaginaFin,
+			"estado":               gorm.Expr("?::internal.estado_extraccion_libro", string(ext.Estado)),
+			"preguntas_detectadas": ext.PreguntasDetectadas,
+			"confianza_promedio":   ext.ConfianzaPromedio,
+			"notas_extraccion":     ext.NotasExtraccion,
+			"notas_revision":       ext.NotasRevision,
+			"usado_fallback":       ext.UsadoFallback,
+			"revisado_por":         ext.RevisadoPor,
+			"confirmado_por":       ext.ConfirmadoPor,
+		}
+		if includeSnapshots && len(ext.Snapshots) > 0 {
+			assignments["snapshots"] = ext.Snapshots
+		}
+		return assignments
+	}
+
+	doUpsert := func(assignments map[string]interface{}) error {
+		return r.db.WithContext(ctx).
+			Clauses(clause.OnConflict{
+				Columns:   []clause.Column{{Name: "trabajo_id"}},
+				DoUpdates: clause.Assignments(assignments),
+			}).
+			Create(&ext).Error
+	}
+
+	assignments := buildAssignments(true)
+	err := doUpsert(assignments)
+	if err != nil && len(ext.Snapshots) > 0 && isUndefinedColumnError(err, "snapshots") {
+		// Backward compatibility: allow write when snapshots column is not deployed yet.
+		err = doUpsert(buildAssignments(false))
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -426,6 +443,21 @@ func isUndefinedTableError(err error, tableName string) bool {
 	return strings.Contains(lower, strings.ToLower(tableName)) && strings.Contains(lower, "does not exist")
 }
 
+func isUndefinedColumnError(err error, columnName string) bool {
+	if err == nil || strings.TrimSpace(columnName) == "" {
+		return false
+	}
+
+	var pqErr *pq.Error
+	if errors.As(err, &pqErr) && string(pqErr.Code) == "42703" {
+		return true
+	}
+
+	lower := strings.ToLower(err.Error())
+	column := strings.ToLower(strings.TrimSpace(columnName))
+	return strings.Contains(lower, "column") && strings.Contains(lower, column) && strings.Contains(lower, "does not exist")
+}
+
 func (r *Repository) LinkTrabajoLibroRecurso(ctx context.Context, trabajoID, libroRecursoID, createdBy string) error {
 	row := TrabajoLibroRecurso{
 		TrabajoID:      trabajoID,
@@ -679,6 +711,20 @@ func (r *Repository) GetLibroChatSession(ctx context.Context, recursoID, session
 	var item LibroChatSession
 	err := r.db.WithContext(ctx).
 		Where("id = ? AND libro_recurso_id = ?", sessionID, recursoID).
+		First(&item).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &item, nil
+}
+
+func (r *Repository) GetLibroChatMessage(ctx context.Context, sessionID, messageID string) (*LibroChatMessage, error) {
+	var item LibroChatMessage
+	err := r.db.WithContext(ctx).
+		Where("id = ? AND session_id = ?", messageID, sessionID).
 		First(&item).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {

@@ -81,7 +81,7 @@ export default function TeacherBulkImport() {
                 setCursos(availableCursos);
                 setSelectedCursoId(availableCursos[0]?.id || "");
             } catch {
-                toast.error("Error al cargar datos");
+                toast.error(t("teacher.bulkImport.errors.loadData"));
             } finally {
                 setLoading(false);
             }
@@ -97,24 +97,24 @@ export default function TeacherBulkImport() {
                 const wb = XLSX.read(data, { type: "array" });
                 const sheetName = wb.SheetNames[0];
                 if (!sheetName) {
-                    toast.error("El archivo no tiene hojas");
+                    toast.error(t("teacher.bulkImport.errors.noSheets"));
                     return;
                 }
                 const ws = wb.Sheets[sheetName];
                 if (!ws) {
-                    toast.error("No se pudo leer la hoja del archivo");
+                    toast.error(t("teacher.bulkImport.errors.unreadableSheet"));
                     return;
                 }
                 const json = XLSX.utils.sheet_to_json<Record<string, string>>(ws, { defval: "" });
 
                 if (json.length === 0) {
-                    toast.error("El archivo está vacío");
+                    toast.error(t("teacher.bulkImport.errors.emptyFile"));
                     return;
                 }
 
                 const firstRow = json[0];
                 if (!firstRow) {
-                    toast.error("El archivo está vacío");
+                    toast.error(t("teacher.bulkImport.errors.emptyFile"));
                     return;
                 }
                 const hdrs = Object.keys(firstRow);
@@ -124,7 +124,7 @@ export default function TeacherBulkImport() {
                 setStep("mapping");
                 requestMapping(hdrs);
             } catch {
-                toast.error("Error al leer el archivo Excel");
+                toast.error(t("teacher.bulkImport.errors.readExcel"));
             }
         };
         reader.readAsArrayBuffer(file);
@@ -150,7 +150,7 @@ export default function TeacherBulkImport() {
             setMappings(res.data?.mappings || hdrs.map((h) => ({ header: h, field: "ignore" })));
         } catch {
             setMappings(hdrs.map((h) => ({ header: h, field: "ignore" })));
-            toast.error("Error al mapear columnas con IA, revisa manualmente");
+            toast.error(t("teacher.bulkImport.errors.aiMapping"));
         } finally {
             setMappingLoading(false);
         }
@@ -173,7 +173,7 @@ export default function TeacherBulkImport() {
             setResults(res.data);
             setStep("results");
         } catch (err: any) {
-            const msg = err?.response?.data?.error || "Error al importar estudiantes";
+            const msg = err?.response?.data?.error || t("teacher.bulkImport.errors.importStudents");
             toast.error(msg);
             setStep("preview");
         } finally {
@@ -207,8 +207,8 @@ export default function TeacherBulkImport() {
             <div className="max-w-4xl mx-auto p-4">
                 <div className="text-center text-gray-500 p-12 bg-white rounded-lg shadow">
                     <Users size={48} className="mx-auto mb-3 text-gray-300" />
-                    <p className="text-lg font-medium">No tienes un curso asignado</p>
-                    <p className="text-sm mt-1">Contacta a un administrador para que te asigne un curso.</p>
+                    <p className="text-lg font-medium">{t("teacher.bulkImport.noCourse.title")}</p>
+                    <p className="text-sm mt-1">{t("teacher.bulkImport.noCourse.hint")}</p>
                 </div>
             </div>
         );
@@ -228,9 +228,9 @@ export default function TeacherBulkImport() {
             {/* Header */}
             <div className="flex items-center justify-between">
                 <div>
-                    <h1 className="text-2xl font-bold text-gray-900">Importar Estudiantes al Curso</h1>
+                    <h1 className="text-2xl font-bold text-gray-900">{t("teacher.bulkImport.title")}</h1>
                     <p className="text-sm text-gray-500 mt-1">
-                        Curso: <span className="font-medium text-gray-700">{curso?.nombre || "-"}</span> — Sube un Excel para inscribir estudiantes
+                        {t("teacher.bulkImport.course")}: <span className="font-medium text-gray-700">{curso?.nombre || "-"}</span> - {t("teacher.bulkImport.subtitle")}
                     </p>
                 </div>
                 <div className="flex items-center gap-3">
@@ -246,7 +246,7 @@ export default function TeacherBulkImport() {
                         </select>
                     )}
                     <button onClick={() => navigate("/teacher/estudiantes")} className="text-sm text-gray-500 hover:text-gray-700 transition">
-                        ← Volver a estudiantes
+                        {t("teacher.bulkImport.backToStudents")}
                     </button>
                 </div>
             </div>
@@ -276,12 +276,12 @@ export default function TeacherBulkImport() {
                             <Upload size={32} className="text-blue-500" />
                         </div>
                         <div>
-                            <p className="text-lg font-semibold text-gray-900">Arrastra tu archivo Excel aquí</p>
-                            <p className="text-sm text-gray-500 mt-1">o haz clic para seleccionar un archivo .xlsx / .xls</p>
+                            <p className="text-lg font-semibold text-gray-900">{t("teacher.bulkImport.upload.dragHere")}</p>
+                            <p className="text-sm text-gray-500 mt-1">{t("teacher.bulkImport.upload.orClick")}</p>
                         </div>
                         <label className="cursor-pointer inline-flex items-center gap-2 px-6 py-2.5 bg-blue-600 text-white rounded-xl font-medium text-sm hover:bg-blue-700 transition shadow-sm">
                             <FileSpreadsheet size={16} />
-                            Seleccionar archivo
+                            {t("teacher.bulkImport.upload.selectFile")}
                             <input type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={handleFileInput} />
                         </label>
                     </div>
@@ -295,7 +295,7 @@ export default function TeacherBulkImport() {
                         <div>
                             <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
                                 <Sparkles size={18} className="text-amber-500" />
-                                Mapeo de Columnas (IA)
+                                {t("teacher.bulkImport.mapping.title")}
                             </h2>
                             <p className="text-sm text-gray-500 mt-1">
                                 Archivo: <span className="font-medium text-gray-700">{fileName}</span> — {rows.length} filas
@@ -333,20 +333,20 @@ export default function TeacherBulkImport() {
                     {!hasNameOrEmail && (
                         <div className="mx-6 mb-4 p-3 bg-amber-50 border border-amber-200 rounded-xl flex items-center gap-2 text-amber-700 text-sm">
                             <AlertCircle size={16} />
-                            Mapea al menos una columna como "Nombre" o "Email" para identificar estudiantes
+                            {t("teacher.bulkImport.mapping.minField")}
                         </div>
                     )}
 
                     <div className="px-6 py-4 bg-gray-50 flex justify-between">
                         <button onClick={reset} className="px-4 py-2 text-sm text-gray-700 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 transition">
-                            <ArrowLeft size={14} className="inline mr-1" /> Atrás
+                            <ArrowLeft size={14} className="inline mr-1" /> {t("common.back")}
                         </button>
                         <button
                             onClick={() => setStep("preview")}
                             disabled={!hasNameOrEmail}
                             className="px-5 py-2 text-sm text-white bg-blue-600 rounded-xl hover:bg-blue-700 transition disabled:opacity-50 inline-flex items-center gap-2"
                         >
-                            Vista previa <ArrowRight size={14} />
+                            {t("teacher.bulkImport.preview.title")} <ArrowRight size={14} />
                         </button>
                     </div>
                 </div>
@@ -356,7 +356,7 @@ export default function TeacherBulkImport() {
             {step === "preview" && (
                 <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
                     <div className="px-6 py-5 border-b border-gray-100">
-                        <h2 className="text-lg font-semibold text-gray-900">Vista Previa</h2>
+                        <h2 className="text-lg font-semibold text-gray-900">{t("teacher.bulkImport.preview.title")}</h2>
                         <p className="text-sm text-gray-500 mt-1">{rows.length} estudiantes para verificar inscripción</p>
                     </div>
 
@@ -386,19 +386,19 @@ export default function TeacherBulkImport() {
                     </div>
                     {rows.length > 50 && (
                         <div className="px-6 py-3 text-center text-xs text-gray-400 border-t border-gray-100">
-                            Mostrando 50 de {rows.length} filas
+                            {t("teacher.bulkImport.preview.showing", { count: rows.length })}
                         </div>
                     )}
 
                     <div className="px-6 py-4 bg-gray-50 flex justify-between">
                         <button onClick={() => setStep("mapping")} className="px-4 py-2 text-sm text-gray-700 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 transition">
-                            <ArrowLeft size={14} className="inline mr-1" /> Atrás
+                            <ArrowLeft size={14} className="inline mr-1" /> {t("common.back")}
                         </button>
                         <button
                             onClick={handleImport}
                             className="px-5 py-2 text-sm text-white bg-emerald-600 rounded-xl hover:bg-emerald-700 transition inline-flex items-center gap-2"
                         >
-                            <Upload size={14} /> Inscribir estudiantes
+                            <Upload size={14} /> {t("teacher.bulkImport.preview.importAction")}
                         </button>
                     </div>
                 </div>
@@ -408,8 +408,8 @@ export default function TeacherBulkImport() {
             {step === "importing" && (
                 <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-12 flex flex-col items-center gap-4">
                     <Loader2 size={40} className="animate-spin text-blue-500" />
-                    <p className="text-lg font-semibold text-gray-900">Inscribiendo estudiantes...</p>
-                    <p className="text-sm text-gray-500">Esto puede tomar unos segundos</p>
+                    <p className="text-lg font-semibold text-gray-900">{t("teacher.bulkImport.importing.title")}</p>
+                    <p className="text-sm text-gray-500">{t("teacher.bulkImport.importing.hint")}</p>
                 </div>
             )}
 
@@ -424,7 +424,7 @@ export default function TeacherBulkImport() {
                             </div>
                             <div>
                                 <p className="text-2xl font-bold text-gray-900">{results.enrolled?.length || 0}</p>
-                                <p className="text-sm text-gray-500">Inscritos</p>
+                                <p className="text-sm text-gray-500">{t("teacher.bulkImport.results.enrolled")}</p>
                             </div>
                         </div>
                         <div className="bg-white rounded-xl border border-gray-100 p-5 shadow-sm flex items-center gap-4">
@@ -433,7 +433,7 @@ export default function TeacherBulkImport() {
                             </div>
                             <div>
                                 <p className="text-2xl font-bold text-gray-900">{results.skipped?.length || 0}</p>
-                                <p className="text-sm text-gray-500">Ya inscritos</p>
+                                <p className="text-sm text-gray-500">{t("teacher.bulkImport.results.skipped")}</p>
                             </div>
                         </div>
                         <div className="bg-white rounded-xl border border-gray-100 p-5 shadow-sm flex items-center gap-4">
@@ -442,7 +442,7 @@ export default function TeacherBulkImport() {
                             </div>
                             <div>
                                 <p className="text-2xl font-bold text-gray-900">{results.not_found?.length || 0}</p>
-                                <p className="text-sm text-gray-500">No encontrados</p>
+                                <p className="text-sm text-gray-500">{t("teacher.bulkImport.results.notFound")}</p>
                             </div>
                         </div>
                     </div>
@@ -451,7 +451,7 @@ export default function TeacherBulkImport() {
                     {results.enrolled && results.enrolled.length > 0 && (
                         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
                             <div className="px-6 py-4 border-b border-gray-100">
-                                <h3 className="font-semibold text-emerald-700">✓ Estudiantes Inscritos</h3>
+                                <h3 className="font-semibold text-emerald-700">{t("teacher.bulkImport.results.enrolledList")}</h3>
                             </div>
                             <div className="overflow-x-auto max-h-60">
                                 <table className="w-full">
@@ -472,8 +472,8 @@ export default function TeacherBulkImport() {
                     {results.not_found && results.not_found.length > 0 && (
                         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
                             <div className="px-6 py-4 border-b border-gray-100">
-                                <h3 className="font-semibold text-red-700">✗ No encontrados en la plataforma</h3>
-                                <p className="text-xs text-gray-500 mt-1">Estos estudiantes deben ser creados primero por un administrador</p>
+                                <h3 className="font-semibold text-red-700">{t("teacher.bulkImport.results.notFoundList")}</h3>
+                                <p className="text-xs text-gray-500 mt-1">{t("teacher.bulkImport.results.notFoundHint")}</p>
                             </div>
                             <div className="overflow-x-auto max-h-60">
                                 <table className="w-full">
@@ -495,7 +495,7 @@ export default function TeacherBulkImport() {
                     {results.skipped && results.skipped.length > 0 && (
                         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
                             <div className="px-6 py-4 border-b border-gray-100">
-                                <h3 className="font-semibold text-amber-700">⚠ Ya inscritos / Omitidos</h3>
+                                <h3 className="font-semibold text-amber-700">{t("teacher.bulkImport.results.skippedList")}</h3>
                             </div>
                             <div className="overflow-x-auto max-h-60">
                                 <table className="w-full">
@@ -516,10 +516,10 @@ export default function TeacherBulkImport() {
                     {/* Actions */}
                     <div className="flex justify-between">
                         <button onClick={() => navigate("/teacher/estudiantes")} className="px-4 py-2 text-sm text-gray-700 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 transition">
-                            Ir a mis estudiantes
+                            {t("teacher.bulkImport.goToStudents")}
                         </button>
                         <button onClick={reset} className="px-5 py-2 text-sm text-white bg-blue-600 rounded-xl hover:bg-blue-700 transition">
-                            Nueva importación
+                            {t("teacher.bulkImport.newImport")}
                         </button>
                     </div>
                 </div>

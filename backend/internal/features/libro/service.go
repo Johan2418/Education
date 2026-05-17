@@ -5,23 +5,29 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/url"
 	"path"
+	"regexp"
+	"sort"
 	"strings"
 	"sync"
 	"time"
 )
 
 type Service struct {
-	repo        *Repository
-	ai          *AIService
-	mcp         *mcpOrchestrator
-	metricsMu   sync.RWMutex
-	metricsByID map[string]*LibroObservabilityResponse
-	jobsMu      sync.RWMutex
-	jobsByID    map[string]*extractLibroJob
+	repo                  *Repository
+	analysisAI            *AIService
+	mcpAI                 *AIService
+	mcp                   *mcpOrchestrator
+	modelTrainingRevision string
+	benchmarkBatchID      string
+	metricsMu             sync.RWMutex
+	metricsByID           map[string]*LibroObservabilityResponse
+	jobsMu                sync.RWMutex
+	jobsByID              map[string]*extractLibroJob
 }
 
 type extractLibroJob struct {
@@ -43,13 +49,31 @@ type extractLibroJob struct {
 	Result       *ExtractLibroResponse
 }
 
-func NewService(repo *Repository, ai *AIService) *Service {
+func NewService(repo *Repository, analysisAI *AIService, mcpAI *AIService) *Service {
+	if analysisAI == nil {
+		analysisAI = mcpAI
+	}
+	if mcpAI == nil {
+		mcpAI = analysisAI
+	}
 	return &Service{
 		repo:        repo,
-		ai:          ai,
+		analysisAI:  analysisAI,
+		mcpAI:       mcpAI,
 		mcp:         newMCPOrchestrator(repo),
 		metricsByID: make(map[string]*LibroObservabilityResponse),
 		jobsByID:    make(map[string]*extractLibroJob),
+	}
+}
+
+func (s *Service) SetModelLifecycleMetadata(trainingRevision string, benchmarkBatchID string) {
+	if s == nil {
+		return
+	}
+	s.modelTrainingRevision = strings.TrimSpace(trainingRevision)
+	s.benchmarkBatchID = strings.TrimSpace(benchmarkBatchID)
+	if s.benchmarkBatchID == "" {
+		s.benchmarkBatchID = s.modelTrainingRevision
 	}
 }
 
@@ -357,7 +381,7 @@ func (s *Service) ExtractLibro(ctx context.Context, trabajoID string, req Extrac
 		return nil, err
 	}
 
-	preguntas, usadoFallback, notaFinal, err := s.ai.ExtractQuestions(ctx, req)
+	preguntas, usadoFallback, notaFinal, err := s.analysisAI.ExtractQuestions(ctx, req)
 	if err != nil {
 		finalErr = err
 		return nil, err
@@ -367,6 +391,14 @@ func (s *Service) ExtractLibro(ctx context.Context, trabajoID string, req Extrac
 		finalErr = errors.New("no se pudieron extraer preguntas")
 		return nil, finalErr
 	}
+	pageGroups := buildPageGroupsFromPreguntas(preguntas)
+	snapshots := mergeExtraccionSnapshots(nil, "ai_raw", preguntas, s.appendModelLifecycleMetadata(map[string]interface{}{
+		"model_profile":        "analysis",
+		"model_name":           safeAIModelName(s.analysisAI),
+		"model_tag":            safeAIModelName(s.analysisAI),
+		"used_fallback":        usadoFallback,
+		"page_groups_detected": len(pageGroups),
+	}))
 
 	if err := s.repo.ReplacePreguntas(ctx, trabajoID, preguntas); err != nil {
 		finalErr = err
@@ -420,6 +452,7 @@ func (s *Service) ExtractLibro(ctx context.Context, trabajoID string, req Extrac
 		PreguntasDetectadas: len(preguntas),
 		ConfianzaPromedio:   prom,
 		NotasExtraccion:     &nota,
+		Snapshots:           snapshots,
 		UsadoFallback:       usadoFallback,
 	})
 	if err != nil {
@@ -449,7 +482,13 @@ func (s *Service) ExtractLibro(ctx context.Context, trabajoID string, req Extrac
 		return nil, err
 	}
 
-	return &ExtractLibroResponse{Extraccion: extraccion, Preguntas: stored, Reutilizado: false, LibroRecursoID: libroRecursoID}, nil
+	return &ExtractLibroResponse{
+		Extraccion:     extraccion,
+		Preguntas:      stored,
+		PageGroups:     buildPageGroupsFromPreguntas(stored),
+		Reutilizado:    false,
+		LibroRecursoID: libroRecursoID,
+	}, nil
 }
 
 func (s *Service) tryReuseLibroRecurso(ctx context.Context, trabajoID string, req ExtractLibroRequest, userID string, recurso *LibroRecurso) (*ExtractLibroResponse, bool, error) {
@@ -489,7 +528,15 @@ func (s *Service) tryReuseLibroRecurso(ctx context.Context, trabajoID string, re
 		PreguntasDetectadas: len(copyPreguntas),
 		ConfianzaPromedio:   avgConfianza(copyPreguntas),
 		NotasExtraccion:     &nota,
-		UsadoFallback:       false,
+		Snapshots: mergeExtraccionSnapshots(nil, "ai_raw", copyPreguntas, s.appendModelLifecycleMetadata(map[string]interface{}{
+			"model_profile":     "analysis",
+			"model_name":        "reused_libro_recurso",
+			"model_tag":         "reused_libro_recurso",
+			"used_fallback":     false,
+			"reutilizado":       true,
+			"source_recurso_id": recurso.ID,
+		})),
+		UsadoFallback: false,
 	})
 	if err != nil {
 		return nil, false, err
@@ -510,6 +557,7 @@ func (s *Service) tryReuseLibroRecurso(ctx context.Context, trabajoID string, re
 	return &ExtractLibroResponse{
 		Extraccion:     extraccion,
 		Preguntas:      stored,
+		PageGroups:     buildPageGroupsFromPreguntas(stored),
 		Reutilizado:    true,
 		LibroRecursoID: &recurso.ID,
 	}, true, nil
@@ -617,7 +665,7 @@ func (s *Service) GetLibroRecursoPagina(ctx context.Context, recursoID string, p
 	})
 	_ = s.repo.CreateLibroRecursoView(ctx, recursoID, pagina, &userID, viewMetadata)
 
-	watermarkText := fmt.Sprintf("Arcanea • %s • %s", role, userID)
+	watermarkText := fmt.Sprintf("Arcanea â€¢ %s â€¢ %s", role, userID)
 
 	return &LibroRecursoPaginaResponse{
 		LibroRecursoID: recursoID,
@@ -755,7 +803,23 @@ func (s *Service) SendLibroChatMessage(ctx context.Context, recursoID, sessionID
 		return nil, err
 	}
 
-	systemPrompt := "Eres un tutor didactico para docentes. Usa solo el contexto MCP entregado. Si no hay datos suficientes, dilo claramente y sugiere revisar paginas concretas."
+	policyMode := "teacher_full"
+	if role == "student" {
+		policyMode = "student_summary_hints"
+	}
+
+	guardrailApplied := false
+	var guardrailReason *string
+	matchedPreguntas := []TrabajoPregunta{}
+	if role == "student" {
+		matchedPreguntas, _ = s.repo.SearchPreguntasContextByLibroRecurso(ctx, recursoID, message, 8)
+		if apply, reason := shouldApplyStudentGuardrail(message, matchedPreguntas); apply {
+			guardrailApplied = true
+			guardrailReason = &reason
+		}
+	}
+
+	systemPrompt := buildLibroChatSystemPrompt(role, guardrailApplied)
 	messages := make([]map[string]string, 0, 12)
 	messages = append(messages, map[string]string{"role": "system", "content": systemPrompt + "\n\n" + mcpBundle.PromptContext})
 
@@ -775,7 +839,7 @@ func (s *Service) SendLibroChatMessage(ctx context.Context, recursoID, sessionID
 	}
 
 	started := time.Now()
-	answer, usedFallback, modelName, aiErr := s.ai.GenerateChatAnswer(ctx, messages)
+	answer, usedFallback, modelName, aiErr := s.mcpAI.GenerateChatAnswer(ctx, messages)
 	latencyMs := time.Since(started).Milliseconds()
 
 	errorCode := (*string)(nil)
@@ -786,10 +850,30 @@ func (s *Service) SendLibroChatMessage(ctx context.Context, recursoID, sessionID
 		e := "model_unavailable"
 		errorCode = &e
 	}
+	if role == "student" {
+		sanitizedAnswer, sanitized, sanitizedReason := sanitizeStudentAssistantAnswer(message, answer, guardrailApplied, guardrailReason, matchedPreguntas, mcpBundle)
+		answer = sanitizedAnswer
+		if sanitized {
+			guardrailApplied = true
+			guardrailReason = sanitizedReason
+			if errorCode == nil {
+				code := "student_guardrail"
+				errorCode = &code
+			}
+		}
+	}
 
-	meta := asRawJSON(map[string]interface{}{
-		"tool_calls": mcpBundle.ToolCalls,
-	})
+	meta := asRawJSON(s.appendModelLifecycleMetadata(map[string]interface{}{
+		"tool_calls":         mcpBundle.ToolCalls,
+		"policy_mode":        policyMode,
+		"guardrail_applied":  guardrailApplied,
+		"guardrail_reason":   guardrailReason,
+		"model_profile":      "mcp",
+		"model_tag":          resolveModelTag(modelName, s.mcpAI),
+		"mcp_model_ref":      safeAIModelName(s.mcpAI),
+		"matched_questions":  len(matchedPreguntas),
+		"analysis_model_ref": safeAIModelName(s.analysisAI),
+	}))
 	latencyInt := int(latencyMs)
 	var modelPtr *string
 	if strings.TrimSpace(modelName) != "" {
@@ -815,10 +899,18 @@ func (s *Service) SendLibroChatMessage(ctx context.Context, recursoID, sessionID
 		return nil, err
 	}
 
-	telemMeta := asRawJSON(map[string]interface{}{
-		"message_id": assistantMsg.ID,
-		"tool_calls": mcpBundle.ToolCalls,
-	})
+	telemMeta := asRawJSON(s.appendModelLifecycleMetadata(map[string]interface{}{
+		"message_id":         assistantMsg.ID,
+		"tool_calls":         mcpBundle.ToolCalls,
+		"policy_mode":        policyMode,
+		"guardrail_applied":  guardrailApplied,
+		"guardrail_reason":   guardrailReason,
+		"model_profile":      "mcp",
+		"model_tag":          resolveModelTag(modelName, s.mcpAI),
+		"mcp_model_ref":      safeAIModelName(s.mcpAI),
+		"matched_questions":  len(matchedPreguntas),
+		"analysis_model_ref": safeAIModelName(s.analysisAI),
+	}))
 	_ = s.repo.CreateLibroChatTelemetria(ctx, LibroChatTelemetria{
 		SessionID:      sessionID,
 		LibroRecursoID: recursoID,
@@ -831,19 +923,22 @@ func (s *Service) SendLibroChatMessage(ctx context.Context, recursoID, sessionID
 	})
 
 	return &LibroChatSendMessageResponse{
-		SessionID:    sessionID,
-		RecursoID:    recursoID,
-		UserMessage:  message,
-		Answer:       answer,
-		Model:        modelPtr,
-		UsedFallback: usedFallback,
-		LatencyMs:    latencyMs,
-		ToolCalls:    mcpBundle.ToolCalls,
+		SessionID:        sessionID,
+		RecursoID:        recursoID,
+		UserMessage:      message,
+		Answer:           answer,
+		Model:            modelPtr,
+		UsedFallback:     usedFallback,
+		LatencyMs:        latencyMs,
+		ToolCalls:        mcpBundle.ToolCalls,
+		PolicyMode:       policyMode,
+		GuardrailApplied: guardrailApplied,
+		GuardrailReason:  guardrailReason,
 	}, nil
 }
 
 func (s *Service) GetLibroChatReporte(ctx context.Context, recursoID, userID, role string, topToolsLimit int) (*LibroChatReportResponse, error) {
-	if err := authorizeLibroRecursosAccess(role); err != nil {
+	if err := authorizeLibroChatReportAccess(role); err != nil {
 		return nil, err
 	}
 	if strings.TrimSpace(recursoID) == "" {
@@ -858,6 +953,62 @@ func (s *Service) GetLibroChatReporte(ctx context.Context, recursoID, userID, ro
 		return nil, err
 	}
 	return report, nil
+}
+
+func (s *Service) SendLibroChatFeedback(
+	ctx context.Context,
+	recursoID, sessionID, messageID string,
+	req LibroChatFeedbackRequest,
+	userID, role string,
+) (*LibroChatFeedbackResponse, error) {
+	if err := authorizeLibroRecursosAccess(role); err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(recursoID) == "" || strings.TrimSpace(sessionID) == "" || strings.TrimSpace(messageID) == "" {
+		return nil, errors.New("recurso_id, session_id y message_id son requeridos")
+	}
+	reaction := strings.ToLower(strings.TrimSpace(req.Reaction))
+	switch reaction {
+	case "up", "down":
+	default:
+		return nil, errors.New("reaction invalida: usa up o down")
+	}
+
+	session, err := s.repo.GetLibroChatSession(ctx, recursoID, sessionID)
+	if err != nil {
+		return nil, err
+	}
+	if session == nil {
+		return nil, errors.New("sesion no encontrada")
+	}
+	message, err := s.repo.GetLibroChatMessage(ctx, sessionID, messageID)
+	if err != nil {
+		return nil, err
+	}
+	if message == nil {
+		return nil, errors.New("mensaje no encontrado")
+	}
+
+	comment := trimOrNil(req.Comment)
+	meta := asRawJSON(map[string]interface{}{
+		"message_id": messageID,
+		"reaction":   reaction,
+		"comment":    comment,
+		"source":     "chat_feedback",
+	})
+	_ = s.repo.CreateLibroChatTelemetria(ctx, LibroChatTelemetria{
+		SessionID:      sessionID,
+		LibroRecursoID: recursoID,
+		UserID:         &userID,
+		EventType:      "chat_feedback",
+		UsedFallback:   false,
+		Metadata:       meta,
+	})
+
+	return &LibroChatFeedbackResponse{
+		Ok:        true,
+		MessageID: messageID,
+	}, nil
 }
 
 func (s *Service) RevisarLibro(ctx context.Context, trabajoID string, req RevisionLibroRequest, userID, role string) (*LibroEstadoResponse, error) {
@@ -937,6 +1088,13 @@ func (s *Service) RevisarLibro(ctx context.Context, trabajoID string, req Revisi
 	if len(preguntas) == 0 {
 		return nil, errors.New("debe mantener al menos una pregunta valida")
 	}
+	currentExtraccion, err := s.repo.GetExtraccionByTrabajo(ctx, trabajoID)
+	if err != nil {
+		return nil, err
+	}
+	reviewSnapshots := mergeExtraccionSnapshots(rawSnapshotsFromExtraccion(currentExtraccion), "review_final", preguntas, map[string]interface{}{
+		"reviewed_by": userID,
+	})
 
 	if err := s.repo.ReplacePreguntas(ctx, trabajoID, preguntas); err != nil {
 		return nil, err
@@ -951,6 +1109,7 @@ func (s *Service) RevisarLibro(ctx context.Context, trabajoID string, req Revisi
 		Estado:              estado,
 		PreguntasDetectadas: len(preguntas),
 		NotasRevision:       req.NotasRevision,
+		Snapshots:           reviewSnapshots,
 		RevisadoPor:         &userID,
 		ConfianzaPromedio:   avgConfianza(preguntas),
 	})
@@ -1039,11 +1198,373 @@ func (s *Service) authorizeTrabajo(ctx context.Context, trabajoID, userID, role 
 
 func authorizeLibroRecursosAccess(role string) error {
 	switch role {
+	case "student", "teacher", "admin", "super_admin", "resource_manager":
+		return nil
+	default:
+		return errors.New("no autorizado")
+	}
+}
+
+func authorizeLibroChatReportAccess(role string) error {
+	switch role {
 	case "teacher", "admin", "super_admin", "resource_manager":
 		return nil
 	default:
 		return errors.New("no autorizado")
 	}
+}
+
+var (
+	studentDirectAnswerRequestRe = regexp.MustCompile(`\b(?:dime|dame|pasame|pasa|indica|di|quiero|necesito)\b.{0,40}\b(?:respuesta|solucion|opcion|resultado|resuelta)\b`)
+	studentQuestionRefRe         = regexp.MustCompile(`\b(?:pregunta|ejercicio|item|reactivo|numero|nro|pagina|pag)\b`)
+	studentAnswerLeakRe          = regexp.MustCompile(`(?m)\b(?:la respuesta(?:\s+correcta)?\s+es|respuesta(?:\s+final)?\s*[:\-]|opcion\s+correcta|solucion\s*[:\-]|answer\s*[:\-])\b`)
+	studentOptionLeakLineRe      = regexp.MustCompile(`(?m)^\s*(?:[a-d]\)|[a-d]\.|opcion\s*[a-d]|respuesta\s*[a-d])\b`)
+)
+
+func buildPageGroupsFromPreguntas(preguntas []TrabajoPregunta) []LibroPageGroupSummary {
+	if len(preguntas) == 0 {
+		return []LibroPageGroupSummary{}
+	}
+
+	grouped := make(map[int]*LibroPageGroupSummary, len(preguntas))
+	for _, p := range preguntas {
+		if p.PaginaLibro == nil || *p.PaginaLibro <= 0 {
+			continue
+		}
+		page := *p.PaginaLibro
+		group, ok := grouped[page]
+		if !ok {
+			group = &LibroPageGroupSummary{Pagina: page}
+			grouped[page] = group
+		}
+		group.PreguntasTotal++
+		if p.Orden > 0 {
+			group.Ordenes = append(group.Ordenes, p.Orden)
+		}
+	}
+
+	if len(grouped) == 0 {
+		return []LibroPageGroupSummary{}
+	}
+
+	pages := make([]int, 0, len(grouped))
+	for page := range grouped {
+		pages = append(pages, page)
+	}
+	sort.Ints(pages)
+
+	out := make([]LibroPageGroupSummary, 0, len(pages))
+	for _, page := range pages {
+		group := grouped[page]
+		if len(group.Ordenes) > 1 {
+			sort.Ints(group.Ordenes)
+		}
+		out = append(out, *group)
+	}
+	return out
+}
+
+func rawSnapshotsFromExtraccion(ext *LibroExtraccion) json.RawMessage {
+	if ext == nil || len(ext.Snapshots) == 0 {
+		return nil
+	}
+	copied := make([]byte, len(ext.Snapshots))
+	copy(copied, ext.Snapshots)
+	return copied
+}
+
+func mergeExtraccionSnapshots(existing json.RawMessage, snapshotKey string, preguntas []TrabajoPregunta, metadata map[string]interface{}) json.RawMessage {
+	key := strings.TrimSpace(snapshotKey)
+	if key == "" {
+		key = "snapshot"
+	}
+
+	root := make(map[string]interface{})
+	if len(existing) > 0 && strings.TrimSpace(string(existing)) != "" {
+		var parsed map[string]interface{}
+		if err := json.Unmarshal(existing, &parsed); err == nil && parsed != nil {
+			root = parsed
+		}
+	}
+
+	snapshot := map[string]interface{}{
+		"captured_at":     time.Now().UTC().Format(time.RFC3339),
+		"preguntas_total": len(preguntas),
+		"page_groups":     buildPageGroupsFromPreguntas(preguntas),
+		"preguntas":       preguntas,
+	}
+	if len(metadata) > 0 {
+		snapshot["metadata"] = metadata
+	}
+	root[key] = snapshot
+	return asRawJSON(root)
+}
+
+func safeAIModelName(ai *AIService) string {
+	if ai == nil {
+		return ""
+	}
+	if model := ai.ConfiguredModelTag(); model != "" {
+		return model
+	}
+	if fallback := ai.FallbackModelTag(); fallback != "" {
+		return fallback
+	}
+	return ""
+}
+
+func resolveModelTag(modelName string, ai *AIService) string {
+	if resolved := strings.TrimSpace(modelName); resolved != "" {
+		return resolved
+	}
+	return safeAIModelName(ai)
+}
+
+func (s *Service) appendModelLifecycleMetadata(meta map[string]interface{}) map[string]interface{} {
+	if meta == nil {
+		meta = map[string]interface{}{}
+	}
+	if revision := strings.TrimSpace(s.modelTrainingRevision); revision != "" {
+		meta["training_revision"] = revision
+	}
+	if batch := strings.TrimSpace(s.benchmarkBatchID); batch != "" {
+		meta["benchmark_batch_id"] = batch
+	}
+	return meta
+}
+
+func shouldApplyStudentGuardrail(message string, matchedPreguntas []TrabajoPregunta) (bool, string) {
+	normalized := normalizeGuardrailText(message)
+	if normalized == "" {
+		return false, ""
+	}
+
+	if studentDirectAnswerRequestRe.MatchString(normalized) {
+		return true, "direct_answer_request"
+	}
+	if strings.Contains(normalized, "respuesta correcta") ||
+		strings.Contains(normalized, "dame la respuesta") ||
+		strings.Contains(normalized, "dime la respuesta") ||
+		strings.Contains(normalized, "solo la respuesta") ||
+		strings.Contains(normalized, "respuesta final") ||
+		strings.Contains(normalized, "opcion correcta") ||
+		strings.Contains(normalized, "resuelvelo") ||
+		strings.Contains(normalized, "hazme la tarea") {
+		return true, "direct_answer_request"
+	}
+
+	if len(matchedPreguntas) == 0 {
+		return false, ""
+	}
+
+	if studentQuestionRefRe.MatchString(normalized) {
+		return true, "matched_assessment_question"
+	}
+	if strings.Contains(normalized, "respuesta") || strings.Contains(normalized, "solucion") || strings.Contains(normalized, "resultado") {
+		return true, "matched_assessment_question"
+	}
+
+	if !isSummaryIntent(normalized) {
+		return true, "matched_assessment_question"
+	}
+	return false, ""
+}
+
+func buildLibroChatSystemPrompt(role string, guardrailApplied bool) string {
+	if role == "student" {
+		lines := []string{
+			"Eres un tutor academico del libro. Responde siempre en espanol claro.",
+			"Reglas obligatorias para estudiantes:",
+			"- Nunca des la respuesta final, literal, opcion correcta ni solucion exacta de preguntas evaluables del libro.",
+			"- Cuando el estudiante pida respuestas de preguntas, da solo resumen del tema, pistas, pasos y paginas sugeridas.",
+			"- Si dudas, prioriza seguridad academica: no reveles respuestas finales.",
+			"- Mantente breve, util y accionable.",
+		}
+		if guardrailApplied {
+			lines = append(lines, "La ultima solicitud fue detectada como evaluable: aplica bloqueo de respuesta final y ofrece orientacion.")
+		}
+		return strings.Join(lines, "\n")
+	}
+
+	return strings.Join([]string{
+		"Eres un asistente academico para docentes y personal autorizado.",
+		"Usa el contexto MCP del libro para responder con precision.",
+		"Si no hay evidencia en el contexto, dilo y pide mas detalle.",
+	}, "\n")
+}
+
+func sanitizeStudentAssistantAnswer(
+	userMessage string,
+	answer string,
+	guardrailApplied bool,
+	guardrailReason *string,
+	matchedPreguntas []TrabajoPregunta,
+	mcpBundle *mcpContextBundle,
+) (string, bool, *string) {
+	trimmed := strings.TrimSpace(answer)
+	if trimmed == "" {
+		reason := "student_guardrail_empty_answer"
+		safe := buildStudentGuardrailAnswer(userMessage, matchedPreguntas, mcpBundle)
+		return safe, true, &reason
+	}
+
+	if guardrailApplied || containsStudentAnswerLeak(trimmed) {
+		reason := "student_guardrail_applied"
+		if !guardrailApplied {
+			reason = "student_output_sanitized"
+		} else if guardrailReason != nil && strings.TrimSpace(*guardrailReason) != "" {
+			reason = strings.TrimSpace(*guardrailReason)
+		}
+		safe := buildStudentGuardrailAnswer(userMessage, matchedPreguntas, mcpBundle)
+		return safe, true, &reason
+	}
+
+	return trimmed, false, nil
+}
+
+func buildStudentGuardrailAnswer(userMessage string, matchedPreguntas []TrabajoPregunta, mcpBundle *mcpContextBundle) string {
+	pages := extractSortedPages(matchedPreguntas)
+	pageText := "revisa las paginas relacionadas del recurso"
+	if len(pages) > 0 {
+		pageText = fmt.Sprintf("revisa primero las paginas %s del libro", joinInts(pages, ", "))
+	}
+
+	topic := strings.TrimSpace(userMessage)
+	if len(matchedPreguntas) > 0 {
+		topic = strings.TrimSpace(matchedPreguntas[0].Texto)
+	}
+	topic = truncateAtWordBoundary(topic, 110)
+	if topic == "" {
+		topic = "la pregunta evaluable"
+	}
+
+	contextHint := "Ubica la idea principal, luego valida cada dato con el texto del libro."
+	if hint := firstMCPPageHint(mcpBundle); hint != "" {
+		contextHint = hint
+	}
+
+	lines := []string{
+		"No puedo compartir la respuesta final de una pregunta evaluable.",
+		"Te ayudo con una guia para resolverla sin darte la solucion:",
+		fmt.Sprintf("1. Resumen: identifica el concepto clave detras de \"%s\".", topic),
+		fmt.Sprintf("2. Pistas: %s", contextHint),
+		fmt.Sprintf("3. Pasos: %s, subraya evidencia y redacta tu respuesta con tus palabras.", pageText),
+		"4. Verificacion: compara tu respuesta con la pregunta para confirmar que responde exactamente lo pedido.",
+	}
+	return strings.Join(lines, "\n")
+}
+
+func containsStudentAnswerLeak(answer string) bool {
+	normalized := normalizeGuardrailText(answer)
+	if normalized == "" {
+		return false
+	}
+	if isGuardrailRefusal(normalized) {
+		return false
+	}
+	if studentAnswerLeakRe.MatchString(normalized) {
+		return true
+	}
+	if studentOptionLeakLineRe.MatchString(normalized) {
+		return true
+	}
+	return strings.Contains(normalized, "la respuesta es") || strings.Contains(normalized, "respuesta final")
+}
+
+func isGuardrailRefusal(normalized string) bool {
+	return strings.Contains(normalized, "no puedo compartir") ||
+		strings.Contains(normalized, "no puedo proporcionar") ||
+		strings.Contains(normalized, "no debo") ||
+		strings.Contains(normalized, "sin darte la solucion") ||
+		strings.Contains(normalized, "sin darte la respuesta")
+}
+
+func normalizeGuardrailText(text string) string {
+	normalized := normalizeSpanishText(text)
+	if normalized == "" {
+		return ""
+	}
+	replacer := strings.NewReplacer(
+		"¿", "",
+		"?", " ",
+		"!", " ",
+		":", " ",
+		";", " ",
+		",", " ",
+		".", " ",
+		"\n", " ",
+		"\r", " ",
+		"\t", " ",
+	)
+	normalized = replacer.Replace(normalized)
+	return strings.Join(strings.Fields(normalized), " ")
+}
+
+func isSummaryIntent(normalizedMessage string) bool {
+	if normalizedMessage == "" {
+		return false
+	}
+	if strings.Contains(normalizedMessage, "respuesta") || strings.Contains(normalizedMessage, "solucion") || strings.Contains(normalizedMessage, "opcion") {
+		return false
+	}
+	return strings.Contains(normalizedMessage, "resumen") ||
+		strings.Contains(normalizedMessage, "resume") ||
+		strings.Contains(normalizedMessage, "sintesis") ||
+		strings.Contains(normalizedMessage, "explica el tema") ||
+		strings.Contains(normalizedMessage, "de que trata") ||
+		strings.Contains(normalizedMessage, "concepto")
+}
+
+func extractSortedPages(preguntas []TrabajoPregunta) []int {
+	if len(preguntas) == 0 {
+		return nil
+	}
+	seen := make(map[int]struct{}, len(preguntas))
+	for _, p := range preguntas {
+		if p.PaginaLibro == nil || *p.PaginaLibro <= 0 {
+			continue
+		}
+		seen[*p.PaginaLibro] = struct{}{}
+	}
+	if len(seen) == 0 {
+		return nil
+	}
+	pages := make([]int, 0, len(seen))
+	for page := range seen {
+		pages = append(pages, page)
+	}
+	sort.Ints(pages)
+	return pages
+}
+
+func joinInts(values []int, sep string) string {
+	if len(values) == 0 {
+		return ""
+	}
+	parts := make([]string, 0, len(values))
+	for _, value := range values {
+		parts = append(parts, fmt.Sprintf("%d", value))
+	}
+	return strings.Join(parts, sep)
+}
+
+func firstMCPPageHint(bundle *mcpContextBundle) string {
+	if bundle == nil || strings.TrimSpace(bundle.PromptContext) == "" {
+		return ""
+	}
+	lines := strings.Split(bundle.PromptContext, "\n")
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if strings.Contains(trimmed, "[pag ") {
+			if idx := strings.Index(trimmed, "]"); idx != -1 && idx+1 < len(trimmed) {
+				content := strings.TrimSpace(trimmed[idx+1:])
+				if content != "" {
+					return truncateAtWordBoundary(content, 160)
+				}
+			}
+		}
+	}
+	return ""
 }
 
 func avgConfianza(preguntas []TrabajoPregunta) *float64 {

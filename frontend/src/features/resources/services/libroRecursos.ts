@@ -136,6 +136,19 @@ export interface LibroChatSendMessageResponse {
   used_fallback: boolean;
   latency_ms: number;
   tool_calls: MCPToolCall[];
+  policy_mode?: string;
+  guardrail_applied: boolean;
+  guardrail_reason?: string;
+}
+
+export interface LibroChatFeedbackRequest {
+  reaction: "up" | "down";
+  comment?: string;
+}
+
+export interface LibroChatFeedbackResponse {
+  ok: boolean;
+  message_id: string;
 }
 
 export interface LibroChatToolUsage {
@@ -241,6 +254,19 @@ export async function getLibroChatReporte(recursoId: string, topToolsLimit = 5):
 
   const res = await api.get<ApiData<LibroChatReportResponse>>(
     `/libro-recursos/${recursoId}/chat/reportes?${qp.toString()}`,
+  );
+  return res.data;
+}
+
+export async function sendLibroChatFeedback(
+  recursoId: string,
+  sesionId: string,
+  mensajeId: string,
+  payload: LibroChatFeedbackRequest,
+): Promise<LibroChatFeedbackResponse> {
+  const res = await api.post<ApiData<LibroChatFeedbackResponse>>(
+    `/libro-recursos/${recursoId}/chat/sesiones/${sesionId}/mensajes/${mensajeId}/feedback`,
+    payload,
   );
   return res.data;
 }

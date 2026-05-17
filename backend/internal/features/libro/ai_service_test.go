@@ -64,3 +64,60 @@ func TestSplitContentByPageMarkersKeepsImageByPage(t *testing.T) {
 		t.Fatalf("expected page 49 image to be preserved")
 	}
 }
+
+func TestNormalizeSpanishTextRepairsMojibake(t *testing.T) {
+	input := "La fotos\u00c3\u00adntesis ocurre en el cloroplasto. \u00c2\u00bfQu\u00c3\u00a9 produce?"
+	got := normalizeSpanishText(input)
+
+	if !strings.Contains(got, "fotosintesis") {
+		t.Fatalf("expected normalized text to contain fotosintesis, got: %q", got)
+	}
+	if strings.Contains(got, "\u00c3") || strings.Contains(got, "\u00c2") {
+		t.Fatalf("expected mojibake markers to be removed, got: %q", got)
+	}
+}
+
+func TestNormalizeTipoPreguntaMapsNonCanonicalLabels(t *testing.T) {
+	cases := map[string]string{
+		"definicion":       "respuesta_corta",
+		"escritura":        "respuesta_corta",
+		"pregunta_abierta": "respuesta_corta",
+		"multiple_choice":  "opcion_multiple",
+		"VF":               "verdadero_falso",
+	}
+
+	for input, expected := range cases {
+		got := normalizeTipoPregunta(input)
+		if got != expected {
+			t.Fatalf("normalizeTipoPregunta(%q) = %q, want %q", input, got, expected)
+		}
+	}
+}
+
+func TestParseModelQuestionsPayloadToleratesStringNumbers(t *testing.T) {
+	raw := `[
+		{
+			"texto": "¿Qué es la fotosíntesis?",
+			"tipo": "definicion",
+			"opciones": [],
+			"pagina_libro": "12",
+			"confianza_ia": "0.91",
+			"respuesta_esperada_tipo": "abierta",
+			"placeholder": ""
+		}
+	]`
+
+	items, err := parseModelQuestionsPayload(raw)
+	if err != nil {
+		t.Fatalf("unexpected parse error: %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("expected 1 item, got %d", len(items))
+	}
+	if items[0].PaginaLibro == nil || *items[0].PaginaLibro != 12 {
+		t.Fatalf("expected pagina_libro=12, got %+v", items[0].PaginaLibro)
+	}
+	if items[0].ConfianzaIA == nil || *items[0].ConfianzaIA <= 0 {
+		t.Fatalf("expected confianza_ia parsed, got %+v", items[0].ConfianzaIA)
+	}
+}

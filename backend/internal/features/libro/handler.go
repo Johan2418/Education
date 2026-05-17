@@ -298,6 +298,30 @@ func (h *Handler) SendLibroChatMessage(w http.ResponseWriter, r *http.Request) {
 	shared.Success(w, resp)
 }
 
+func (h *Handler) SendLibroChatFeedback(w http.ResponseWriter, r *http.Request) {
+	claims := middleware.GetClaims(r.Context())
+	var req LibroChatFeedbackRequest
+	if err := shared.Decode(r, &req); err != nil {
+		shared.Error(w, http.StatusBadRequest, "Datos invalidos")
+		return
+	}
+
+	resp, err := h.svc.SendLibroChatFeedback(
+		r.Context(),
+		chi.URLParam(r, "recursoId"),
+		chi.URLParam(r, "sesionId"),
+		chi.URLParam(r, "mensajeId"),
+		req,
+		claims.Subject,
+		claims.UserRole,
+	)
+	if err != nil {
+		shared.Error(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	shared.Success(w, resp)
+}
+
 func (h *Handler) GetLibroChatReporte(w http.ResponseWriter, r *http.Request) {
 	claims := middleware.GetClaims(r.Context())
 	query := r.URL.Query()

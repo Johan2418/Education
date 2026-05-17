@@ -57,12 +57,19 @@ export interface LibroExtraccion {
   confianza_promedio: number | null;
   notas_extraccion: string | null;
   notas_revision: string | null;
+  snapshots?: Record<string, unknown>;
   usado_fallback: boolean;
   created_by: string | null;
   revisado_por: string | null;
   confirmado_por: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface LibroPageGroupSummary {
+  pagina: number;
+  preguntas_total: number;
+  ordenes?: number[];
 }
 
 export interface TrabajoPregunta {
@@ -146,6 +153,9 @@ export interface ConfirmarLibroRequest {
 export interface ExtractLibroResponse {
   extraccion: LibroExtraccion;
   preguntas: TrabajoPregunta[];
+  page_groups?: LibroPageGroupSummary[];
+  reutilizado?: boolean;
+  libro_recurso_id?: string;
 }
 
 export interface ConfirmarLibroResponse {
