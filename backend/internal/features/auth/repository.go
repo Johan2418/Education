@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -195,5 +196,62 @@ func (r *Repository) MarkVerified(ctx context.Context, userID string) error {
 			"is_verified":        true,
 			"verification_token": nil,
 			"token_expiry":       nil,
+		}).Error
+}
+
+func (r *Repository) CreateAuthSession(ctx context.Context, session AuthSession) (*AuthSession, error) {
+	if strings.TrimSpace(session.UserID) == "" || strings.TrimSpace(session.RefreshTokenHash) == "" {
+		return nil, errors.New("user_id y refresh_token_hash son requeridos")
+	}
+	if err := r.db.WithContext(ctx).Create(&session).Error; err != nil {
+		return nil, err
+	}
+	return &session, nil
+}
+
+func (r *Repository) GetAuthSessionByHash(ctx context.Context, refreshTokenHash string) (*AuthSession, error) {
+	if strings.TrimSpace(refreshTokenHash) == "" {
+		return nil, nil
+	}
+
+	var session AuthSession
+	err := r.db.WithContext(ctx).
+		Where("refresh_token_hash = ?", refreshTokenHash).
+		First(&session).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &session, nil
+}
+
+func (r *Repository) RotateAuthSessionToken(ctx context.Context, sessionID, newRefreshTokenHash string, usedAt time.Time) error {
+	if strings.TrimSpace(sessionID) == "" || strings.TrimSpace(newRefreshTokenHash) == "" {
+		return errors.New("session_id y refresh_token_hash son requeridos")
+	}
+
+	return r.db.WithContext(ctx).
+		Model(&AuthSession{}).
+		Where("id = ? AND revoked_at IS NULL", sessionID).
+		Updates(map[string]interface{}{
+			"refresh_token_hash": strings.TrimSpace(newRefreshTokenHash),
+			"last_used_at":       usedAt,
+			"revoked_at":         nil,
+		}).Error
+}
+
+func (r *Repository) RevokeAuthSessionByHash(ctx context.Context, refreshTokenHash string, revokedAt time.Time) error {
+	if strings.TrimSpace(refreshTokenHash) == "" {
+		return nil
+	}
+
+	return r.db.WithContext(ctx).
+		Model(&AuthSession{}).
+		Where("refresh_token_hash = ? AND revoked_at IS NULL", strings.TrimSpace(refreshTokenHash)).
+		Updates(map[string]interface{}{
+			"revoked_at":   revokedAt,
+			"last_used_at": revokedAt,
 		}).Error
 }

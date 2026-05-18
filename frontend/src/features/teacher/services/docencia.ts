@@ -5,6 +5,8 @@ import type {
   DocenteMateriaAsignacion,
   MateriaCalificacionesResponse,
   MisCursoDocente,
+  TeacherGradeDetailResponse,
+  TeacherGradeFilters,
 } from "@/shared/types";
 
 function unwrapDataRecursive<T>(payload: unknown): T {
@@ -96,4 +98,49 @@ export async function asignarMaestrosCursoAnio(
 export async function getMateriaCalificaciones(materiaId: string): Promise<MateriaCalificacionesResponse> {
   const resp = await api.get<unknown>(`/materias/${materiaId}/calificaciones`);
   return unwrapDataRecursive<MateriaCalificacionesResponse>(resp);
+}
+
+export async function getTeacherGradeDetails(filters: TeacherGradeFilters = {}): Promise<TeacherGradeDetailResponse> {
+  const params = new URLSearchParams();
+  const append = (key: string, value?: string | number) => {
+    if (value === undefined || value === null) return;
+    const stringValue = String(value).trim();
+    if (!stringValue) return;
+    params.set(key, stringValue);
+  };
+
+  append("curso_id", filters.curso_id);
+  append("materia_id", filters.materia_id);
+  append("estudiante_id", filters.estudiante_id);
+  if (filters.tipo && filters.tipo !== "all") append("tipo", filters.tipo);
+  if (filters.estado && filters.estado !== "todos") append("estado", filters.estado);
+  append("unidad_id", filters.unidad_id);
+  append("tema_id", filters.tema_id);
+  append("desde", filters.desde);
+  append("hasta", filters.hasta);
+  append("q", filters.q);
+  append("limit", filters.limit);
+  append("offset", filters.offset);
+
+  const query = params.toString();
+  const resp = await api.get<unknown>(`/teacher/calificaciones/detalle${query ? `?${query}` : ""}`);
+  const payload = unwrapDataRecursive<TeacherGradeDetailResponse | null>(resp);
+
+  return payload ?? {
+    items: [],
+    total: 0,
+    limit: filters.limit ?? 50,
+    offset: filters.offset ?? 0,
+    aggregates: {
+      total: 0,
+      promedio_general_10: 0,
+      promedio_general_100: 0,
+      por_tipo: [],
+      por_curso: [],
+      por_materia: [],
+      por_estudiante: [],
+      por_unidad: [],
+      por_tema: [],
+    },
+  };
 }

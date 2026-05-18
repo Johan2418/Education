@@ -18,8 +18,14 @@ func NewHandler(svc *Service) *Handler {
 	return &Handler{svc: svc}
 }
 
-// MapColumns handles AI-based column mapping for both admin and teacher.
+// MapColumns handles AI-based column mapping for admin flows.
 func (h *Handler) MapColumns(w http.ResponseWriter, r *http.Request) {
+	claims := middleware.GetClaims(r.Context())
+	if claims == nil || (claims.UserRole != "admin" && claims.UserRole != "super_admin") {
+		shared.Error(w, http.StatusForbidden, "No autorizado")
+		return
+	}
+
 	var req ColumnMappingRequest
 	if err := shared.Decode(r, &req); err != nil {
 		shared.Error(w, http.StatusBadRequest, "Datos inválidos")
@@ -73,12 +79,12 @@ func (h *Handler) AdminBulkImport(w http.ResponseWriter, r *http.Request) {
 	shared.Success(w, resp)
 }
 
-// TeacherBulkImport enrolls students in the teacher's course from mapped Excel data.
+// TeacherBulkImport enrolls students in a course from mapped Excel data (admin-only route contract).
 func (h *Handler) TeacherBulkImport(w http.ResponseWriter, r *http.Request) {
 	claims := middleware.GetClaims(r.Context())
 	cursoID := chi.URLParam(r, "cursoId")
 
-	if claims.UserRole != "teacher" && claims.UserRole != "admin" && claims.UserRole != "super_admin" {
+	if claims.UserRole != "admin" && claims.UserRole != "super_admin" {
 		shared.Error(w, http.StatusForbidden, "No autorizado")
 		return
 	}

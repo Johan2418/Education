@@ -35,6 +35,18 @@ export type {
   StudentGradeAggregates,
   StudentGradeDetailResponse,
   StudentGradeFilters,
+  TeacherGradeDetailTipo,
+  TeacherGradeDetailEstado,
+  TeacherGradeDetailItem,
+  TeacherGradeTypeAggregate,
+  TeacherGradeCursoAggregate,
+  TeacherGradeMateriaAggregate,
+  TeacherGradeEstudianteAggregate,
+  TeacherGradeUnidadAggregate,
+  TeacherGradeTemaAggregate,
+  TeacherGradeAggregates,
+  TeacherGradeDetailResponse,
+  TeacherGradeFilters,
 } from "./academic";
 export type { Recurso, ModeloRA } from "./resources";
 export type {

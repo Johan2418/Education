@@ -1,160 +1,327 @@
-import { useEffect, useState, useMemo } from "react";
+﻿import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
+import toast from "react-hot-toast";
+import { AlertTriangle, BookOpenText, GraduationCap, Loader2, Search, Sparkles, TrendingUp, Users } from "lucide-react";
+
 import { getMe } from "@/shared/lib/auth";
 import api from "@/shared/lib/api";
-import toast from "react-hot-toast";
-import { useAppConfirm } from "@/shared/hooks/useAppConfirm";
-import {
-  Loader2, Search, Plus, Trash2, Users, X, FileSpreadsheet,
-} from "lucide-react";
-import type { Curso, EstudianteCursoDetail, Profile } from "@/shared/types";
+import { getMateriaCalificaciones, listMisCursosDocente } from "@/features/teacher/services/docencia";
+import type { EstudianteCursoDetail, MateriaCalificacionAlumno, MisCursoDocente } from "@/shared/types";
 
-/* ── Modal wrapper ──────────────────────────────────────── */
-function Modal({ open, onClose, children }: { open: boolean; onClose: () => void; children: React.ReactNode }) {
-  if (!open) return null;
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={onClose}>
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4 overflow-hidden" onClick={(e) => e.stopPropagation()}>
-        {children}
-      </div>
-    </div>
-  );
+type MateriaGroup = {
+  key: string;
+  nombre: string;
+  items: MisCursoDocente[];
+};
+
+type StudentAcademicRow = {
+  estudianteId: string;
+  nombre: string;
+  email: string;
+  cursos: string[];
+  promedioFinal10: number | null;
+  aprobadas: number;
+  reprobadas: number;
+  noCompletadas: number;
+  sinCalificar: number;
+  componentesCalificados: number;
+  componentesRequeridos: number;
+};
+
+type StudentStatus = "aprobada" | "reprobada" | "materia_no_completada" | "sin_calificar";
+
+function unwrapArray<T>(payload: unknown): T[] {
+  let current: unknown = payload;
+  let guard = 0;
+
+  while (guard < 4 && current && typeof current === "object" && "data" in (current as Record<string, unknown>)) {
+    current = (current as { data?: unknown }).data;
+    guard += 1;
+  }
+
+  return Array.isArray(current) ? (current as T[]) : [];
+}
+
+function normalizeError(err: unknown): string {
+  if (typeof err === "object" && err !== null && "message" in err) {
+    const message = (err as { message?: unknown }).message;
+    if (typeof message === "string" && message.trim() !== "") return message;
+  }
+  return "Error inesperado";
+}
+
+function statusOf(row: StudentAcademicRow): StudentStatus {
+  if (row.reprobadas > 0) return "reprobada";
+  if (row.noCompletadas > 0) return "materia_no_completada";
+  if (row.aprobadas > 0) return "aprobada";
+  return "sin_calificar";
+}
+
+function statusBadgeClass(status: StudentStatus): string {
+  switch (status) {
+    case "aprobada":
+      return "bg-emerald-100 text-emerald-700 border-emerald-200";
+    case "reprobada":
+      return "bg-rose-100 text-rose-700 border-rose-200";
+    case "materia_no_completada":
+      return "bg-amber-100 text-amber-700 border-amber-200";
+    default:
+      return "bg-slate-100 text-slate-700 border-slate-200";
+  }
+}
+
+function statusLabel(status: StudentStatus, t: (key: string, options?: Record<string, unknown>) => string): string {
+  switch (status) {
+    case "aprobada":
+      return t("teacher.estudiantes.status.approved", { defaultValue: "Aprobada" });
+    case "reprobada":
+      return t("teacher.estudiantes.status.failed", { defaultValue: "Reprobada" });
+    case "materia_no_completada":
+      return t("teacher.estudiantes.status.incomplete", { defaultValue: "Materia no completada" });
+    default:
+      return t("teacher.estudiantes.status.ungraded", { defaultValue: "Sin calificar" });
+  }
 }
 
 export default function TeacherEstudiantes() {
   const { t } = useTranslation();
-  const { confirm } = useAppConfirm();
   const navigate = useNavigate();
-  const [loading, setLoading] = useState(true);
-  const [loadingEnrolled, setLoadingEnrolled] = useState(false);
-  const [cursos, setCursos] = useState<Curso[]>([]);
+
+  const [bootLoading, setBootLoading] = useState(true);
+  const [loadingRows, setLoadingRows] = useState(false);
+  const [assignments, setAssignments] = useState<MisCursoDocente[]>([]);
+
+  const [selectedMateriaKey, setSelectedMateriaKey] = useState("");
   const [selectedCursoId, setSelectedCursoId] = useState("");
-  const [enrolled, setEnrolled] = useState<EstudianteCursoDetail[]>([]);
   const [search, setSearch] = useState("");
 
-  // Enroll modal
-  const [enrollOpen, setEnrollOpen] = useState(false);
-  const [allStudents, setAllStudents] = useState<Profile[]>([]);
-  const [enrollSearch, setEnrollSearch] = useState("");
-  const [enrolling, setEnrolling] = useState<string | null>(null);
+  const [rows, setRows] = useState<StudentAcademicRow[]>([]);
 
-  const selectedCurso = useMemo(
-    () => cursos.find((c) => c.id === selectedCursoId) || null,
-    [cursos, selectedCursoId]
-  );
-
-  /* ── Load available courses ───────────────────────────── */
   useEffect(() => {
+    let cancelled = false;
+
     (async () => {
       try {
         const me = await getMe();
-        if (!me || !["teacher", "admin", "super_admin"].includes(me.role || "")) {
+        if (!me || me.role !== "teacher") {
           navigate("/login");
           return;
         }
-        // Backend now filters by assigned materias for teacher role.
-        const cursosRes = await api.get<{ data: Curso[] }>("/cursos");
-        const cursos = cursosRes.data || [];
-        setCursos(cursos);
 
-        if (cursos.length === 0) {
-          setSelectedCursoId("");
-          setEnrolled([]);
-          return;
+        const data = await listMisCursosDocente();
+        if (!cancelled) {
+          setAssignments(Array.isArray(data) ? data : []);
         }
-
-        setSelectedCursoId(cursos[0]?.id || "");
-      } catch {
-        toast.error(t("teacher.estudiantes.errors.loadError", { defaultValue: "Error al cargar datos" }));
+      } catch (err) {
+        if (!cancelled) {
+          toast.error(normalizeError(err));
+        }
       } finally {
-        setLoading(false);
+        if (!cancelled) setBootLoading(false);
       }
     })();
-  }, [navigate, t]);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [navigate]);
+
+  const materiaGroups = useMemo<MateriaGroup[]>(() => {
+    const grouped = new Map<string, MateriaGroup>();
+
+    for (const item of assignments) {
+      const key = item.materia_nombre.trim().toLowerCase();
+      const current = grouped.get(key);
+      if (current) {
+        current.items.push(item);
+      } else {
+        grouped.set(key, {
+          key,
+          nombre: item.materia_nombre,
+          items: [item],
+        });
+      }
+    }
+
+    return Array.from(grouped.values()).sort((a, b) => a.nombre.localeCompare(b.nombre));
+  }, [assignments]);
 
   useEffect(() => {
-    if (!selectedCursoId) return;
+    if (materiaGroups.length === 0) return;
+    if (selectedMateriaKey && materiaGroups.some((group) => group.key === selectedMateriaKey)) return;
+    setSelectedMateriaKey(materiaGroups[0]?.key || "");
+    setSelectedCursoId("");
+  }, [materiaGroups, selectedMateriaKey]);
 
-    (async () => {
-      setLoadingEnrolled(true);
-      try {
-        const enrolledRes = await api.get<{ data: EstudianteCursoDetail[] }>(`/cursos/${selectedCursoId}/estudiantes`);
-        setEnrolled(enrolledRes.data || []);
-      } catch {
-        toast.error(t("teacher.estudiantes.errors.loadError", { defaultValue: "Error al cargar datos" }));
-      } finally {
-        setLoadingEnrolled(false);
+  const selectedMateriaGroup = useMemo(() => {
+    return materiaGroups.find((group) => group.key === selectedMateriaKey) || null;
+  }, [materiaGroups, selectedMateriaKey]);
+
+  const cursoOptions = selectedMateriaGroup?.items ?? [];
+
+  const activeAssignments = useMemo(() => {
+    if (!selectedMateriaGroup) return [];
+    if (!selectedCursoId) return selectedMateriaGroup.items;
+    return selectedMateriaGroup.items.filter((item) => item.curso_id === selectedCursoId);
+  }, [selectedMateriaGroup, selectedCursoId]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadRows = async () => {
+      if (activeAssignments.length === 0) {
+        setRows([]);
+        return;
       }
-    })();
-  }, [selectedCursoId, t]);
 
-  /* ── Open enroll modal ──────────────────────────────────── */
-  const openEnrollModal = async () => {
-    setEnrollOpen(true);
-    setEnrollSearch("");
-    try {
-      const res = await api.get<{ data: Profile[] }>("/students");
-      setAllStudents(res.data || []);
-    } catch {
-      toast.error(t("teacher.estudiantes.errors.loadStudents", { defaultValue: "Error al cargar estudiantes" }));
-    }
-  };
+      setLoadingRows(true);
 
-  /* ── Available students (exclude already enrolled) ──────── */
-  const enrolledIds = useMemo(() => new Set(enrolled.map((e) => e.estudiante_id)), [enrolled]);
+      try {
+        const perAssignment = await Promise.all(
+          activeAssignments.map(async (assignment) => {
+            const [enrolledPayload, grades] = await Promise.all([
+              api.get<{ data?: EstudianteCursoDetail[] } | EstudianteCursoDetail[]>(`/cursos/${assignment.curso_id}/estudiantes`),
+              getMateriaCalificaciones(assignment.materia_id),
+            ]);
 
-  const available = useMemo(() => {
-    const q = enrollSearch.toLowerCase();
-    return allStudents
-      .filter((s) => !enrolledIds.has(s.id))
-      .filter((s) => {
-        const name = (s.display_name || "").toLowerCase();
-        return name.includes(q) || s.email.toLowerCase().includes(q);
-      });
-  }, [allStudents, enrolledIds, enrollSearch]);
+            const enrolled = unwrapArray<EstudianteCursoDetail>(enrolledPayload);
+            const gradesByStudent = new Map<string, MateriaCalificacionAlumno>();
+            for (const grade of grades.items || []) {
+              gradesByStudent.set(grade.estudiante_id, grade);
+            }
 
-  /* ── Enroll ─────────────────────────────────────────────── */
-  const handleEnroll = async (studentId: string) => {
-    if (!selectedCurso) return;
-    setEnrolling(studentId);
-    try {
-      await api.post(`/cursos/${selectedCurso.id}/estudiantes`, { estudiante_id: studentId, curso_id: selectedCurso.id });
-      // Refresh enrolled list
-      const res = await api.get<{ data: EstudianteCursoDetail[] }>(`/cursos/${selectedCurso.id}/estudiantes`);
-      setEnrolled(res.data || []);
-      toast.success(t("teacher.estudiantes.success.enrolled", { defaultValue: "Estudiante inscrito" }));
-    } catch {
-      toast.error(t("teacher.estudiantes.errors.enrollError", { defaultValue: "Error al inscribir" }));
-    } finally {
-      setEnrolling(null);
-    }
-  };
+            return {
+              assignment,
+              enrolled,
+              gradesByStudent,
+            };
+          })
+        );
 
-  /* ── Unenroll ───────────────────────────────────────────── */
-  const handleUnenroll = async (enrollmentId: string, name: string) => {
-    if (!selectedCurso) return;
-    if (!await confirm(t("teacher.estudiantes.confirmUnenroll", { nombre: name, defaultValue: `¿Desinscribir a "${name}"?` }), { tone: "danger" })) return;
-    try {
-      await api.delete(`/cursos/${selectedCurso.id}/estudiantes/${enrollmentId}`);
-      setEnrolled((prev) => prev.filter((e) => e.id !== enrollmentId));
-      toast.success(t("teacher.estudiantes.success.unenrolled", { defaultValue: "Estudiante desinscrito" }));
-    } catch {
-      toast.error(t("teacher.estudiantes.errors.unenrollError", { defaultValue: "Error al desinscribir" }));
-    }
-  };
+        const byStudent = new Map<string, {
+          estudianteId: string;
+          nombre: string;
+          email: string;
+          cursos: Set<string>;
+          sumNotas: number;
+          countNotas: number;
+          aprobadas: number;
+          reprobadas: number;
+          noCompletadas: number;
+          sinCalificar: number;
+          componentesCalificados: number;
+          componentesRequeridos: number;
+        }>();
 
-  /* ── Filtered enrolled ──────────────────────────────────── */
-  const filteredEnrolled = useMemo(() => {
-    const q = search.toLowerCase();
-    return enrolled.filter((e) => {
-      const name = (e.display_name || "").toLowerCase();
-      return name.includes(q) || e.email.toLowerCase().includes(q);
+        for (const block of perAssignment) {
+          for (const student of block.enrolled) {
+            const current = byStudent.get(student.estudiante_id) || {
+              estudianteId: student.estudiante_id,
+              nombre: student.display_name || student.email || student.estudiante_id,
+              email: student.email,
+              cursos: new Set<string>(),
+              sumNotas: 0,
+              countNotas: 0,
+              aprobadas: 0,
+              reprobadas: 0,
+              noCompletadas: 0,
+              sinCalificar: 0,
+              componentesCalificados: 0,
+              componentesRequeridos: 0,
+            };
+
+            current.cursos.add(block.assignment.curso_nombre);
+
+            const grade = block.gradesByStudent.get(student.estudiante_id);
+            if (!grade) {
+              current.sinCalificar += 1;
+            } else {
+              current.sumNotas += grade.nota_final;
+              current.countNotas += 1;
+              current.componentesCalificados += grade.componentes_calificados;
+              current.componentesRequeridos += grade.componentes_requeridos;
+
+              if (grade.estado_final === "aprobada") current.aprobadas += 1;
+              else if (grade.estado_final === "reprobada") current.reprobadas += 1;
+              else if (grade.estado_final === "materia_no_completada") current.noCompletadas += 1;
+              else current.sinCalificar += 1;
+            }
+
+            byStudent.set(student.estudiante_id, current);
+          }
+        }
+
+        const nextRows: StudentAcademicRow[] = Array.from(byStudent.values())
+          .map((row) => ({
+            estudianteId: row.estudianteId,
+            nombre: row.nombre,
+            email: row.email,
+            cursos: Array.from(row.cursos).sort((a, b) => a.localeCompare(b)),
+            promedioFinal10: row.countNotas > 0 ? Number((row.sumNotas / row.countNotas).toFixed(2)) : null,
+            aprobadas: row.aprobadas,
+            reprobadas: row.reprobadas,
+            noCompletadas: row.noCompletadas,
+            sinCalificar: row.sinCalificar,
+            componentesCalificados: row.componentesCalificados,
+            componentesRequeridos: row.componentesRequeridos,
+          }))
+          .sort((a, b) => a.nombre.localeCompare(b.nombre));
+
+        if (!cancelled) {
+          setRows(nextRows);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          toast.error(normalizeError(err));
+          setRows([]);
+        }
+      } finally {
+        if (!cancelled) setLoadingRows(false);
+      }
+    };
+
+    void loadRows();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeAssignments]);
+
+  const filteredRows = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    if (!query) return rows;
+
+    return rows.filter((row) => {
+      const courseText = row.cursos.join(" ").toLowerCase();
+      return row.nombre.toLowerCase().includes(query) || row.email.toLowerCase().includes(query) || courseText.includes(query);
     });
-  }, [enrolled, search]);
+  }, [rows, search]);
 
-  /* ── Render ─────────────────────────────────────────────── */
-  if (loading) {
+  const summary = useMemo(() => {
+    const total = filteredRows.length;
+    const withAverage = filteredRows.filter((row) => row.promedioFinal10 != null);
+    const avgGeneral = withAverage.length > 0
+      ? withAverage.reduce((acc, row) => acc + (row.promedioFinal10 || 0), 0) / withAverage.length
+      : 0;
+
+    const aprobadas = filteredRows.filter((row) => statusOf(row) === "aprobada").length;
+    const alertas = filteredRows.filter((row) => {
+      const status = statusOf(row);
+      return status === "reprobada" || status === "materia_no_completada";
+    }).length;
+    const sinCalificar = filteredRows.filter((row) => statusOf(row) === "sin_calificar").length;
+
+    return {
+      total,
+      avgGeneral,
+      aprobadas,
+      alertas,
+      sinCalificar,
+    };
+  }, [filteredRows]);
+
+  if (bootLoading) {
     return (
       <div className="flex items-center justify-center min-h-[40vh]">
         <Loader2 size={32} className="animate-spin text-blue-600" />
@@ -162,155 +329,200 @@ export default function TeacherEstudiantes() {
     );
   }
 
-  if (cursos.length === 0) {
+  if (materiaGroups.length === 0) {
     return (
-      <div className="max-w-4xl mx-auto p-4">
-        <div className="text-center text-gray-500 p-12 bg-white rounded-lg shadow">
-          <Users size={48} className="mx-auto mb-3 text-gray-300" />
-          <p className="text-lg font-medium">{t("teacher.estudiantes.noCurso", { defaultValue: "No tienes un curso asignado" })}</p>
-          <p className="text-sm mt-1">{t("teacher.estudiantes.noCursoDesc", { defaultValue: "Contacta a un administrador para que te asigne un curso." })}</p>
+      <div className="max-w-6xl mx-auto p-4">
+        <div className="rounded-2xl border border-slate-200 bg-white p-10 text-center shadow-sm">
+          <Users size={44} className="mx-auto mb-3 text-slate-300" />
+          <p className="text-lg font-semibold text-slate-700">
+            {t("teacher.estudiantes.emptyAssignments", { defaultValue: "No tienes materias asignadas" })}
+          </p>
+          <p className="mt-1 text-sm text-slate-500">
+            {t("teacher.estudiantes.emptyAssignmentsHint", { defaultValue: "Solicita a administración la asignación de materias para ver estudiantes." })}
+          </p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="max-w-4xl mx-auto p-4">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-bold">{t("teacher.estudiantes.title", { defaultValue: "Mis Estudiantes" })}</h1>
-          <p className="text-sm text-gray-500">
-            {selectedCurso?.nombre || "-"} — {enrolled.length} {t("teacher.estudiantes.enrolled", { defaultValue: "inscritos" })}
+    <div className="max-w-6xl mx-auto p-4 space-y-5">
+      <header className="relative overflow-hidden rounded-2xl border border-indigo-200 bg-gradient-to-br from-indigo-50 via-blue-50 to-white p-6 shadow-sm">
+        <div className="pointer-events-none absolute -right-10 -top-10 h-36 w-36 rounded-full bg-indigo-200/40 blur-3xl" />
+        <div className="pointer-events-none absolute -left-12 bottom-0 h-28 w-28 rounded-full bg-cyan-200/35 blur-3xl" />
+        <div className="relative">
+          <div className="mb-2 inline-flex items-center gap-2 rounded-full border border-indigo-200 bg-white/80 px-3 py-1 text-xs font-semibold text-indigo-700">
+            <Sparkles size={14} />
+            {t("teacher.estudiantes.readOnlyTag", { defaultValue: "Vista académica" })}
+          </div>
+          <h1 className="text-3xl font-black tracking-tight text-slate-900">
+            {t("teacher.estudiantes.title", { defaultValue: "Mis Estudiantes" })}
+          </h1>
+          <p className="mt-1 text-sm text-slate-600">
+            {t("teacher.estudiantes.readOnlySubtitle", { defaultValue: "Resumen por materia con rendimiento académico. La matrícula la gestiona administración." })}
           </p>
         </div>
-        <div className="flex items-center gap-3">
-          {cursos.length > 1 && (
+      </header>
+
+      <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
+          <label className="text-xs font-medium text-slate-600">
+            {t("teacher.estudiantes.filters.subject", { defaultValue: "Materia" })}
             <select
-              className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
-              value={selectedCursoId}
-              onChange={(e) => setSelectedCursoId(e.target.value)}
+              className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm"
+              value={selectedMateriaKey}
+              onChange={(e) => {
+                setSelectedMateriaKey(e.target.value);
+                setSelectedCursoId("");
+              }}
             >
-              {cursos.map((curso) => (
-                <option key={curso.id} value={curso.id}>{curso.nombre}</option>
+              {materiaGroups.map((group) => (
+                <option key={group.key} value={group.key}>{group.nombre}</option>
               ))}
             </select>
-          )}
-          <button onClick={() => navigate("/teacher/bulk-import")} className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition">
-            <FileSpreadsheet size={16} /> {t("teacher.estudiantes.importExcel", { defaultValue: "Importar Excel" })}
-          </button>
-          <button onClick={openEnrollModal} className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition">
-            <Plus size={16} /> {t("teacher.estudiantes.enroll", { defaultValue: "Inscribir" })}
-          </button>
-        </div>
-      </div>
+          </label>
 
-      {/* Search */}
-      <div className="relative mb-4">
-        <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-        <input
-          className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg"
-          placeholder={t("teacher.estudiantes.searchPlaceholder", { defaultValue: "Buscar por nombre o email..." })}
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-        />
-      </div>
-
-      {/* Table */}
-      {loadingEnrolled && (
-        <div className="flex items-center justify-center py-8">
-          <Loader2 size={24} className="animate-spin text-blue-600" />
-        </div>
-      )}
-
-      {filteredEnrolled.length === 0 ? (
-        <div className="text-center text-gray-500 p-8 bg-white rounded-lg shadow">
-          <Users size={40} className="mx-auto mb-2 text-gray-300" />
-          {enrolled.length === 0
-            ? t("teacher.estudiantes.empty", { defaultValue: "Aún no hay estudiantes inscritos" })
-            : t("teacher.estudiantes.noResults", { defaultValue: "Sin resultados" })}
-        </div>
-      ) : (
-        <div className="bg-white rounded-lg shadow overflow-hidden">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t("teacher.estudiantes.table.name", { defaultValue: "Nombre" })}</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t("teacher.estudiantes.table.email", { defaultValue: "Email" })}</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t("teacher.estudiantes.table.enrolledAt", { defaultValue: "Inscrito el" })}</th>
-                <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">{t("teacher.estudiantes.table.actions", { defaultValue: "Acciones" })}</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {filteredEnrolled.map((e) => (
-                <tr key={e.id} className="hover:bg-gray-50">
-                  <td className="px-4 py-3 font-medium">{e.display_name || "—"}</td>
-                  <td className="px-4 py-3 text-sm text-gray-500">{e.email}</td>
-                  <td className="px-4 py-3 text-sm text-gray-500">{new Date(e.created_at).toLocaleDateString()}</td>
-                  <td className="px-4 py-3 text-right">
-                    <button
-                      onClick={() => handleUnenroll(e.id, e.display_name || e.email)}
-                      className="p-2 text-red-600 hover:bg-red-50 rounded"
-                      title={t("teacher.estudiantes.unenroll", { defaultValue: "Desinscribir" })}
-                    >
-                      <Trash2 size={16} />
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {/* ── Enroll Modal ──────────────────────────────── */}
-      <Modal open={enrollOpen} onClose={() => setEnrollOpen(false)}>
-        <div className="p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold">{t("teacher.estudiantes.enrollModal.title", { defaultValue: "Inscribir Estudiante" })}</h2>
-            <button onClick={() => setEnrollOpen(false)} className="p-1 hover:bg-gray-100 rounded"><X size={18} /></button>
-          </div>
-
-          {/* Search within modal */}
-          <div className="relative mb-4">
-            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-            <input
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg"
-              placeholder={t("teacher.estudiantes.enrollModal.search", { defaultValue: "Buscar estudiante..." })}
-              value={enrollSearch}
-              onChange={(e) => setEnrollSearch(e.target.value)}
-            />
-          </div>
-
-          {/* Student list */}
-          <div className="max-h-72 overflow-y-auto space-y-1">
-            {available.length === 0 ? (
-              <p className="text-center text-gray-400 py-6 text-sm">
-                {allStudents.length === 0
-                  ? t("teacher.estudiantes.enrollModal.noStudents", { defaultValue: "No hay estudiantes registrados" })
-                  : t("teacher.estudiantes.enrollModal.allEnrolled", { defaultValue: "Todos los estudiantes ya están inscritos" })}
+          {cursoOptions.length > 1 ? (
+            <label className="text-xs font-medium text-slate-600">
+              {t("teacher.estudiantes.filters.course", { defaultValue: "Curso" })}
+              <select
+                className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm"
+                value={selectedCursoId}
+                onChange={(e) => setSelectedCursoId(e.target.value)}
+              >
+                <option value="">{t("teacher.estudiantes.filters.allCourses", { defaultValue: "Todos los cursos" })}</option>
+                {cursoOptions.map((item) => (
+                  <option key={item.asignacion_id} value={item.curso_id}>
+                    {item.curso_nombre} ({item.anio_escolar})
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : (
+            <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-xs text-slate-600">
+              <p className="font-semibold text-slate-700">{t("teacher.estudiantes.filters.scope", { defaultValue: "Alcance" })}</p>
+              <p className="mt-1">
+                {cursoOptions[0]
+                  ? `${cursoOptions[0].curso_nombre} (${cursoOptions[0].anio_escolar})`
+                  : t("teacher.estudiantes.filters.scopeEmpty", { defaultValue: "Sin curso disponible" })}
               </p>
-            ) : (
-              available.map((s) => (
-                <div key={s.id} className="flex items-center justify-between p-3 rounded-lg hover:bg-gray-50 border border-gray-100">
-                  <div>
-                    <p className="font-medium text-sm">{s.display_name || s.email}</p>
-                    {s.display_name && <p className="text-xs text-gray-400">{s.email}</p>}
-                  </div>
-                  <button
-                    onClick={() => handleEnroll(s.id)}
-                    disabled={enrolling === s.id}
-                    className="inline-flex items-center gap-1 px-3 py-1.5 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 disabled:opacity-50 transition"
-                  >
-                    {enrolling === s.id ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
-                    {t("teacher.estudiantes.enrollModal.add", { defaultValue: "Inscribir" })}
-                  </button>
-                </div>
-              ))
-            )}
-          </div>
+            </div>
+          )}
+
+          <label className="text-xs font-medium text-slate-600 lg:col-span-1 md:col-span-2">
+            {t("teacher.estudiantes.filters.search", { defaultValue: "Buscar" })}
+            <div className="relative mt-1">
+              <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                className="w-full rounded-xl border border-slate-300 py-2.5 pl-9 pr-3 text-sm"
+                placeholder={t("teacher.estudiantes.searchPlaceholder", { defaultValue: "Nombre, correo o curso" })}
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+              />
+            </div>
+          </label>
         </div>
-      </Modal>
+      </section>
+
+      <section className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <article className="rounded-2xl border border-sky-200 bg-sky-50 p-4">
+          <p className="text-xs font-semibold uppercase tracking-wide text-sky-700">{t("teacher.estudiantes.kpi.total", { defaultValue: "Estudiantes" })}</p>
+          <p className="mt-2 text-3xl font-black text-sky-900">{summary.total}</p>
+        </article>
+        <article className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
+          <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">{t("teacher.estudiantes.kpi.avg", { defaultValue: "Promedio general /10" })}</p>
+          <p className="mt-2 text-3xl font-black text-emerald-900">{summary.avgGeneral.toFixed(2)}</p>
+        </article>
+        <article className="rounded-2xl border border-violet-200 bg-violet-50 p-4">
+          <p className="text-xs font-semibold uppercase tracking-wide text-violet-700">{t("teacher.estudiantes.kpi.approved", { defaultValue: "Con estado aprobada" })}</p>
+          <p className="mt-2 text-3xl font-black text-violet-900">{summary.aprobadas}</p>
+        </article>
+        <article className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
+          <p className="text-xs font-semibold uppercase tracking-wide text-amber-700">{t("teacher.estudiantes.kpi.alerts", { defaultValue: "Alertas académicas" })}</p>
+          <p className="mt-2 text-3xl font-black text-amber-900">{summary.alertas}</p>
+          <p className="mt-1 text-xs text-amber-700">{t("teacher.estudiantes.kpi.ungraded", { defaultValue: "Sin calificar" })}: {summary.sinCalificar}</p>
+        </article>
+      </section>
+
+      <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+        <h2 className="mb-3 flex items-center gap-2 text-lg font-semibold text-slate-900">
+          <GraduationCap size={18} />
+          {t("teacher.estudiantes.table.title", { defaultValue: "Resumen académico por estudiante" })}
+        </h2>
+
+        {loadingRows ? (
+          <div className="flex items-center justify-center py-10">
+            <Loader2 size={24} className="animate-spin text-blue-600" />
+          </div>
+        ) : filteredRows.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-6 text-center text-sm text-slate-500">
+            <BookOpenText size={20} className="mx-auto mb-2 text-slate-400" />
+            {t("teacher.estudiantes.empty", { defaultValue: "No hay estudiantes para los filtros seleccionados" })}
+          </div>
+        ) : (
+          <div className="overflow-auto">
+            <table className="min-w-full text-sm">
+              <thead>
+                <tr className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-500">
+                  <th className="py-2 pr-3">{t("teacher.estudiantes.table.name", { defaultValue: "Estudiante" })}</th>
+                  <th className="py-2 px-3">{t("teacher.estudiantes.table.course", { defaultValue: "Curso(s)" })}</th>
+                  <th className="py-2 px-3">{t("teacher.estudiantes.table.average", { defaultValue: "Promedio final /10" })}</th>
+                  <th className="py-2 px-3">{t("teacher.estudiantes.table.status", { defaultValue: "Estado académico" })}</th>
+                  <th className="py-2 pl-3">{t("teacher.estudiantes.table.progress", { defaultValue: "Progreso calificado" })}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredRows.map((row) => {
+                  const status = statusOf(row);
+                  const progressText = row.componentesRequeridos > 0
+                    ? `${row.componentesCalificados}/${row.componentesRequeridos}`
+                    : "-";
+
+                  return (
+                    <tr key={row.estudianteId} className="border-b border-slate-100 hover:bg-slate-50/70">
+                      <td className="py-3 pr-3">
+                        <p className="font-medium text-slate-800">{row.nombre}</p>
+                        <p className="text-xs text-slate-500">{row.email}</p>
+                      </td>
+                      <td className="py-3 px-3">
+                        <div className="flex flex-wrap gap-1">
+                          {row.cursos.map((curso) => (
+                            <span key={`${row.estudianteId}-${curso}`} className="inline-flex rounded-full border border-slate-200 bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700">
+                              {curso}
+                            </span>
+                          ))}
+                        </div>
+                      </td>
+                      <td className="py-3 px-3">
+                        <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-semibold ${row.promedioFinal10 != null && row.promedioFinal10 >= 6 ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-amber-200 bg-amber-50 text-amber-700"}`}>
+                          {row.promedioFinal10 != null ? row.promedioFinal10.toFixed(2) : "-"}
+                        </span>
+                      </td>
+                      <td className="py-3 px-3">
+                        <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-semibold ${statusBadgeClass(status)}`}>
+                          {statusLabel(status, t)}
+                        </span>
+                        {(row.reprobadas > 0 || row.noCompletadas > 0) && (
+                          <p className="mt-1 text-xs text-rose-600 inline-flex items-center gap-1">
+                            <AlertTriangle size={12} />
+                            {t("teacher.estudiantes.table.attention", { defaultValue: "Requiere seguimiento" })}
+                          </p>
+                        )}
+                      </td>
+                      <td className="py-3 pl-3">
+                        <div className="inline-flex items-center gap-2">
+                          <TrendingUp size={14} className="text-slate-500" />
+                          <span className="text-xs font-semibold text-slate-700">{progressText}</span>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
     </div>
   );
 }

@@ -20,7 +20,7 @@ func NewHandler(svc *Service) *Handler {
 func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 	var req RegisterRequest
 	if err := shared.Decode(r, &req); err != nil {
-		shared.Error(w, http.StatusBadRequest, "Datos inválidos")
+		shared.Error(w, http.StatusBadRequest, "Datos invalidos")
 		return
 	}
 
@@ -36,7 +36,7 @@ func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 	var req LoginRequest
 	if err := shared.Decode(r, &req); err != nil {
-		shared.Error(w, http.StatusBadRequest, "Datos inválidos")
+		shared.Error(w, http.StatusBadRequest, "Datos invalidos")
 		return
 	}
 
@@ -47,6 +47,37 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 	}
 
 	shared.Success(w, resp)
+}
+
+func (h *Handler) Refresh(w http.ResponseWriter, r *http.Request) {
+	var req RefreshRequest
+	if err := shared.Decode(r, &req); err != nil {
+		shared.Error(w, http.StatusBadRequest, "Datos invalidos")
+		return
+	}
+
+	resp, err := h.svc.Refresh(r.Context(), req)
+	if err != nil {
+		shared.Error(w, http.StatusUnauthorized, err.Error())
+		return
+	}
+
+	shared.Success(w, resp)
+}
+
+func (h *Handler) Logout(w http.ResponseWriter, r *http.Request) {
+	var req LogoutRequest
+	if err := shared.Decode(r, &req); err != nil {
+		shared.Error(w, http.StatusBadRequest, "Datos invalidos")
+		return
+	}
+
+	if err := h.svc.Logout(r.Context(), req); err != nil {
+		shared.Error(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	shared.MessageOK(w, "Sesion cerrada")
 }
 
 func (h *Handler) Me(w http.ResponseWriter, r *http.Request) {
@@ -63,7 +94,7 @@ func (h *Handler) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 	claims := middleware.GetClaims(r.Context())
 	var req UpdateProfileRequest
 	if err := shared.Decode(r, &req); err != nil {
-		shared.Error(w, http.StatusBadRequest, "Datos inválidos")
+		shared.Error(w, http.StatusBadRequest, "Datos invalidos")
 		return
 	}
 
@@ -79,7 +110,7 @@ func (h *Handler) CreateAdmin(w http.ResponseWriter, r *http.Request) {
 	claims := middleware.GetClaims(r.Context())
 	var req CreateAdminRequest
 	if err := shared.Decode(r, &req); err != nil {
-		shared.Error(w, http.StatusBadRequest, "Datos inválidos")
+		shared.Error(w, http.StatusBadRequest, "Datos invalidos")
 		return
 	}
 
@@ -95,7 +126,7 @@ func (h *Handler) ChangeRole(w http.ResponseWriter, r *http.Request) {
 	claims := middleware.GetClaims(r.Context())
 	var req ChangeRoleRequest
 	if err := shared.Decode(r, &req); err != nil {
-		shared.Error(w, http.StatusBadRequest, "Datos inválidos")
+		shared.Error(w, http.StatusBadRequest, "Datos invalidos")
 		return
 	}
 
@@ -187,7 +218,7 @@ func (h *Handler) VerifyEmail(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) ResendVerification(w http.ResponseWriter, r *http.Request) {
 	var req ResendVerificationRequest
 	if err := shared.Decode(r, &req); err != nil {
-		shared.Error(w, http.StatusBadRequest, "Datos inválidos")
+		shared.Error(w, http.StatusBadRequest, "Datos invalidos")
 		return
 	}
 
@@ -196,5 +227,5 @@ func (h *Handler) ResendVerification(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	shared.MessageOK(w, "Correo de verificación reenviado")
+	shared.MessageOK(w, "Correo de verificacion reenviado")
 }

@@ -87,7 +87,7 @@ export default function TeacherMisCursos() {
       <div className="mb-6">
         <h1 className="text-2xl font-bold">{t("teacher.cursos.title", { defaultValue: "Mis cursos" })}</h1>
         <p className="text-sm text-gray-500 mt-1">
-          {t("teacher.cursos.subtitle", { defaultValue: "Materias asignadas por ano escolar" })}
+          {t("teacher.cursos.subtitle", { defaultValue: "Materias asignadas por año escolar" })}
         </p>
       </div>
 
@@ -116,7 +116,7 @@ export default function TeacherMisCursos() {
         <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
         <input
           className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg"
-          placeholder={t("teacher.cursos.search", { defaultValue: "Buscar por materia, curso o ano..." })}
+          placeholder={t("teacher.cursos.search", { defaultValue: "Buscar por materia, curso o año..." })}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
@@ -129,7 +129,7 @@ export default function TeacherMisCursos() {
             {t("teacher.cursos.empty", { defaultValue: "No hay materias asignadas" })}
           </p>
           <p className="text-sm mt-1">
-            {t("teacher.cursos.emptyHint", { defaultValue: "Solicita a administracion la asignacion por materia." })}
+            {t("teacher.cursos.emptyHint", { defaultValue: "Solicita a administración la asignación por materia." })}
           </p>
         </div>
       ) : (
@@ -155,11 +155,11 @@ export default function TeacherMisCursos() {
                   <p className="text-lg font-bold text-indigo-800">{item.total_estudiantes}</p>
                 </div>
                 <div className="rounded-lg bg-emerald-50 px-2 py-2 text-center">
-                  <p className="text-[11px] text-emerald-700">{t("teacher.cursos.metrics.lessons", { defaultValue: "Lecciones" })}</p>
+                  <p className="text-[11px] text-emerald-700">{t("teacher.cursos.metrics.lessons", { defaultValue: "Contenidos" })}</p>
                   <p className="text-lg font-bold text-emerald-800">{item.total_lecciones}</p>
                 </div>
                 <div className="rounded-lg bg-amber-50 px-2 py-2 text-center">
-                  <p className="text-[11px] text-amber-700">{t("teacher.cursos.metrics.tasks", { defaultValue: "Trabajos" })}</p>
+                  <p className="text-[11px] text-amber-700">{t("teacher.cursos.metrics.tasks", { defaultValue: "Tareas" })}</p>
                   <p className="text-lg font-bold text-amber-800">{item.total_trabajos}</p>
                 </div>
               </div>

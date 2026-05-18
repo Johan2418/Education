@@ -30,13 +30,18 @@ type RegisterRequest struct {
 }
 
 type LoginRequest struct {
-	Email    string `json:"email"`
-	Password string `json:"password"`
+	Email      string `json:"email"`
+	Password   string `json:"password"`
+	RememberMe bool   `json:"remember_me"`
 }
 
 type TokenResponse struct {
-	Token string  `json:"token"`
-	User  Profile `json:"user"`
+	Token           string    `json:"token"`
+	AccessToken     string    `json:"access_token"`
+	RefreshToken    string    `json:"refresh_token,omitempty"`
+	AccessExpiresAt time.Time `json:"access_expires_at"`
+	User            Profile   `json:"user"`
+	Profile         Profile   `json:"profile"`
 }
 
 type RegisterResponse struct {
@@ -46,6 +51,14 @@ type RegisterResponse struct {
 
 type ResendVerificationRequest struct {
 	Email string `json:"email"`
+}
+
+type RefreshRequest struct {
+	RefreshToken string `json:"refresh_token"`
+}
+
+type LogoutRequest struct {
+	RefreshToken string `json:"refresh_token"`
 }
 
 type CreateAdminRequest struct {
@@ -64,3 +77,17 @@ type UpdateProfileRequest struct {
 	Phone       *string `json:"phone"`
 	AvatarURL   *string `json:"avatar_url"`
 }
+
+type AuthSession struct {
+	ID               string     `json:"id" gorm:"column:id;primaryKey;default:gen_random_uuid()"`
+	UserID           string     `json:"user_id" gorm:"column:user_id"`
+	RefreshTokenHash string     `json:"-" gorm:"column:refresh_token_hash;uniqueIndex"`
+	RememberMe       bool       `json:"remember_me" gorm:"column:remember_me"`
+	ExpiresAt        *time.Time `json:"expires_at" gorm:"column:expires_at"`
+	RevokedAt        *time.Time `json:"revoked_at" gorm:"column:revoked_at"`
+	LastUsedAt       *time.Time `json:"last_used_at" gorm:"column:last_used_at"`
+	CreatedAt        time.Time  `json:"created_at" gorm:"column:created_at;autoCreateTime"`
+	UpdatedAt        time.Time  `json:"updated_at" gorm:"column:updated_at;autoUpdateTime"`
+}
+
+func (AuthSession) TableName() string { return "internal.auth_session" }

@@ -347,6 +347,346 @@ func (s *Service) ListMisCalificacionesDetalleEstudiante(ctx context.Context, es
 	}, nil
 }
 
+func (s *Service) ListCalificacionesDetalleDocente(ctx context.Context, actorID, actorRole string, rawFilter TeacherGradeDetailFilters) (*TeacherGradeDetailResponse, error) {
+	role := strings.ToLower(strings.TrimSpace(actorRole))
+	filter, err := normalizeTeacherGradeDetailFilters(rawFilter)
+	if err != nil {
+		return nil, err
+	}
+
+	empty := &TeacherGradeDetailResponse{
+		Items:  []TeacherGradeDetailItem{},
+		Total:  0,
+		Limit:  filter.Limit,
+		Offset: filter.Offset,
+		Aggregates: TeacherGradeAggregates{
+			Total:              0,
+			PromedioGeneral10:  0,
+			PromedioGeneral100: 0,
+			PorTipo:            []TeacherGradeTypeAggregate{},
+			PorCurso:           []TeacherGradeCursoAggregate{},
+			PorMateria:         []TeacherGradeMateriaAggregate{},
+			PorEstudiante:      []TeacherGradeEstudianteAggregate{},
+			PorUnidad:          []TeacherGradeUnidadAggregate{},
+			PorTema:            []TeacherGradeTemaAggregate{},
+		},
+	}
+
+	studentFilter := StudentGradeDetailFilters{
+		MateriaID: filter.MateriaID,
+		Tipo:      filter.Tipo,
+		UnidadID:  filter.UnidadID,
+		TemaID:    filter.TemaID,
+		Estado:    filter.Estado,
+		Desde:     filter.Desde,
+		Hasta:     filter.Hasta,
+		Q:         filter.Q,
+		Limit:     200,
+		Offset:    0,
+	}
+
+	allowedCourseNames := map[string]string{}
+	allowedMateriaCourse := map[string]string{}
+	allowedMateriaName := map[string]string{}
+	visibleStudents := map[string]EstudianteCursoDetail{}
+	allRows := make([]TeacherGradeDetailItem, 0)
+
+	loadStudentsByCourse := func(courseIDs []string) error {
+		for _, rawCourseID := range courseIDs {
+			courseID := strings.TrimSpace(rawCourseID)
+			if courseID == "" {
+				continue
+			}
+			enrolled, err := s.repo.ListEstudiantesByCurso(ctx, courseID)
+			if err != nil {
+				return err
+			}
+			for _, student := range enrolled {
+				if strings.TrimSpace(student.EstudianteID) == "" {
+					continue
+				}
+				visibleStudents[student.EstudianteID] = student
+			}
+		}
+		return nil
+	}
+
+	switch role {
+	case "teacher":
+		teacherID := strings.TrimSpace(actorID)
+		if teacherID == "" {
+			return nil, errRequired("docente_id")
+		}
+
+		assignments, err := s.repo.ListMisCursosDocente(ctx, teacherID)
+		if err != nil {
+			return nil, err
+		}
+		if len(assignments) == 0 {
+			return empty, nil
+		}
+
+		courseSet := map[string]struct{}{}
+		for _, item := range assignments {
+			materiaID := strings.TrimSpace(item.MateriaID)
+			cursoID := strings.TrimSpace(item.CursoID)
+			if materiaID == "" || cursoID == "" {
+				continue
+			}
+			allowedMateriaCourse[materiaID] = cursoID
+			allowedMateriaName[materiaID] = strings.TrimSpace(item.MateriaNombre)
+			if _, exists := allowedCourseNames[cursoID]; !exists {
+				allowedCourseNames[cursoID] = strings.TrimSpace(item.CursoNombre)
+			}
+			courseSet[cursoID] = struct{}{}
+		}
+
+		if len(allowedMateriaCourse) == 0 {
+			return empty, nil
+		}
+
+		if filter.MateriaID != nil {
+			if _, ok := allowedMateriaCourse[strings.TrimSpace(*filter.MateriaID)]; !ok {
+				return nil, errors.New("no autorizado para esta materia")
+			}
+		}
+		if filter.CursoID != nil {
+			if _, ok := allowedCourseNames[strings.TrimSpace(*filter.CursoID)]; !ok {
+				return nil, errors.New("no autorizado para este curso")
+			}
+		}
+
+		courseIDs := make([]string, 0, len(courseSet))
+		for courseID := range courseSet {
+			if filter.CursoID != nil && courseID != strings.TrimSpace(*filter.CursoID) {
+				continue
+			}
+			courseIDs = append(courseIDs, courseID)
+		}
+		if len(courseIDs) == 0 {
+			return empty, nil
+		}
+		if err := loadStudentsByCourse(courseIDs); err != nil {
+			return nil, err
+		}
+
+	case "admin", "super_admin":
+		if filter.MateriaID != nil {
+			materia, err := s.repo.GetMateria(ctx, strings.TrimSpace(*filter.MateriaID))
+			if err != nil {
+				return nil, err
+			}
+			cursoID := strings.TrimSpace(materia.CursoID)
+			allowedMateriaCourse[materia.ID] = cursoID
+			allowedMateriaName[materia.ID] = strings.TrimSpace(materia.Nombre)
+			if _, exists := allowedCourseNames[cursoID]; !exists {
+				curso, err := s.repo.GetCurso(ctx, cursoID)
+				if err == nil {
+					allowedCourseNames[cursoID] = strings.TrimSpace(curso.Nombre)
+				}
+			}
+		}
+
+		courseIDs := make([]string, 0)
+		if filter.CursoID != nil {
+			courseID := strings.TrimSpace(*filter.CursoID)
+			course, err := s.repo.GetCurso(ctx, courseID)
+			if err != nil {
+				return nil, err
+			}
+			allowedCourseNames[courseID] = strings.TrimSpace(course.Nombre)
+			courseIDs = append(courseIDs, courseID)
+		} else if len(allowedMateriaCourse) > 0 {
+			set := map[string]struct{}{}
+			for _, courseID := range allowedMateriaCourse {
+				set[courseID] = struct{}{}
+			}
+			for courseID := range set {
+				courseIDs = append(courseIDs, courseID)
+				if _, exists := allowedCourseNames[courseID]; !exists {
+					course, err := s.repo.GetCurso(ctx, courseID)
+					if err == nil {
+						allowedCourseNames[courseID] = strings.TrimSpace(course.Nombre)
+					}
+				}
+			}
+		} else {
+			courses, err := s.repo.ListCursos(ctx)
+			if err != nil {
+				return nil, err
+			}
+			for _, course := range courses {
+				courseID := strings.TrimSpace(course.ID)
+				if courseID == "" {
+					continue
+				}
+				courseIDs = append(courseIDs, courseID)
+				allowedCourseNames[courseID] = strings.TrimSpace(course.Nombre)
+			}
+		}
+
+		if len(courseIDs) == 0 {
+			return empty, nil
+		}
+
+		if len(allowedMateriaCourse) == 0 {
+			for _, courseID := range courseIDs {
+				materias, err := s.repo.ListMaterias(ctx, courseID, nil)
+				if err != nil {
+					return nil, err
+				}
+				for _, materia := range materias {
+					materiaID := strings.TrimSpace(materia.ID)
+					if materiaID == "" {
+						continue
+					}
+					allowedMateriaCourse[materiaID] = courseID
+					allowedMateriaName[materiaID] = strings.TrimSpace(materia.Nombre)
+				}
+			}
+		}
+
+		if err := loadStudentsByCourse(courseIDs); err != nil {
+			return nil, err
+		}
+
+	default:
+		return nil, errors.New("no autorizado")
+	}
+
+	if filter.EstudianteID != nil {
+		studentID := strings.TrimSpace(*filter.EstudianteID)
+		student, ok := visibleStudents[studentID]
+		if !ok {
+			return nil, errors.New("no autorizado para este estudiante")
+		}
+		visibleStudents = map[string]EstudianteCursoDetail{studentID: student}
+	}
+
+	if len(visibleStudents) == 0 {
+		return empty, nil
+	}
+
+	studentIDs := make([]string, 0, len(visibleStudents))
+	for studentID := range visibleStudents {
+		studentIDs = append(studentIDs, studentID)
+	}
+	sort.Strings(studentIDs)
+
+	for _, studentID := range studentIDs {
+		rows, err := s.repo.ListStudentGradeDetailRows(ctx, studentID, studentFilter)
+		if err != nil {
+			return nil, err
+		}
+
+		student := visibleStudents[studentID]
+		displayName := ""
+		if student.DisplayName != nil {
+			displayName = *student.DisplayName
+		}
+		studentName := strings.TrimSpace(firstNonEmpty(displayName, student.Email, student.EstudianteID))
+		studentEmail := strings.TrimSpace(student.Email)
+
+		for _, row := range rows {
+			materiaID := ""
+			if row.MateriaID != nil {
+				materiaID = strings.TrimSpace(*row.MateriaID)
+			}
+			if materiaID == "" {
+				continue
+			}
+
+			cursoID, ok := allowedMateriaCourse[materiaID]
+			if !ok {
+				// Skip records outside the teacher/admin visible scope.
+				continue
+			}
+			if filter.CursoID != nil && cursoID != strings.TrimSpace(*filter.CursoID) {
+				continue
+			}
+
+			cursoNombre := strings.TrimSpace(allowedCourseNames[cursoID])
+			if cursoNombre == "" {
+				curso, err := s.repo.GetCurso(ctx, cursoID)
+				if err == nil && curso != nil {
+					cursoNombre = strings.TrimSpace(curso.Nombre)
+					allowedCourseNames[cursoID] = cursoNombre
+				}
+			}
+
+			materiaNombre := ""
+			if row.Materia != nil {
+				materiaNombre = strings.TrimSpace(*row.Materia)
+			}
+			if materiaNombre == "" {
+				materiaNombre = strings.TrimSpace(allowedMateriaName[materiaID])
+			}
+
+			cursoIDCopy := cursoID
+			cursoNombreCopy := cursoNombre
+			materiaIDCopy := materiaID
+			materiaNombreCopy := materiaNombre
+
+			allRows = append(allRows, TeacherGradeDetailItem{
+				ID:              row.ID,
+				Tipo:            row.Tipo,
+				Estado:          row.Estado,
+				Fecha:           row.Fecha,
+				Titulo:          row.Titulo,
+				CursoID:         &cursoIDCopy,
+				Curso:           &cursoNombreCopy,
+				MateriaID:       &materiaIDCopy,
+				Materia:         &materiaNombreCopy,
+				UnidadID:        row.UnidadID,
+				Unidad:          row.Unidad,
+				TemaID:          row.TemaID,
+				Tema:            row.Tema,
+				EstudianteID:    studentID,
+				Estudiante:      studentName,
+				EstudianteEmail: studentEmail,
+				Referencia:      row.Referencia,
+				Puntaje100:      row.Puntaje100,
+				Nota10:          row.Nota10,
+			})
+		}
+	}
+
+	if len(allRows) == 0 {
+		return empty, nil
+	}
+
+	sort.Slice(allRows, func(i, j int) bool {
+		if allRows[i].Fecha.Equal(allRows[j].Fecha) {
+			if allRows[i].Estudiante == allRows[j].Estudiante {
+				if allRows[i].Tipo == allRows[j].Tipo {
+					return strings.ToLower(allRows[i].Titulo) < strings.ToLower(allRows[j].Titulo)
+				}
+				return allRows[i].Tipo < allRows[j].Tipo
+			}
+			return strings.ToLower(allRows[i].Estudiante) < strings.ToLower(allRows[j].Estudiante)
+		}
+		return allRows[i].Fecha.After(allRows[j].Fecha)
+	})
+
+	total := len(allRows)
+	start := filter.Offset
+	if start > total {
+		start = total
+	}
+	end := start + filter.Limit
+	if end > total {
+		end = total
+	}
+
+	return &TeacherGradeDetailResponse{
+		Items:      allRows[start:end],
+		Total:      total,
+		Limit:      filter.Limit,
+		Offset:     filter.Offset,
+		Aggregates: buildTeacherGradeAggregates(allRows),
+	}, nil
+}
+
 // ─── Unidad ─────────────────────────────────────────────────
 
 func (s *Service) ListUnidades(ctx context.Context, materiaID string) ([]Unidad, error) {
@@ -1508,6 +1848,269 @@ func buildStudentGradeAggregates(items []StudentGradeDetailItem) StudentGradeAgg
 	}
 }
 
+type teacherGradeScoreBucket struct {
+	total  int
+	sum10  float64
+	sum100 float64
+}
+
+func (b *teacherGradeScoreBucket) add(item TeacherGradeDetailItem) {
+	b.total++
+	b.sum10 += item.Nota10
+	b.sum100 += item.Puntaje100
+}
+
+func (b *teacherGradeScoreBucket) avg10() float64 {
+	if b.total == 0 {
+		return 0
+	}
+	return round2(b.sum10 / float64(b.total))
+}
+
+func (b *teacherGradeScoreBucket) avg100() float64 {
+	if b.total == 0 {
+		return 0
+	}
+	return round2(b.sum100 / float64(b.total))
+}
+
+func buildTeacherGradeAggregates(items []TeacherGradeDetailItem) TeacherGradeAggregates {
+	totalBucket := &teacherGradeScoreBucket{}
+	typeBuckets := map[string]*teacherGradeScoreBucket{
+		"contenido": {},
+		"prueba":    {},
+		"tarea":     {},
+	}
+
+	type namedBucket struct {
+		id   string
+		name string
+		*teacherGradeScoreBucket
+	}
+	type namedMateriaBucket struct {
+		id       string
+		name     string
+		course   string
+		courseID string
+		*teacherGradeScoreBucket
+	}
+	type namedStudentBucket struct {
+		id    string
+		name  string
+		email string
+		*teacherGradeScoreBucket
+	}
+
+	cursoBuckets := map[string]*namedBucket{}
+	materiaBuckets := map[string]*namedMateriaBucket{}
+	studentBuckets := map[string]*namedStudentBucket{}
+	unidadBuckets := map[string]*namedBucket{}
+	temaBuckets := map[string]*namedBucket{}
+
+	for _, item := range items {
+		totalBucket.add(item)
+		if bucket, ok := typeBuckets[item.Tipo]; ok {
+			bucket.add(item)
+		}
+
+		if item.CursoID != nil && strings.TrimSpace(*item.CursoID) != "" {
+			key := strings.TrimSpace(*item.CursoID)
+			if _, exists := cursoBuckets[key]; !exists {
+				courseName := key
+				if item.Curso != nil && strings.TrimSpace(*item.Curso) != "" {
+					courseName = strings.TrimSpace(*item.Curso)
+				}
+				cursoBuckets[key] = &namedBucket{
+					id:                      key,
+					name:                    courseName,
+					teacherGradeScoreBucket: &teacherGradeScoreBucket{},
+				}
+			}
+			cursoBuckets[key].add(item)
+		}
+
+		if item.MateriaID != nil && strings.TrimSpace(*item.MateriaID) != "" {
+			key := strings.TrimSpace(*item.MateriaID)
+			if _, exists := materiaBuckets[key]; !exists {
+				materiaName := key
+				if item.Materia != nil && strings.TrimSpace(*item.Materia) != "" {
+					materiaName = strings.TrimSpace(*item.Materia)
+				}
+				courseName := ""
+				if item.Curso != nil {
+					courseName = strings.TrimSpace(*item.Curso)
+				}
+				courseID := ""
+				if item.CursoID != nil {
+					courseID = strings.TrimSpace(*item.CursoID)
+				}
+				materiaBuckets[key] = &namedMateriaBucket{
+					id:                      key,
+					name:                    materiaName,
+					course:                  courseName,
+					courseID:                courseID,
+					teacherGradeScoreBucket: &teacherGradeScoreBucket{},
+				}
+			}
+			materiaBuckets[key].add(item)
+		}
+
+		if strings.TrimSpace(item.EstudianteID) != "" {
+			key := strings.TrimSpace(item.EstudianteID)
+			if _, exists := studentBuckets[key]; !exists {
+				studentBuckets[key] = &namedStudentBucket{
+					id:                      key,
+					name:                    strings.TrimSpace(item.Estudiante),
+					email:                   strings.TrimSpace(item.EstudianteEmail),
+					teacherGradeScoreBucket: &teacherGradeScoreBucket{},
+				}
+			}
+			studentBuckets[key].add(item)
+		}
+
+		if item.UnidadID != nil && strings.TrimSpace(*item.UnidadID) != "" {
+			key := strings.TrimSpace(*item.UnidadID)
+			if _, exists := unidadBuckets[key]; !exists {
+				unidadName := key
+				if item.Unidad != nil && strings.TrimSpace(*item.Unidad) != "" {
+					unidadName = strings.TrimSpace(*item.Unidad)
+				}
+				unidadBuckets[key] = &namedBucket{
+					id:                      key,
+					name:                    unidadName,
+					teacherGradeScoreBucket: &teacherGradeScoreBucket{},
+				}
+			}
+			unidadBuckets[key].add(item)
+		}
+
+		if item.TemaID != nil && strings.TrimSpace(*item.TemaID) != "" {
+			key := strings.TrimSpace(*item.TemaID)
+			if _, exists := temaBuckets[key]; !exists {
+				temaName := key
+				if item.Tema != nil && strings.TrimSpace(*item.Tema) != "" {
+					temaName = strings.TrimSpace(*item.Tema)
+				}
+				temaBuckets[key] = &namedBucket{
+					id:                      key,
+					name:                    temaName,
+					teacherGradeScoreBucket: &teacherGradeScoreBucket{},
+				}
+			}
+			temaBuckets[key].add(item)
+		}
+	}
+
+	porTipo := []TeacherGradeTypeAggregate{
+		{
+			Tipo:        "contenido",
+			Total:       typeBuckets["contenido"].total,
+			Promedio10:  typeBuckets["contenido"].avg10(),
+			Promedio100: typeBuckets["contenido"].avg100(),
+		},
+		{
+			Tipo:        "prueba",
+			Total:       typeBuckets["prueba"].total,
+			Promedio10:  typeBuckets["prueba"].avg10(),
+			Promedio100: typeBuckets["prueba"].avg100(),
+		},
+		{
+			Tipo:        "tarea",
+			Total:       typeBuckets["tarea"].total,
+			Promedio10:  typeBuckets["tarea"].avg10(),
+			Promedio100: typeBuckets["tarea"].avg100(),
+		},
+	}
+
+	porCurso := make([]TeacherGradeCursoAggregate, 0, len(cursoBuckets))
+	for _, bucket := range cursoBuckets {
+		porCurso = append(porCurso, TeacherGradeCursoAggregate{
+			CursoID:     bucket.id,
+			Curso:       bucket.name,
+			Total:       bucket.total,
+			Promedio10:  bucket.avg10(),
+			Promedio100: bucket.avg100(),
+		})
+	}
+	sort.Slice(porCurso, func(i, j int) bool {
+		return strings.ToLower(porCurso[i].Curso) < strings.ToLower(porCurso[j].Curso)
+	})
+
+	porMateria := make([]TeacherGradeMateriaAggregate, 0, len(materiaBuckets))
+	for _, bucket := range materiaBuckets {
+		porMateria = append(porMateria, TeacherGradeMateriaAggregate{
+			MateriaID:   bucket.id,
+			Materia:     bucket.name,
+			CursoID:     bucket.courseID,
+			Curso:       bucket.course,
+			Total:       bucket.total,
+			Promedio10:  bucket.avg10(),
+			Promedio100: bucket.avg100(),
+		})
+	}
+	sort.Slice(porMateria, func(i, j int) bool {
+		if strings.ToLower(porMateria[i].Curso) == strings.ToLower(porMateria[j].Curso) {
+			return strings.ToLower(porMateria[i].Materia) < strings.ToLower(porMateria[j].Materia)
+		}
+		return strings.ToLower(porMateria[i].Curso) < strings.ToLower(porMateria[j].Curso)
+	})
+
+	porEstudiante := make([]TeacherGradeEstudianteAggregate, 0, len(studentBuckets))
+	for _, bucket := range studentBuckets {
+		porEstudiante = append(porEstudiante, TeacherGradeEstudianteAggregate{
+			EstudianteID:    bucket.id,
+			Estudiante:      bucket.name,
+			EstudianteEmail: bucket.email,
+			Total:           bucket.total,
+			Promedio10:      bucket.avg10(),
+			Promedio100:     bucket.avg100(),
+		})
+	}
+	sort.Slice(porEstudiante, func(i, j int) bool {
+		return strings.ToLower(porEstudiante[i].Estudiante) < strings.ToLower(porEstudiante[j].Estudiante)
+	})
+
+	porUnidad := make([]TeacherGradeUnidadAggregate, 0, len(unidadBuckets))
+	for _, bucket := range unidadBuckets {
+		porUnidad = append(porUnidad, TeacherGradeUnidadAggregate{
+			UnidadID:    bucket.id,
+			Unidad:      bucket.name,
+			Total:       bucket.total,
+			Promedio10:  bucket.avg10(),
+			Promedio100: bucket.avg100(),
+		})
+	}
+	sort.Slice(porUnidad, func(i, j int) bool {
+		return strings.ToLower(porUnidad[i].Unidad) < strings.ToLower(porUnidad[j].Unidad)
+	})
+
+	porTema := make([]TeacherGradeTemaAggregate, 0, len(temaBuckets))
+	for _, bucket := range temaBuckets {
+		porTema = append(porTema, TeacherGradeTemaAggregate{
+			TemaID:      bucket.id,
+			Tema:        bucket.name,
+			Total:       bucket.total,
+			Promedio10:  bucket.avg10(),
+			Promedio100: bucket.avg100(),
+		})
+	}
+	sort.Slice(porTema, func(i, j int) bool {
+		return strings.ToLower(porTema[i].Tema) < strings.ToLower(porTema[j].Tema)
+	})
+
+	return TeacherGradeAggregates{
+		Total:              totalBucket.total,
+		PromedioGeneral10:  totalBucket.avg10(),
+		PromedioGeneral100: totalBucket.avg100(),
+		PorTipo:            porTipo,
+		PorCurso:           porCurso,
+		PorMateria:         porMateria,
+		PorEstudiante:      porEstudiante,
+		PorUnidad:          porUnidad,
+		PorTema:            porTema,
+	}
+}
+
 func normalizeStudentGradeDetailFilters(filter StudentGradeDetailFilters) (StudentGradeDetailFilters, error) {
 	normalized := filter
 
@@ -1563,6 +2166,63 @@ func normalizeStudentGradeDetailFilters(filter StudentGradeDetailFilters) (Stude
 	return normalized, nil
 }
 
+func normalizeTeacherGradeDetailFilters(filter TeacherGradeDetailFilters) (TeacherGradeDetailFilters, error) {
+	normalized := filter
+
+	normalized.CursoID = normalizeOptionalString(filter.CursoID)
+	normalized.MateriaID = normalizeOptionalString(filter.MateriaID)
+	normalized.EstudianteID = normalizeOptionalString(filter.EstudianteID)
+	normalized.UnidadID = normalizeOptionalString(filter.UnidadID)
+	normalized.TemaID = normalizeOptionalString(filter.TemaID)
+	normalized.Q = normalizeOptionalString(filter.Q)
+
+	if filter.Tipo != nil {
+		tipo := strings.ToLower(strings.TrimSpace(*filter.Tipo))
+		switch tipo {
+		case "contenido", "prueba", "tarea":
+			normalized.Tipo = &tipo
+		default:
+			return TeacherGradeDetailFilters{}, errors.New("tipo invalido: use contenido, prueba o tarea")
+		}
+	} else {
+		normalized.Tipo = nil
+	}
+
+	if filter.Estado == nil {
+		defaultEstado := "calificada"
+		normalized.Estado = &defaultEstado
+	} else {
+		estado := strings.ToLower(strings.TrimSpace(*filter.Estado))
+		switch estado {
+		case "", "calificada":
+			estado = "calificada"
+			normalized.Estado = &estado
+		case "sin_calificar":
+			normalized.Estado = &estado
+		case "todos":
+			normalized.Estado = nil
+		default:
+			return TeacherGradeDetailFilters{}, errors.New("estado invalido: use calificada, sin_calificar o todos")
+		}
+	}
+
+	if normalized.Limit <= 0 {
+		normalized.Limit = 50
+	}
+	if normalized.Limit > 200 {
+		normalized.Limit = 200
+	}
+	if normalized.Offset < 0 {
+		normalized.Offset = 0
+	}
+
+	if normalized.Desde != nil && normalized.Hasta != nil && normalized.Desde.After(*normalized.Hasta) {
+		return TeacherGradeDetailFilters{}, errors.New("rango de fechas invalido")
+	}
+
+	return normalized, nil
+}
+
 func normalizeOptionalString(value *string) *string {
 	if value == nil {
 		return nil
@@ -1572,6 +2232,15 @@ func normalizeOptionalString(value *string) *string {
 		return nil
 	}
 	return &trimmed
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func errRequired(field string) error {

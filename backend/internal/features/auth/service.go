@@ -2,6 +2,10 @@ package auth
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"strings"
 	"time"
@@ -14,13 +18,23 @@ import (
 )
 
 type Service struct {
-	repo     *Repository
-	jwtSvc   *jwt.Service
-	emailSvc *email.Service
+	repo               *Repository
+	jwtSvc             *jwt.Service
+	emailSvc           *email.Service
+	sessionExpireHours int
 }
 
-func NewService(repo *Repository, jwtSvc *jwt.Service, emailSvc *email.Service) *Service {
-	return &Service{repo: repo, jwtSvc: jwtSvc, emailSvc: emailSvc}
+func NewService(repo *Repository, jwtSvc *jwt.Service, emailSvc *email.Service, sessionExpireHours int) *Service {
+	if sessionExpireHours <= 0 {
+		sessionExpireHours = 24
+	}
+
+	return &Service{
+		repo:               repo,
+		jwtSvc:             jwtSvc,
+		emailSvc:           emailSvc,
+		sessionExpireHours: sessionExpireHours,
+	}
 }
 
 func (s *Service) Register(ctx context.Context, req RegisterRequest) (*RegisterResponse, error) {
@@ -29,12 +43,12 @@ func (s *Service) Register(ctx context.Context, req RegisterRequest) (*RegisterR
 		return nil, errors.New("el email es obligatorio")
 	}
 	if len(req.Password) < 8 {
-		return nil, errors.New("la contraseña debe tener al menos 8 caracteres")
+		return nil, errors.New("la contrasena debe tener al menos 8 caracteres")
 	}
 
 	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
 	if err != nil {
-		return nil, errors.New("error procesando contraseña")
+		return nil, errors.New("error procesando contrasena")
 	}
 
 	var roleReq *string
@@ -48,7 +62,7 @@ func (s *Service) Register(ctx context.Context, req RegisterRequest) (*RegisterR
 	user, err := s.repo.Create(ctx, email, string(hash), req.DisplayName, req.Phone, roleReq)
 	if err != nil {
 		if strings.Contains(err.Error(), "duplicate key") || strings.Contains(err.Error(), "unique") {
-			return nil, errors.New("el email ya está registrado")
+			return nil, errors.New("el email ya esta registrado")
 		}
 		return nil, errors.New("error creando usuario")
 	}
@@ -57,11 +71,11 @@ func (s *Service) Register(ctx context.Context, req RegisterRequest) (*RegisterR
 	token := uuid.New().String()
 	expiry := time.Now().Add(24 * time.Hour)
 	if err := s.repo.SetVerificationToken(ctx, user.ID, token, expiry); err != nil {
-		return nil, errors.New("error configurando verificación")
+		return nil, errors.New("error configurando verificacion")
 	}
 
 	if err := s.emailSvc.SendVerificationEmail(email, token); err != nil {
-		// Log but don't fail registration — user can request resend
+		// Log but do not fail registration; user can request resend.
 		_ = err
 	}
 
@@ -74,11 +88,11 @@ func (s *Service) Register(ctx context.Context, req RegisterRequest) (*RegisterR
 func (s *Service) Login(ctx context.Context, req LoginRequest) (*TokenResponse, error) {
 	user, err := s.repo.GetByEmail(ctx, req.Email)
 	if err != nil {
-		return nil, errors.New("credenciales inválidas")
+		return nil, errors.New("credenciales invalidas")
 	}
 
 	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.Password)); err != nil {
-		return nil, errors.New("credenciales inválidas")
+		return nil, errors.New("credenciales invalidas")
 	}
 
 	// TODO: re-enable when email verification is mandatory
@@ -88,12 +102,96 @@ func (s *Service) Login(ctx context.Context, req LoginRequest) (*TokenResponse, 
 
 	_ = s.repo.UpdateLastAccess(ctx, user.ID)
 
-	token, err := s.jwtSvc.Generate(user.ID, user.Role, user.Email)
+	accessToken, accessExpiresAt, err := s.jwtSvc.Generate(user.ID, user.Role, user.Email)
 	if err != nil {
 		return nil, errors.New("error generando token")
 	}
 
-	return &TokenResponse{Token: token, User: *user}, nil
+	refreshToken, err := generateRefreshToken()
+	if err != nil {
+		return nil, errors.New("error generando sesion")
+	}
+
+	session := AuthSession{
+		UserID:           user.ID,
+		RefreshTokenHash: hashToken(refreshToken),
+		RememberMe:       req.RememberMe,
+		ExpiresAt:        s.sessionExpiresAt(req.RememberMe),
+	}
+	if _, err := s.repo.CreateAuthSession(ctx, session); err != nil {
+		return nil, errors.New("error creando sesion")
+	}
+
+	return &TokenResponse{
+		Token:           accessToken,
+		AccessToken:     accessToken,
+		RefreshToken:    refreshToken,
+		AccessExpiresAt: accessExpiresAt,
+		User:            *user,
+		Profile:         *user,
+	}, nil
+}
+
+func (s *Service) Refresh(ctx context.Context, req RefreshRequest) (*TokenResponse, error) {
+	refreshToken := strings.TrimSpace(req.RefreshToken)
+	if refreshToken == "" {
+		return nil, errors.New("refresh_token requerido")
+	}
+
+	session, err := s.repo.GetAuthSessionByHash(ctx, hashToken(refreshToken))
+	if err != nil {
+		return nil, errors.New("error validando sesion")
+	}
+	if session == nil || session.RevokedAt != nil {
+		return nil, errors.New("sesion invalida")
+	}
+
+	now := time.Now()
+	if session.ExpiresAt != nil && now.After(*session.ExpiresAt) {
+		_ = s.repo.RevokeAuthSessionByHash(ctx, hashToken(refreshToken), now)
+		return nil, errors.New("sesion expirada")
+	}
+
+	user, err := s.repo.GetByID(ctx, session.UserID)
+	if err != nil {
+		return nil, errors.New("sesion invalida")
+	}
+
+	accessToken, accessExpiresAt, err := s.jwtSvc.Generate(user.ID, user.Role, user.Email)
+	if err != nil {
+		return nil, errors.New("error renovando token")
+	}
+
+	newRefreshToken, err := generateRefreshToken()
+	if err != nil {
+		return nil, errors.New("error renovando sesion")
+	}
+
+	if err := s.repo.RotateAuthSessionToken(ctx, session.ID, hashToken(newRefreshToken), now); err != nil {
+		return nil, errors.New("error actualizando sesion")
+	}
+
+	return &TokenResponse{
+		Token:           accessToken,
+		AccessToken:     accessToken,
+		RefreshToken:    newRefreshToken,
+		AccessExpiresAt: accessExpiresAt,
+		User:            *user,
+		Profile:         *user,
+	}, nil
+}
+
+func (s *Service) Logout(ctx context.Context, req LogoutRequest) error {
+	refreshToken := strings.TrimSpace(req.RefreshToken)
+	if refreshToken == "" {
+		return nil
+	}
+
+	if err := s.repo.RevokeAuthSessionByHash(ctx, hashToken(refreshToken), time.Now()); err != nil {
+		return errors.New("error cerrando sesion")
+	}
+
+	return nil
 }
 
 func (s *Service) Me(ctx context.Context, userID string) (*Profile, error) {
@@ -109,12 +207,12 @@ func (s *Service) CreateAdmin(ctx context.Context, req CreateAdminRequest, calle
 		return nil, errors.New("solo un administrador puede crear usuarios")
 	}
 	if len(req.Password) < 8 {
-		return nil, errors.New("la contraseña debe tener al menos 8 caracteres")
+		return nil, errors.New("la contrasena debe tener al menos 8 caracteres")
 	}
 
 	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
 	if err != nil {
-		return nil, errors.New("error procesando contraseña")
+		return nil, errors.New("error procesando contrasena")
 	}
 
 	return s.repo.CreateAdmin(ctx, req.Email, string(hash), req.DisplayName, callerID)
@@ -125,7 +223,7 @@ func (s *Service) ChangeRole(ctx context.Context, req ChangeRoleRequest, callerR
 		"student": true, "teacher": true, "resource_manager": true, "admin": true,
 	}
 	if !validRoles[req.NewRole] {
-		return nil, errors.New("rol inválido")
+		return nil, errors.New("rol invalido")
 	}
 	if req.NewRole == "admin" && callerRole != "super_admin" {
 		return nil, errors.New("solo un super_admin puede asignar el rol admin")
@@ -186,7 +284,7 @@ func (s *Service) VerifyEmail(ctx context.Context, token string) error {
 	}
 	user, err := s.repo.GetByVerificationToken(ctx, token)
 	if err != nil {
-		return errors.New("token inválido o expirado")
+		return errors.New("token invalido o expirado")
 	}
 	if user.IsVerified {
 		return nil // already verified
@@ -204,12 +302,33 @@ func (s *Service) ResendVerification(ctx context.Context, emailAddr string) erro
 		return errors.New("email no encontrado")
 	}
 	if user.IsVerified {
-		return errors.New("la cuenta ya está verificada")
+		return errors.New("la cuenta ya esta verificada")
 	}
 	token := uuid.New().String()
 	expiry := time.Now().Add(24 * time.Hour)
 	if err := s.repo.SetVerificationToken(ctx, user.ID, token, expiry); err != nil {
-		return errors.New("error configurando verificación")
+		return errors.New("error configurando verificacion")
 	}
 	return s.emailSvc.SendVerificationEmail(emailAddr, token)
+}
+
+func (s *Service) sessionExpiresAt(rememberMe bool) *time.Time {
+	if rememberMe {
+		return nil
+	}
+	exp := time.Now().Add(time.Duration(s.sessionExpireHours) * time.Hour)
+	return &exp
+}
+
+func generateRefreshToken() (string, error) {
+	raw := make([]byte, 32)
+	if _, err := rand.Read(raw); err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(raw), nil
+}
+
+func hashToken(value string) string {
+	sum := sha256.Sum256([]byte(strings.TrimSpace(value)))
+	return hex.EncodeToString(sum[:])
 }

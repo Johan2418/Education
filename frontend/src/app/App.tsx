@@ -19,6 +19,7 @@ import TeacherDashboard from "@/features/teacher/pages/teacherDashboard";
 import TeacherLessons from "@/features/lessons/pages/teacherLessons";
 import TeacherPruebas from "@/features/pruebas/pages/teacherPruebas";
 import TeacherPerformance from "@/features/performance/pages/teacherPerformance";
+import TeacherCalificacionesPage from "@/features/teacher/pages/teacherCalificaciones";
 import LessonsPage from "@/features/lessons/pages/lessons";
 import LessonDetailPage from "@/features/lessons/pages/lessonDetail";
 import TeacherLessonSectionsPage from "@/features/lessons/pages/teacherLessonSections";
@@ -30,15 +31,12 @@ import AdminCursos from "@/features/admin/pages/adminCursos";
 import AdminBulkImport from "@/features/admin/pages/adminBulkImport";
 import AdminBulkEnroll from "@/features/admin/pages/adminBulkEnroll";
 import TeacherEstudiantes from "@/features/teacher/pages/teacherEstudiantes";
-import TeacherBulkImport from "@/features/teacher/pages/teacherBulkImport";
-import TeacherMisCursos from "@/features/teacher/pages/teacherMisCursos";
 import TeacherMaterias from "@/features/teacher/pages/teacherMaterias";
 import TeacherTrabajos from "@/features/trabajos/pages/teacherTrabajos";
 import TeacherTrabajoCalificar from "@/features/trabajos/pages/teacherTrabajoCalificar";
 import TeacherTrabajoPreguntas from "@/features/trabajos/pages/teacherTrabajoPreguntas";
 import TeacherTrabajoLibroWizard from "@/features/trabajos/pages/teacherTrabajoLibroWizard";
 import TeacherTrabajoReportes from "@/features/trabajos/pages/teacherTrabajoReportes";
-import TeacherTrabajosAnalytics from "@/features/trabajos/pages/teacherTrabajosAnalytics";
 import TeacherRecursos from "@/features/resources/pages/teacherRecursos";
 import TeacherRecursoViewer from "@/features/resources/pages/teacherRecursoViewer";
 import StudentRecursos from "@/features/resources/pages/studentRecursos";
@@ -170,12 +168,13 @@ function App() {
               <Route path="/teacher/trabajos/:trabajoId/preguntas" element={<TeacherTrabajoPreguntas />} />
               <Route path="/teacher/trabajos/:trabajoId/libro" element={<TeacherTrabajoLibroWizard />} />
               <Route path="/teacher/trabajos/:trabajoId/reportes" element={<TeacherTrabajoReportes />} />
-              <Route path="/teacher/trabajos/analytics" element={<TeacherTrabajosAnalytics />} />
+              <Route path="/teacher/trabajos/analytics" element={<Navigate to="/teacher/calificaciones" replace />} />
               <Route path="/teacher/recursos" element={<TeacherRecursos />} />
               <Route path="/teacher/recursos-personales" element={<TeacherRecursosPersonales />} />
               <Route path="/teacher/recursos/:recursoId" element={<TeacherRecursoViewer />} />
               <Route path="/teacher/performance" element={<TeacherPerformance />} />
-              <Route path="/teacher/cursos" element={<TeacherMisCursos />} />
+              <Route path="/teacher/calificaciones" element={<TeacherCalificacionesPage />} />
+              <Route path="/teacher/cursos" element={<Navigate to="/teacher/materias" replace />} />
               <Route path="/teacher/estudiantes" element={<TeacherEstudiantes />} />
               <Route path="/admin/users" element={<AdminUsers />} />
               <Route path="/admin/dashboard" element={<AdminDashboard highContrast={highContrast} />} />
@@ -183,7 +182,7 @@ function App() {
               <Route path="/admin/cursos" element={<AdminCursos />} />
               <Route path="/admin/bulk-import" element={<AdminBulkImport />} />
               <Route path="/admin/bulk-enroll" element={<AdminBulkEnroll />} />
-              <Route path="/teacher/bulk-import" element={<TeacherBulkImport />} />
+              <Route path="/teacher/bulk-import" element={<Navigate to="/teacher/estudiantes" replace />} />
               <Route path="/student/dashboard" element={<StudentDashboard highContrast={highContrast} />} />
               <Route path="/student/recursos" element={<StudentRecursos />} />
               <Route path="/student/recursos/:recursoId" element={<StudentRecursoViewer />} />

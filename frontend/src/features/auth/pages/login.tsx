@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Eye, EyeOff, Lock, User, Atom } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { login as apiLogin, isAuthenticated, resendVerification } from "@/shared/lib/auth";
+import { getMe, login as apiLogin, isAuthenticated, resendVerification } from "@/shared/lib/auth";
 import { toast } from "react-hot-toast";
 import type { ApiError } from "@/shared/lib/api";
 
@@ -29,8 +29,16 @@ export default function Login({ highContrast = false }: Props) {
 
   // Redirect if already authenticated
   useEffect(() => {
+    let active = true;
     if ((location.state as Record<string, unknown>)?.justSignedOut) return;
-    if (isAuthenticated()) navigate("/");
+
+    void (async () => {
+      if (!isAuthenticated()) return;
+      const me = await getMe();
+      if (active && me) navigate("/");
+    })();
+
+    return () => { active = false; };
   }, [navigate, location]);
 
   // Restore remembered email
@@ -75,7 +83,7 @@ export default function Login({ highContrast = false }: Props) {
     }
     setLoading(true);
     try {
-      await apiLogin(email, password);
+      await apiLogin(email, password, rememberMe);
 
       if (rememberMe) {
         localStorage.setItem("rememberMe", "true");

@@ -4,7 +4,7 @@ import { listMisCalificacionesMateriasEstudiante, listMisMateriasEstudiante } fr
 import { listMisPruebasEstudiante } from "@/features/pruebas/services/pruebas";
 import { listMisTrabajos } from "@/features/trabajos/services/trabajos";
 import type { Leccion, Materia, MateriaCalificacionEstudianteResponse, Progreso, PruebaConLeccion, Tema, TrabajoConEstadoEntrega, Unidad } from "@/shared/types";
-import { API_BASE_URL } from "@/shared/lib/api";
+import { API_BASE_URL, authenticatedFetch } from "@/shared/lib/api";
 
 interface ApiData<T> {
   data?: T;
@@ -155,17 +155,14 @@ export function createStudentGradesStream(
 
   const connect = async () => {
     if (!active) return;
-    const token = localStorage.getItem("token");
-    if (!token) return;
 
     abortController?.abort();
     abortController = new AbortController();
 
     try {
-      const response = await fetch(`${API_BASE_URL}/student/calificaciones/stream`, {
+      const response = await authenticatedFetch("/student/calificaciones/stream", {
         method: "GET",
         headers: {
-          Authorization: `Bearer ${token}`,
           Accept: "text/event-stream",
         },
         signal: abortController.signal,

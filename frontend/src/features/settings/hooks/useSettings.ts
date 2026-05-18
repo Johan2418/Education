@@ -186,9 +186,8 @@ export function useSettings(): UseSettingsReturn {
   }, [profile, t]);
 
   const handleSignOut = useCallback(async () => {
-    apiSignOut();
-    navigate("/login");
-  }, [navigate]);
+    await apiSignOut();
+  }, []);
 
   return {
     loading,

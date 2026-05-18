@@ -2,7 +2,7 @@
 import { useParams, useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { getMe } from "@/shared/lib/auth";
-import api, { API_BASE_URL } from "@/shared/lib/api";
+import api, { API_BASE_URL, authenticatedFetch } from "@/shared/lib/api";
 import * as pdfjsLib from "pdfjs-dist";
 import pdfWorkerSrc from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import mammoth from "mammoth";
@@ -153,9 +153,7 @@ async function fetchResourceArrayBuffer(resourceUrl: string): Promise<ArrayBuffe
     return buffer.buffer;
   }
 
-  const token = localStorage.getItem("token");
-  const headers: HeadersInit = token ? { Authorization: `Bearer ${token}` } : {};
-  const response = await fetch(resourceUrl, { headers });
+  const response = await authenticatedFetch(resourceUrl);
   if (!response.ok) {
     const message = `Error al descargar el recurso: ${response.status}`;
     throw new Error(message);
@@ -2327,15 +2325,9 @@ export default function LessonDetailPage() {
     void (async () => {
       try {
         const raw = await fetchResourceArrayBuffer(contentURL);
-        const token = localStorage.getItem("token");
-        const headers: HeadersInit = token
-          ? { Authorization: `Bearer ${token}`, "Content-Type": "application/vnd.openxmlformats-officedocument.presentationml.presentation" }
-          : { "Content-Type": "application/vnd.openxmlformats-officedocument.presentationml.presentation" };
-        const convertUrl = `${API_BASE_URL.replace(/\/$/, "")}/recursos/pptx-to-pdf`;
-
-        const convertResponse = await fetch(convertUrl, {
+        const convertResponse = await authenticatedFetch("/recursos/pptx-to-pdf", {
           method: "POST",
-          headers,
+          headers: { "Content-Type": "application/vnd.openxmlformats-officedocument.presentationml.presentation" },
           body: raw,
         });
 

@@ -15,24 +15,41 @@ type Claims struct {
 }
 
 type Service struct {
-	secret      []byte
-	expireHours int
+	secret              []byte
+	accessExpireMinutes int
 }
 
-func NewService(secret string, expireHours int) *Service {
+func NewService(secret string, accessExpireMinutes int) *Service {
+	if accessExpireMinutes <= 0 {
+		accessExpireMinutes = 15
+	}
+
 	return &Service{
-		secret:      []byte(secret),
-		expireHours: expireHours,
+		secret:              []byte(secret),
+		accessExpireMinutes: accessExpireMinutes,
 	}
 }
 
-func (s *Service) Generate(userID, role, email string) (string, error) {
+func (s *Service) AccessTokenTTL() time.Duration {
+	return time.Duration(s.accessExpireMinutes) * time.Minute
+}
+
+func (s *Service) Generate(userID, role, email string) (string, time.Time, error) {
+	return s.GenerateWithTTL(userID, role, email, s.AccessTokenTTL())
+}
+
+func (s *Service) GenerateWithTTL(userID, role, email string, ttl time.Duration) (string, time.Time, error) {
+	if ttl <= 0 {
+		ttl = s.AccessTokenTTL()
+	}
+
 	now := time.Now()
+	expiresAt := now.Add(ttl)
 	claims := Claims{
 		RegisteredClaims: gojwt.RegisteredClaims{
 			Subject:   userID,
 			IssuedAt:  gojwt.NewNumericDate(now),
-			ExpiresAt: gojwt.NewNumericDate(now.Add(time.Duration(s.expireHours) * time.Hour)),
+			ExpiresAt: gojwt.NewNumericDate(expiresAt),
 		},
 		Role:     "authenticated",
 		UserRole: role,
@@ -40,7 +57,11 @@ func (s *Service) Generate(userID, role, email string) (string, error) {
 	}
 
 	token := gojwt.NewWithClaims(gojwt.SigningMethodHS256, claims)
-	return token.SignedString(s.secret)
+	signedToken, err := token.SignedString(s.secret)
+	if err != nil {
+		return "", time.Time{}, err
+	}
+	return signedToken, expiresAt, nil
 }
 
 func (s *Service) Validate(tokenStr string) (*Claims, error) {

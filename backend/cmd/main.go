@@ -50,7 +50,7 @@ func main() {
 	defer sqlDB.Close()
 
 	// ── JWT service ─────────────────────────────────────────
-	jwtSvc := jwtpkg.NewService(cfg.JWT.Secret, cfg.JWT.ExpireHours)
+	jwtSvc := jwtpkg.NewService(cfg.JWT.Secret, cfg.JWT.AccessExpireMinutes)
 
 	// ── Dependency injection ────────────────────────────────
 	emailSvc := email.NewService(cfg.Email)
@@ -58,7 +58,7 @@ func main() {
 	gradesHub := realtime.NewStudentGradesHub()
 
 	authRepo := auth.NewRepository(db)
-	authSvc := auth.NewService(authRepo, jwtSvc, emailSvc)
+	authSvc := auth.NewService(authRepo, jwtSvc, emailSvc, cfg.JWT.SessionExpireHours)
 	authH := auth.NewHandler(authSvc)
 
 	acadRepo := academic.NewRepository(db)
@@ -127,6 +127,8 @@ func main() {
 	// ── Public auth routes ──────────────────────────────────
 	// r.Post("/auth/register", authH.Register) // Registration disabled — only admins create users
 	r.Post("/auth/login", authH.Login)
+	r.Post("/auth/refresh", authH.Refresh)
+	r.Post("/auth/logout", authH.Logout)
 	r.Get("/auth/verify", authH.VerifyEmail)
 	r.Post("/auth/resend-verification", authH.ResendVerification)
 
@@ -166,6 +168,7 @@ func main() {
 
 		// Docente por materia + horarios
 		r.Get("/teacher/mis-cursos", acadH.ListMisCursosDocente)
+		r.Get("/teacher/calificaciones/detalle", acadH.ListCalificacionesDetalleDocente)
 		r.Get("/teacher/horarios", acadH.ListHorariosDocente)
 		r.Get("/asignaciones-docente", acadH.ListDocenteMateriaAsignaciones)
 		r.Post("/asignaciones-docente", acadH.CreateDocenteMateriaAsignacion)
@@ -393,7 +396,7 @@ func main() {
 			r.Post("/admin/bulk-import", bulkH.AdminBulkImport)
 		})
 
-		// Teacher bulk import (teachers + admins)
+		// Teacher bulk import endpoints retained for admin compatibility
 		r.Post("/teacher/bulk-import/map-columns", bulkH.MapColumns)
 		r.Post("/teacher/bulk-import/{cursoId}", bulkH.TeacherBulkImport)
 	})

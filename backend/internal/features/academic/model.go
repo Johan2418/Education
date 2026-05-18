@@ -397,6 +397,113 @@ type StudentGradeDetailResponse struct {
 	Aggregates StudentGradeAggregates   `json:"aggregates"`
 }
 
+type TeacherGradeDetailFilters struct {
+	CursoID      *string
+	MateriaID    *string
+	EstudianteID *string
+	Tipo         *string
+	UnidadID     *string
+	TemaID       *string
+	Estado       *string
+	Desde        *time.Time
+	Hasta        *time.Time
+	Q            *string
+	Limit        int
+	Offset       int
+}
+
+type TeacherGradeDetailItem struct {
+	ID              string    `json:"id"`
+	Tipo            string    `json:"tipo"`
+	Estado          string    `json:"estado"`
+	Fecha           time.Time `json:"fecha"`
+	Titulo          string    `json:"titulo"`
+	CursoID         *string   `json:"curso_id,omitempty"`
+	Curso           *string   `json:"curso,omitempty"`
+	MateriaID       *string   `json:"materia_id,omitempty"`
+	Materia         *string   `json:"materia,omitempty"`
+	UnidadID        *string   `json:"unidad_id,omitempty"`
+	Unidad          *string   `json:"unidad,omitempty"`
+	TemaID          *string   `json:"tema_id,omitempty"`
+	Tema            *string   `json:"tema,omitempty"`
+	EstudianteID    string    `json:"estudiante_id"`
+	Estudiante      string    `json:"estudiante"`
+	EstudianteEmail string    `json:"estudiante_email"`
+	Referencia      string    `json:"referencia_id"`
+	Puntaje100      float64   `json:"puntaje_100"`
+	Nota10          float64   `json:"nota_10"`
+}
+
+type TeacherGradeTypeAggregate struct {
+	Tipo        string  `json:"tipo"`
+	Total       int     `json:"total"`
+	Promedio10  float64 `json:"promedio_10"`
+	Promedio100 float64 `json:"promedio_100"`
+}
+
+type TeacherGradeCursoAggregate struct {
+	CursoID     string  `json:"curso_id"`
+	Curso       string  `json:"curso"`
+	Total       int     `json:"total"`
+	Promedio10  float64 `json:"promedio_10"`
+	Promedio100 float64 `json:"promedio_100"`
+}
+
+type TeacherGradeMateriaAggregate struct {
+	MateriaID   string  `json:"materia_id"`
+	Materia     string  `json:"materia"`
+	CursoID     string  `json:"curso_id"`
+	Curso       string  `json:"curso"`
+	Total       int     `json:"total"`
+	Promedio10  float64 `json:"promedio_10"`
+	Promedio100 float64 `json:"promedio_100"`
+}
+
+type TeacherGradeEstudianteAggregate struct {
+	EstudianteID    string  `json:"estudiante_id"`
+	Estudiante      string  `json:"estudiante"`
+	EstudianteEmail string  `json:"estudiante_email"`
+	Total           int     `json:"total"`
+	Promedio10      float64 `json:"promedio_10"`
+	Promedio100     float64 `json:"promedio_100"`
+}
+
+type TeacherGradeUnidadAggregate struct {
+	UnidadID    string  `json:"unidad_id"`
+	Unidad      string  `json:"unidad"`
+	Total       int     `json:"total"`
+	Promedio10  float64 `json:"promedio_10"`
+	Promedio100 float64 `json:"promedio_100"`
+}
+
+type TeacherGradeTemaAggregate struct {
+	TemaID      string  `json:"tema_id"`
+	Tema        string  `json:"tema"`
+	Total       int     `json:"total"`
+	Promedio10  float64 `json:"promedio_10"`
+	Promedio100 float64 `json:"promedio_100"`
+}
+
+type TeacherGradeAggregates struct {
+	Total              int                               `json:"total"`
+	PromedioGeneral10  float64                           `json:"promedio_general_10"`
+	PromedioGeneral100 float64                           `json:"promedio_general_100"`
+	PorTipo            []TeacherGradeTypeAggregate       `json:"por_tipo"`
+	PorCurso           []TeacherGradeCursoAggregate      `json:"por_curso"`
+	PorMateria         []TeacherGradeMateriaAggregate    `json:"por_materia"`
+	PorEstudiante      []TeacherGradeEstudianteAggregate `json:"por_estudiante"`
+	PorUnidad          []TeacherGradeUnidadAggregate     `json:"por_unidad"`
+	PorTema            []TeacherGradeTemaAggregate       `json:"por_tema"`
+}
+
+type TeacherGradeDetailResponse struct {
+	Items      []TeacherGradeDetailItem `json:"items"`
+	Total      int                      `json:"total"`
+	Limit      int                      `json:"limit"`
+	Offset     int                      `json:"offset"`
+	Aggregates TeacherGradeAggregates   `json:"aggregates"`
+}
+
 // ─── Unidad ─────────────────────────────────────────────────
 
 type Unidad struct {

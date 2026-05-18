@@ -190,18 +190,8 @@ func (h *Handler) EnrollStudent(w http.ResponseWriter, r *http.Request) {
 	claims := middleware.GetClaims(r.Context())
 	cursoID := chi.URLParam(r, "cursoId")
 
-	// Teachers can only enroll on courses where they teach at least one materia.
-	if claims.UserRole == "teacher" {
-		ok, err := h.svc.IsTeacherAssignedToCurso(r.Context(), claims.Subject, cursoID)
-		if err != nil {
-			shared.Error(w, http.StatusInternalServerError, "Error validando permisos")
-			return
-		}
-		if !ok {
-			shared.Error(w, http.StatusForbidden, "No autorizado para este curso")
-			return
-		}
-	} else if claims.UserRole != "admin" && claims.UserRole != "super_admin" {
+	// Enrollment management is admin-only.
+	if claims.UserRole != "admin" && claims.UserRole != "super_admin" {
 		shared.Error(w, http.StatusForbidden, "No autorizado")
 		return
 	}
@@ -223,20 +213,9 @@ func (h *Handler) EnrollStudent(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) UnenrollStudent(w http.ResponseWriter, r *http.Request) {
 	claims := middleware.GetClaims(r.Context())
-	cursoID := chi.URLParam(r, "cursoId")
 
-	// Teachers can only unenroll on courses where they teach at least one materia.
-	if claims.UserRole == "teacher" {
-		ok, err := h.svc.IsTeacherAssignedToCurso(r.Context(), claims.Subject, cursoID)
-		if err != nil {
-			shared.Error(w, http.StatusInternalServerError, "Error validando permisos")
-			return
-		}
-		if !ok {
-			shared.Error(w, http.StatusForbidden, "No autorizado para este curso")
-			return
-		}
-	} else if claims.UserRole != "admin" && claims.UserRole != "super_admin" {
+	// Enrollment management is admin-only.
+	if claims.UserRole != "admin" && claims.UserRole != "super_admin" {
 		shared.Error(w, http.StatusForbidden, "No autorizado")
 		return
 	}
@@ -383,6 +362,93 @@ func (h *Handler) ListMisCalificacionesDetalleEstudiante(w http.ResponseWriter, 
 	}
 
 	item, err := h.svc.ListMisCalificacionesDetalleEstudiante(r.Context(), claims.Subject, filter)
+	if err != nil {
+		shared.Error(w, mapAcademicStatus(err), err.Error())
+		return
+	}
+	shared.Success(w, item)
+}
+
+func (h *Handler) ListCalificacionesDetalleDocente(w http.ResponseWriter, r *http.Request) {
+	claims := middleware.GetClaims(r.Context())
+	if claims == nil {
+		shared.Error(w, http.StatusUnauthorized, "No autenticado")
+		return
+	}
+	if claims.UserRole != "teacher" && !isAdminRole(claims.UserRole) {
+		shared.Error(w, http.StatusForbidden, "No autorizado")
+		return
+	}
+
+	query := r.URL.Query()
+	filter := TeacherGradeDetailFilters{}
+
+	if cursoID := strings.TrimSpace(query.Get("curso_id")); cursoID != "" {
+		filter.CursoID = &cursoID
+	}
+	if materiaID := strings.TrimSpace(query.Get("materia_id")); materiaID != "" {
+		filter.MateriaID = &materiaID
+	}
+	if estudianteID := strings.TrimSpace(query.Get("estudiante_id")); estudianteID != "" {
+		filter.EstudianteID = &estudianteID
+	}
+
+	tipo := strings.TrimSpace(query.Get("tipo"))
+	if tipo == "" {
+		tipo = strings.TrimSpace(query.Get("type"))
+	}
+	if tipo != "" {
+		filter.Tipo = &tipo
+	}
+
+	if estado := strings.TrimSpace(query.Get("estado")); estado != "" {
+		filter.Estado = &estado
+	}
+	if unidadID := strings.TrimSpace(query.Get("unidad_id")); unidadID != "" {
+		filter.UnidadID = &unidadID
+	}
+	if temaID := strings.TrimSpace(query.Get("tema_id")); temaID != "" {
+		filter.TemaID = &temaID
+	}
+	if search := strings.TrimSpace(query.Get("q")); search != "" {
+		filter.Q = &search
+	}
+
+	if rawDesde := strings.TrimSpace(query.Get("desde")); rawDesde != "" {
+		desde, err := parseDateQuery(rawDesde, false)
+		if err != nil {
+			shared.Error(w, http.StatusBadRequest, "desde invalido. Usa RFC3339 o YYYY-MM-DD")
+			return
+		}
+		filter.Desde = &desde
+	}
+	if rawHasta := strings.TrimSpace(query.Get("hasta")); rawHasta != "" {
+		hasta, err := parseDateQuery(rawHasta, true)
+		if err != nil {
+			shared.Error(w, http.StatusBadRequest, "hasta invalido. Usa RFC3339 o YYYY-MM-DD")
+			return
+		}
+		filter.Hasta = &hasta
+	}
+
+	if rawLimit := strings.TrimSpace(query.Get("limit")); rawLimit != "" {
+		limit, err := strconv.Atoi(rawLimit)
+		if err != nil {
+			shared.Error(w, http.StatusBadRequest, "limit invalido")
+			return
+		}
+		filter.Limit = limit
+	}
+	if rawOffset := strings.TrimSpace(query.Get("offset")); rawOffset != "" {
+		offset, err := strconv.Atoi(rawOffset)
+		if err != nil {
+			shared.Error(w, http.StatusBadRequest, "offset invalido")
+			return
+		}
+		filter.Offset = offset
+	}
+
+	item, err := h.svc.ListCalificacionesDetalleDocente(r.Context(), claims.Subject, claims.UserRole, filter)
 	if err != nil {
 		shared.Error(w, mapAcademicStatus(err), err.Error())
 		return

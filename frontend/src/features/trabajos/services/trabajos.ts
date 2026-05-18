@@ -1,4 +1,4 @@
-import api from "@/shared/lib/api";
+import api, { authenticatedFetch } from "@/shared/lib/api";
 import type {
   CalificarEntregaPorPreguntaRequest,
   CalificarEntregaRequest,
@@ -156,11 +156,7 @@ export async function getTrabajoReporte(trabajoId: string): Promise<TrabajoRepor
 }
 
 export async function exportEntregasCSV(trabajoId: string): Promise<void> {
-  const token = localStorage.getItem("token");
-  const headers: Record<string, string> = {};
-  if (token) headers.Authorization = `Bearer ${token}`;
-
-  const resp = await fetch(`${BASE_URL}/trabajos/${trabajoId}/entregas/export`, { headers });
+  const resp = await authenticatedFetch(`/trabajos/${trabajoId}/entregas/export`);
   if (!resp.ok) {
     throw new Error("No se pudo exportar el CSV");
   }
@@ -177,11 +173,7 @@ export async function exportEntregasCSV(trabajoId: string): Promise<void> {
 }
 
 export async function exportEntregasXLSX(trabajoId: string): Promise<void> {
-  const token = localStorage.getItem("token");
-  const headers: Record<string, string> = {};
-  if (token) headers.Authorization = `Bearer ${token}`;
-
-  const resp = await fetch(`${BASE_URL}/trabajos/${trabajoId}/entregas/export.xlsx`, { headers });
+  const resp = await authenticatedFetch(`/trabajos/${trabajoId}/entregas/export.xlsx`);
   if (!resp.ok) {
     throw new Error("No se pudo exportar el XLSX");
   }
@@ -299,43 +291,26 @@ export async function cerrarTrabajosVencidos(): Promise<{ count: number }> {
 export async function uploadFile(file: File): Promise<{ url: string }> {
   const formData = new FormData();
   formData.append("file", file);
-  
-  const token = localStorage.getItem("token");
-  const headers: Record<string, string> = {};
-  if (token) headers.Authorization = `Bearer ${token}`;
 
-  console.log("Uploading file to:", `${BASE_URL}/upload`);
-  const resp = await fetch(`${BASE_URL}/upload`, {
+  const resp = await authenticatedFetch("/upload", {
     method: "POST",
-    headers,
     body: formData,
   });
 
-  console.log("Upload response status:", resp.status);
-
   if (!resp.ok) {
-    const errorText = await resp.text();
-    console.error("Upload error response:", errorText);
     throw new Error("No se pudo subir el archivo");
   }
 
   const data = await resp.json();
-  console.log("Upload response data:", data);
-  // Backend returns {data: {url: string}}
   return data.data || data;
 }
 
 export async function convertDocxToPdf(file: File): Promise<Blob> {
   const formData = new FormData();
   formData.append("file", file);
-  
-  const token = localStorage.getItem("token");
-  const headers: Record<string, string> = {};
-  if (token) headers.Authorization = `Bearer ${token}`;
 
-  const resp = await fetch(`${BASE_URL}/recursos/docx-to-pdf`, {
+  const resp = await authenticatedFetch("/recursos/docx-to-pdf", {
     method: "POST",
-    headers,
     body: formData,
   });
 
@@ -349,14 +324,9 @@ export async function convertDocxToPdf(file: File): Promise<Blob> {
 export async function convertPptxToPdf(file: File): Promise<Blob> {
   const formData = new FormData();
   formData.append("file", file);
-  
-  const token = localStorage.getItem("token");
-  const headers: Record<string, string> = {};
-  if (token) headers.Authorization = `Bearer ${token}`;
 
-  const resp = await fetch(`${BASE_URL}/recursos/pptx-to-pdf`, {
+  const resp = await authenticatedFetch("/recursos/pptx-to-pdf", {
     method: "POST",
-    headers,
     body: formData,
   });
 

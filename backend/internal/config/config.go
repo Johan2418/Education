@@ -78,12 +78,35 @@ func (d DatabaseConfig) DSN() string {
 }
 
 type JWTConfig struct {
-	Secret      string
-	ExpireHours int
+	Secret              string
+	ExpireHours         int
+	AccessExpireMinutes int
+	SessionExpireHours  int
 }
 
 func Load() *Config {
 	loadDotEnvIfPresent()
+
+	legacyExpireHours, hasLegacyExpireHours := envInt("JWT_EXPIRE_HOURS")
+	accessExpireMinutes, hasAccessExpireMinutes := envInt("JWT_ACCESS_EXPIRE_MINUTES")
+	sessionExpireHours := envOrDefaultInt("JWT_SESSION_EXPIRE_HOURS", 24)
+	if sessionExpireHours <= 0 {
+		sessionExpireHours = 24
+	}
+
+	if !hasAccessExpireMinutes || accessExpireMinutes <= 0 {
+		if hasLegacyExpireHours && legacyExpireHours > 0 {
+			accessExpireMinutes = legacyExpireHours * 60
+		} else {
+			accessExpireMinutes = 15
+		}
+	}
+
+	// Keep legacy hours in config for compatibility and observability.
+	effectiveLegacyExpireHours := 168
+	if hasLegacyExpireHours && legacyExpireHours > 0 {
+		effectiveLegacyExpireHours = legacyExpireHours
+	}
 
 	return &Config{
 		Server: ServerConfig{
@@ -98,8 +121,10 @@ func Load() *Config {
 			SSLMode:  envOrDefault("DB_SSLMODE", "disable"),
 		},
 		JWT: JWTConfig{
-			Secret:      envRequired("JWT_SECRET"),
-			ExpireHours: envOrDefaultInt("JWT_EXPIRE_HOURS", 168), // 7 days
+			Secret:              envRequired("JWT_SECRET"),
+			ExpireHours:         effectiveLegacyExpireHours,
+			AccessExpireMinutes: accessExpireMinutes,
+			SessionExpireHours:  sessionExpireHours,
 		},
 		Email: EmailConfig{
 			SMTPHost:    envOrDefault("SMTP_HOST", "smtp.gmail.com"),
@@ -281,6 +306,18 @@ func envOrDefaultInt(key string, fallback int) int {
 		}
 	}
 	return fallback
+}
+
+func envInt(key string) (int, bool) {
+	v, exists := os.LookupEnv(key)
+	if !exists || strings.TrimSpace(v) == "" {
+		return 0, false
+	}
+	n, err := strconv.Atoi(strings.TrimSpace(v))
+	if err != nil {
+		return 0, false
+	}
+	return n, true
 }
 
 func envOrDefaultBool(key string, fallback bool) bool {

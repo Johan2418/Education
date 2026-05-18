@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { Loader2, Plus, Search, SendHorizontal, XCircle, CheckCircle2, ClipboardList, BarChart3, Trash2, Pencil, Library, FileText, Settings, BookOpen, GraduationCap, Users, UploadCloud, CheckCircle, Calendar, X, AlertCircle, HelpCircle } from "lucide-react";
+import { Loader2, Plus, Search, SendHorizontal, XCircle, CheckCircle2, ClipboardList, Trash2, Pencil, Library, FileText, Settings, BookOpen, GraduationCap, Users, UploadCloud, CheckCircle, Calendar, X, AlertCircle, HelpCircle } from "lucide-react";
 import toast from "react-hot-toast";
 import * as pdfjsLib from "pdfjs-dist";
 import pdfWorkerSrc from "pdfjs-dist/build/pdf.worker.min.mjs?url";
@@ -1019,7 +1019,7 @@ export default function TeacherTrabajos() {
           toast.error("Error al publicar trabajo automáticamente: " + (err as any)?.message || "Error desconocido");
         }
       } else {
-        const leccionTitulo = lecciones.find((item) => item.id === newTrabajo.leccion_id)?.titulo || "Leccion";
+        const leccionTitulo = lecciones.find((item) => item.id === newTrabajo.leccion_id)?.titulo || "Contenido";
         const libroBase = libroFileName ? libroFileName.replace(/\.[^.]+$/, "") : "Libro";
         const parsedPages = libroPages.filter((chunk) => chunk.text.trim().length > 0);
         const candidatePages = parsedPages.filter((chunk) => isLikelyExercisePage(chunk.text));
@@ -1537,13 +1537,6 @@ export default function TeacherTrabajos() {
           
           <div className="flex items-center gap-3">
             <button
-              onClick={() => navigate("/teacher/trabajos/analytics")}
-              className="inline-flex items-center gap-2 px-5 py-3 bg-white text-indigo-700 rounded-lg hover:bg-indigo-50 transition-colors shadow-md font-medium"
-            >
-              <BarChart3 size={18} />
-              <span>{t("teacher.trabajos.analytics.nav", { defaultValue: "Analytics v2" })}</span>
-            </button>
-            <button
               onClick={openCreateModal}
               className="inline-flex items-center gap-2 px-5 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors shadow-md font-medium"
             >
@@ -1560,7 +1553,7 @@ export default function TeacherTrabajos() {
           className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder={t("teacher.trabajos.search", { defaultValue: "Buscar por titulo, leccion o estado" })}
+          placeholder={t("teacher.trabajos.search", { defaultValue: "Buscar por título, contenido o estado" })}
         />
         {selectedMateria && (
           <div className="mt-2 flex items-center gap-2 text-sm text-gray-600">

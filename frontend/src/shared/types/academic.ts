@@ -170,6 +170,116 @@ export interface StudentGradeFilters {
   offset?: number;
 }
 
+export type TeacherGradeDetailTipo = StudentGradeDetailTipo;
+export type TeacherGradeDetailEstado = StudentGradeDetailEstado;
+
+export interface TeacherGradeDetailItem {
+  id: string;
+  tipo: TeacherGradeDetailTipo;
+  estado: TeacherGradeDetailEstado;
+  fecha: string;
+  titulo: string;
+  curso_id?: string | null;
+  curso?: string | null;
+  materia_id?: string | null;
+  materia?: string | null;
+  unidad_id?: string | null;
+  unidad?: string | null;
+  tema_id?: string | null;
+  tema?: string | null;
+  estudiante_id: string;
+  estudiante: string;
+  estudiante_email: string;
+  referencia_id: string;
+  puntaje_100: number;
+  nota_10: number;
+}
+
+export interface TeacherGradeTypeAggregate {
+  tipo: TeacherGradeDetailTipo;
+  total: number;
+  promedio_10: number;
+  promedio_100: number;
+}
+
+export interface TeacherGradeCursoAggregate {
+  curso_id: string;
+  curso: string;
+  total: number;
+  promedio_10: number;
+  promedio_100: number;
+}
+
+export interface TeacherGradeMateriaAggregate {
+  materia_id: string;
+  materia: string;
+  curso_id: string;
+  curso: string;
+  total: number;
+  promedio_10: number;
+  promedio_100: number;
+}
+
+export interface TeacherGradeEstudianteAggregate {
+  estudiante_id: string;
+  estudiante: string;
+  estudiante_email: string;
+  total: number;
+  promedio_10: number;
+  promedio_100: number;
+}
+
+export interface TeacherGradeUnidadAggregate {
+  unidad_id: string;
+  unidad: string;
+  total: number;
+  promedio_10: number;
+  promedio_100: number;
+}
+
+export interface TeacherGradeTemaAggregate {
+  tema_id: string;
+  tema: string;
+  total: number;
+  promedio_10: number;
+  promedio_100: number;
+}
+
+export interface TeacherGradeAggregates {
+  total: number;
+  promedio_general_10: number;
+  promedio_general_100: number;
+  por_tipo: TeacherGradeTypeAggregate[];
+  por_curso: TeacherGradeCursoAggregate[];
+  por_materia: TeacherGradeMateriaAggregate[];
+  por_estudiante: TeacherGradeEstudianteAggregate[];
+  por_unidad: TeacherGradeUnidadAggregate[];
+  por_tema: TeacherGradeTemaAggregate[];
+}
+
+export interface TeacherGradeDetailResponse {
+  items: TeacherGradeDetailItem[];
+  total: number;
+  limit: number;
+  offset: number;
+  aggregates: TeacherGradeAggregates;
+}
+
+export interface TeacherGradeFilters {
+  curso_id?: string;
+  materia_id?: string;
+  estudiante_id?: string;
+  tipo?: TeacherGradeDetailTipo | "all";
+  estado?: TeacherGradeDetailEstado | "todos";
+  unidad_id?: string;
+  tema_id?: string;
+  desde?: string;
+  hasta?: string;
+  q?: string;
+  limit?: number;
+  offset?: number;
+}
+
 export interface Unidad {
   id: string;
   materia_id: string;

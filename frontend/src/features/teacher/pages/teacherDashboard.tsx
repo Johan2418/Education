@@ -1,8 +1,8 @@
-import { useEffect, useState } from "react";
+﻿import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { getMe } from "@/shared/lib/auth";
 import { useTranslation } from "react-i18next";
-import { BookMarked, BookOpen, HelpCircle, BarChart3, ArrowRight, Layers3 } from "lucide-react";
+import { BookMarked, BookOpen, HelpCircle, BarChart3, ArrowRight } from "lucide-react";
 import { getTeacherDashboardStats, type TeacherDashboardStats } from "@/features/teacher/services/dashboard";
 
 const cardColors = [
@@ -58,7 +58,7 @@ export default function TeacherDashboard({ highContrast = false }: { highContras
   );
 
   const cards = [
-    { title: t("teacher.lessons", { defaultValue: "Gestión de Lecciones" }), desc: t("teacher.dashboard.cards.lessonsDesc", { defaultValue: "Crear y administrar lecciones para tus estudiantes" }), icon: BookOpen, path: "/teacher/lessons" },
+    { title: t("teacher.lessons", { defaultValue: "Gestión de Contenidos" }), desc: t("teacher.dashboard.cards.lessonsDesc", { defaultValue: "Crear y administrar contenidos para tus estudiantes" }), icon: BookOpen, path: "/teacher/materias" },
     {
       title: t("teacher.subjects.cardTitle", { defaultValue: "Mis materias" }),
       desc: t("teacher.subjects.cardDescription", { defaultValue: "Gestiona recursos y vista de temas por materia" }),
@@ -67,7 +67,7 @@ export default function TeacherDashboard({ highContrast = false }: { highContras
     },
     { title: t("teacher.questions", { defaultValue: "Preguntas y Respuestas" }), desc: t("teacher.dashboard.cards.questionsDesc", { defaultValue: "Crear evaluaciones y pruebas" }), icon: HelpCircle, path: "/teacher/pruebas" },
     { title: t("teacher.performance", { defaultValue: "Rendimiento Estudiantil" }), desc: t("teacher.dashboard.cards.performanceDesc", { defaultValue: "Analizar el progreso de tus estudiantes" }), icon: BarChart3, path: "/teacher/performance" },
-    { title: t("teacher.cursos.title", { defaultValue: "Mis cursos" }), desc: "Ver materias asignadas con métricas clave", icon: Layers3, path: "/teacher/cursos" },
+    { title: t("teacher.grades.title", { defaultValue: "Calificaciones" }), desc: t("teacher.grades.subtitle", { defaultValue: "Revisar notas por estudiante, materia, unidad y tema." }), icon: BarChart3, path: "/teacher/calificaciones" },
   ];
 
   const summaryCards = [
@@ -91,11 +91,11 @@ export default function TeacherDashboard({ highContrast = false }: { highContras
 
   const secondarySummary = [
     {
-      label: t("teacher.dashboard.totalLessons", { defaultValue: "Lecciones" }),
+      label: t("teacher.dashboard.totalLessons", { defaultValue: "Contenidos" }),
       value: stats.totalLecciones,
     },
     {
-      label: t("teacher.dashboard.totalTasks", { defaultValue: "Trabajos" }),
+      label: t("teacher.dashboard.totalTasks", { defaultValue: "Tareas" }),
       value: stats.totalTrabajos,
     },
     {
@@ -119,7 +119,7 @@ export default function TeacherDashboard({ highContrast = false }: { highContras
         <div className="absolute top-0 right-0 w-64 h-64 bg-white/5 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2" />
         <div className="absolute bottom-0 left-0 w-48 h-48 bg-violet-400/10 rounded-full blur-3xl translate-y-1/2 -translate-x-1/4" />
         <div className="relative">
-          <p className={`text-sm font-medium mb-1 ${highContrast ? "text-yellow-200" : "text-white/70"}`}>👋 {t("teacher.welcome", { defaultValue: "Bienvenido de vuelta" })}</p>
+          <p className={`text-sm font-medium mb-1 ${highContrast ? "text-yellow-200" : "text-white/70"}`}>{t("teacher.welcome", { defaultValue: "Bienvenido de vuelta" })}</p>
           <h1 className="text-3xl font-bold mb-2">{displayName}</h1>
           <p className={`text-sm ${highContrast ? "text-yellow-200" : "text-white/60"}`}>{t("teacher.dashboardSubtitle", { defaultValue: "Gestiona tus clases y contenidos desde aquí" })}</p>
         </div>
@@ -175,3 +175,4 @@ export default function TeacherDashboard({ highContrast = false }: { highContras
     </main>
   );
 }
+

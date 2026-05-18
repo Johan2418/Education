@@ -1,4 +1,9 @@
-import { api, setToken, clearToken, isAuthenticated } from "./api";
+import {
+  api,
+  clearSession,
+  isAuthenticated,
+  setSessionFromAuthResponse,
+} from "./api";
 
 export interface AuthUser {
   id: string;
@@ -15,14 +20,29 @@ export interface AuthUser {
 
 interface TokenResponse {
   token: string;
-  profile: AuthUser;
+  access_token?: string;
+  refresh_token?: string;
+  access_expires_at?: string;
+  profile?: AuthUser;
+  user?: AuthUser;
 }
 
-export async function login(email: string, password: string): Promise<AuthUser> {
-  const res = await api.post<{ data: TokenResponse }>("/auth/login", { email, password });
-  setToken(res.data.token);
+export async function login(email: string, password: string, rememberMe: boolean): Promise<AuthUser> {
+  const res = await api.post<{ data: TokenResponse }>("/auth/login", {
+    email,
+    password,
+    remember_me: rememberMe,
+  });
+
+  const data = res.data;
+  setSessionFromAuthResponse(data, rememberMe);
   window.dispatchEvent(new Event("auth-change"));
-  return res.data.profile;
+
+  const user = data.profile ?? data.user;
+  if (!user) {
+    throw { status: 500, message: "Respuesta de login invalida" };
+  }
+  return user;
 }
 
 interface RegisterResponse {
@@ -71,10 +91,16 @@ export async function updateProfile(data: {
   return res.data;
 }
 
-export function signOut(): void {
-  clearToken();
-  window.dispatchEvent(new Event("auth-change"));
-  window.location.href = "/login";
+export async function signOut(): Promise<void> {
+  try {
+    await api.post<{ message?: string }>("/auth/logout", {});
+  } catch {
+    // Best-effort remote logout.
+  } finally {
+    clearSession();
+    window.dispatchEvent(new Event("auth-change"));
+    window.location.href = "/login";
+  }
 }
 
 export { isAuthenticated };

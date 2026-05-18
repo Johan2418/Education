@@ -238,7 +238,7 @@ export default function TeacherTrabajosAnalytics() {
           </select>
         </label>
         <label className="text-sm">
-          <span className="text-gray-600">{t("teacher.trabajos.analytics.lesson", { defaultValue: "Leccion" })}</span>
+          <span className="text-gray-600">{t("teacher.trabajos.analytics.lesson", { defaultValue: "Contenido" })}</span>
           <select className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2" value={leccionId} onChange={(e) => setLeccionId(e.target.value)}>
             <option value="">{t("teacher.trabajos.analytics.all", { defaultValue: "Todos" })}</option>
             {leccionOptions.map((leccion) => (
@@ -307,12 +307,12 @@ export default function TeacherTrabajosAnalytics() {
         </div>
 
         <div className="bg-white border border-gray-200 rounded-xl p-4">
-          <h2 className="font-semibold mb-2 inline-flex items-center gap-2"><CalendarRange size={16} />{t("teacher.trabajos.analytics.byLesson", { defaultValue: "Por leccion" })}</h2>
+          <h2 className="font-semibold mb-2 inline-flex items-center gap-2"><CalendarRange size={16} />{t("teacher.trabajos.analytics.byLesson", { defaultValue: "Por contenido" })}</h2>
           <div className="overflow-x-auto">
             <table className="min-w-full text-sm">
               <thead>
                 <tr className="text-left border-b border-gray-200">
-                  <th className="py-2 pr-2">{t("teacher.trabajos.analytics.lesson", { defaultValue: "Leccion" })}</th>
+                  <th className="py-2 pr-2">{t("teacher.trabajos.analytics.lesson", { defaultValue: "Contenido" })}</th>
                   <th className="py-2 pr-2">{t("teacher.trabajos.analytics.totalEntregas", { defaultValue: "Entregas" })}</th>
                   <th className="py-2 pr-2">{t("teacher.trabajos.analytics.promedio", { defaultValue: "Promedio" })}</th>
                 </tr>
@@ -415,7 +415,7 @@ export default function TeacherTrabajosAnalytics() {
               <tr className="text-left border-b border-gray-200">
                 <th className="py-2 pr-2">{t("teacher.trabajos.analytics.student", { defaultValue: "Estudiante" })}</th>
                 <th className="py-2 pr-2">{t("teacher.trabajos.analytics.course", { defaultValue: "Curso" })}</th>
-                <th className="py-2 pr-2">{t("teacher.trabajos.analytics.lesson", { defaultValue: "Leccion" })}</th>
+                <th className="py-2 pr-2">{t("teacher.trabajos.analytics.lesson", { defaultValue: "Contenido" })}</th>
                 <th className="py-2 pr-2">{t("teacher.trabajos.analytics.totalEntregas", { defaultValue: "Entregas" })}</th>
                 <th className="py-2 pr-2">{t("teacher.trabajos.analytics.promedio", { defaultValue: "Promedio" })}</th>
               </tr>
