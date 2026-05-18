@@ -13,7 +13,7 @@ function unwrapApiData<T>(payload: T | ApiEnvelope<T>): T {
 }
 
 export async function listPruebasByLeccion(leccionId: string): Promise<Prueba[]> {
-  const res = await api.get<Prueba[] | ApiEnvelope<Prueba[]>>(`/lecciones/${leccionId}/pruebas`);
+  const res = await api.get<Prueba[] | ApiEnvelope<Prueba[]>>(`/contenidos/${leccionId}/pruebas`);
   return unwrapApiData(res) || [];
 }
 

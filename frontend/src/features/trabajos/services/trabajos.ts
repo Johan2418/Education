@@ -51,12 +51,12 @@ function normalizeFechaVencimiento(fecha?: string): string | undefined {
 }
 
 export async function listTrabajosByLeccion(leccionId: string): Promise<Trabajo[]> {
-  const res = await api.get<ApiData<Trabajo[]>>(`/lecciones/${leccionId}/trabajos`);
+  const res = await api.get<ApiData<Trabajo[]>>(`/contenidos/${leccionId}/tareas`);
   return res.data || [];
 }
 
 export async function listTrabajosByMateria(materiaId: string): Promise<Trabajo[]> {
-  const res = await api.get<ApiData<Trabajo[]>>(`/materias/${materiaId}/trabajos`);
+  const res = await api.get<ApiData<Trabajo[]>>(`/materias/${materiaId}/tareas`);
   return res.data || [];
 }
 
@@ -66,7 +66,7 @@ export async function createTrabajo(payload: CreateTrabajoRequest): Promise<Trab
     fecha_vencimiento: normalizeFechaVencimiento(payload.fecha_vencimiento),
   };
 
-  const res = await api.post<ApiData<Trabajo>>("/trabajos", normalized);
+  const res = await api.post<ApiData<Trabajo>>("/tareas", normalized);
   return res.data;
 }
 
@@ -76,46 +76,46 @@ export async function updateTrabajo(trabajoId: string, payload: UpdateTrabajoReq
     fecha_vencimiento: normalizeFechaVencimiento(payload.fecha_vencimiento),
   };
 
-  const res = await api.put<ApiData<Trabajo>>(`/trabajos/${trabajoId}`, normalized);
+  const res = await api.put<ApiData<Trabajo>>(`/tareas/${trabajoId}`, normalized);
   return res.data;
 }
 
 export async function updateTrabajoPreguntas(trabajoId: string, payload: UpdateTrabajoPreguntasRequest): Promise<TrabajoPregunta[]> {
-  const res = await api.put<ApiData<TrabajoPregunta[]>>(`/trabajos/${trabajoId}/preguntas`, payload);
+  const res = await api.put<ApiData<TrabajoPregunta[]>>(`/tareas/${trabajoId}/preguntas`, payload);
   return res.data || [];
 }
 
 export async function publicarTrabajo(trabajoId: string): Promise<Trabajo> {
-  const res = await api.put<ApiData<Trabajo>>(`/trabajos/${trabajoId}/publicar`);
+  const res = await api.put<ApiData<Trabajo>>(`/tareas/${trabajoId}/publicar`);
   return res.data;
 }
 
 export async function cerrarTrabajo(trabajoId: string): Promise<Trabajo> {
-  const res = await api.put<ApiData<Trabajo>>(`/trabajos/${trabajoId}/cerrar`);
+  const res = await api.put<ApiData<Trabajo>>(`/tareas/${trabajoId}/cerrar`);
   return res.data;
 }
 
 export async function deleteTrabajo(trabajoId: string): Promise<void> {
-  await api.delete<{ message?: string }>(`/trabajos/${trabajoId}`);
+  await api.delete<{ message?: string }>(`/tareas/${trabajoId}`);
 }
 
 export async function getTrabajo(trabajoId: string): Promise<Trabajo> {
-  const res = await api.get<ApiData<Trabajo>>(`/trabajos/${trabajoId}`);
+  const res = await api.get<ApiData<Trabajo>>(`/tareas/${trabajoId}`);
   return res.data;
 }
 
 export async function listMisTrabajos(): Promise<TrabajoConEstadoEntrega[]> {
-  const res = await api.get<ApiData<TrabajoConEstadoEntrega[]>>("/mis-trabajos");
+  const res = await api.get<ApiData<TrabajoConEstadoEntrega[]>>("/mis-tareas");
   return res.data || [];
 }
 
 export async function upsertEntrega(trabajoId: string, payload: CreateEntregaRequest): Promise<TrabajoEntrega> {
-  const res = await api.post<ApiData<TrabajoEntrega>>(`/trabajos/${trabajoId}/entregas`, payload);
+  const res = await api.post<ApiData<TrabajoEntrega>>(`/tareas/${trabajoId}/entregas`, payload);
   return res.data;
 }
 
 export async function getMiEntrega(trabajoId: string): Promise<TrabajoEntrega | null> {
-  const res = await api.get<ApiData<TrabajoEntrega | null>>(`/trabajos/${trabajoId}/mi-entrega`);
+  const res = await api.get<ApiData<TrabajoEntrega | null>>(`/tareas/${trabajoId}/mi-entrega`);
   return res.data ?? null;
 }
 
@@ -125,7 +125,7 @@ export async function updateEntrega(entregaId: string, payload: CreateEntregaReq
 }
 
 export async function getTrabajoFormulario(trabajoId: string): Promise<TrabajoFormularioResponse> {
-  const res = await api.get<ApiData<TrabajoFormularioResponse>>(`/trabajos/${trabajoId}/formulario`);
+  const res = await api.get<ApiData<TrabajoFormularioResponse>>(`/tareas/${trabajoId}/formulario`);
   return res.data;
 }
 
@@ -146,7 +146,7 @@ export async function listEntregasByTrabajo(
   const params = new URLSearchParams();
   if (pagination?.limit) params.append("limit", pagination.limit.toString());
   if (pagination?.offset) params.append("offset", pagination.offset.toString());
-  const res = await api.get<ApiData<EntregaConCalificacion[]>>(`/trabajos/${trabajoId}/entregas?${params}`);
+  const res = await api.get<ApiData<EntregaConCalificacion[]>>(`/tareas/${trabajoId}/entregas?${params}`);
   return res.data || [];
 }
 

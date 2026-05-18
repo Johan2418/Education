@@ -25,6 +25,16 @@ export type {
   MateriaCalificacionAlumno,
   MateriaCalificacionesResponse,
   MateriaCalificacionEstudianteResponse,
+  StudentGradeDetailTipo,
+  StudentGradeDetailEstado,
+  StudentGradeDetailItem,
+  StudentGradeTypeAggregate,
+  StudentGradeMateriaAggregate,
+  StudentGradeUnidadAggregate,
+  StudentGradeTemaAggregate,
+  StudentGradeAggregates,
+  StudentGradeDetailResponse,
+  StudentGradeFilters,
 } from "./academic";
 export type { Recurso, ModeloRA } from "./resources";
 export type {
@@ -43,6 +53,7 @@ export type {
   Trabajo,
   TrabajoEntrega,
   TrabajoCalificacion,
+  TrabajoConEstadoEntrega,
   EntregaConCalificacion,
   CreateTrabajoRequest,
   CreateEntregaRequest,

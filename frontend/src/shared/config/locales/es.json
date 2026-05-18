@@ -1,4 +1,4 @@
-{
+﻿{
   "addcontent": {
     "formTitle": "Formulario de contenido",
     "title": "Añadir Contenido",
@@ -1737,9 +1737,9 @@
 ,
   "student.dashboard.subtitle": "Continua tu camino de aprendizaje"
 ,
-  "student.dashboard.completedLessons": "Lecciones completadas"
+  "student.dashboard.completedLessons": "Contenidos completados"
 ,
-  "student.dashboard.pendingLessons": "Lecciones pendientes"
+  "student.dashboard.pendingLessons": "Contenidos pendientes"
 ,
   "student.dashboard.averageScore": "Promedio de puntaje"
 ,
@@ -1749,7 +1749,7 @@
 ,
   "student.dashboard.history": "Historial"
 ,
-  "student.dashboard.lastLesson": "Ultima leccion vista"
+  "student.dashboard.lastLesson": "Ultimo contenido visto"
 ,
   "student.dashboard.lastAccess": "Ultimo acceso"
 ,
@@ -1757,19 +1757,120 @@
 ,
   "student.dashboard.continue": "Continuar aprendiendo"
 ,
-  "student.dashboard.noHistory": "Aun no has iniciado ninguna leccion"
+  "student.dashboard.noHistory": "Aun no has iniciado contenido"
 ,
   "student.dashboard.quickStats": "Resumen rapido"
 ,
-  "student.dashboard.totalLessons": "Lecciones disponibles"
+  "student.dashboard.totalLessons": "Contenidos disponibles"
 ,
-  "student.dashboard.totalProgress": "Lecciones progresadas"
+  "student.dashboard.totalProgress": "Contenidos en progreso"
 ,
   "student.dashboard.enrolledSubjects": "Materias matriculadas"
 ,
-  "student.dashboard.noFollowedContent": "No has iniciado ninguna leccion aun"
+  "student.dashboard.noFollowedContent": "No has iniciado contenido aun"
 ,
   "student.dashboard.noFollowedContentDesc": "Explora los contenidos disponibles para comenzar a aprender."
 ,
-  "student.dashboard.browseContents": "Explorar contenidos"
+  "student.dashboard.browseContents": "Explorar contenidos",
+  "student.dashboard.academicPanel": "Panel academico de Contenidos, Pruebas y Tareas",
+  "student.dashboard.generalAverage": "Promedio general /10",
+  "student.dashboard.realtime.active": "Tiempo real activo",
+  "student.dashboard.realtime.reconnecting": "Reconectando...",
+  "student.dashboard.cards.completedContents": "Contenidos completados",
+  "student.dashboard.cards.pendingContents": "Contenidos pendientes",
+  "student.dashboard.cards.pendingExams": "Pruebas pendientes",
+  "student.dashboard.cards.pendingAssignments": "Tareas pendientes",
+  "student.dashboard.cards.approvedSubjects": "Materias aprobadas",
+  "student.dashboard.sections.recentContent": "Actividad reciente de contenidos",
+  "student.dashboard.sections.quickSummary": "Resumen rapido",
+  "student.dashboard.sections.performanceBySubject": "Rendimiento por materia (/10)",
+  "student.dashboard.sections.subjectStatus": "Estado de materias",
+  "student.dashboard.sections.gradesBySubject": "Calificaciones por materia",
+  "student.dashboard.sections.assignedExams": "Pruebas asignadas",
+  "student.dashboard.sections.upcomingAssignments": "Proximas tareas y entregas",
+  "student.dashboard.summary.availableContents": "Contenidos disponibles",
+  "student.dashboard.summary.completedExams": "Examenes completados",
+  "student.dashboard.summary.submittedAssignments": "Tareas entregadas",
+  "student.dashboard.summary.gradedAssignments": "Tareas calificadas",
+  "student.dashboard.table.subject": "Materia",
+  "student.dashboard.table.contents": "Contenidos",
+  "student.dashboard.table.exams": "Pruebas",
+  "student.dashboard.table.assignments": "Tareas",
+  "student.dashboard.table.finalGrade": "Nota final",
+  "student.dashboard.table.status": "Estado",
+  "student.dashboard.status.approved": "Aprobada",
+  "student.dashboard.status.failed": "Reprobada",
+  "student.dashboard.status.notCompleted": "Materia no completada",
+  "student.dashboard.status.ungraded": "Sin calificar",
+  "student.dashboard.empty.noAssignedExams": "No tienes pruebas asignadas.",
+  "student.dashboard.empty.noAssignments": "No tienes tareas asignadas.",
+  "student.dashboard.examTable.exam": "Examen",
+  "student.dashboard.examTable.subject": "Materia",
+  "student.dashboard.examTable.action": "Accion",
+  "student.dashboard.examTable.noSubject": "-",
+  "student.dashboard.examTable.viewExam": "Ver examen",
+  "student.dashboard.assignments.dueAt": "Vence: {{date}}",
+  "student.dashboard.assignments.noDueDate": "Sin fecha de vencimiento",
+  "student.dashboard.assignments.status.graded": "Calificado",
+  "student.dashboard.assignments.status.submitted": "Entregado",
+  "student.dashboard.assignments.status.pending": "Pendiente",
+  "student.dashboard.continueContent": "Continuar contenido",
+  "student.dashboard.noContentStarted": "Aun no has iniciado contenido.",
+  "sidebar.grades": "Calificaciones",
+  "student.trabajos.title": "Mis Tareas",
+  "student.trabajos.error": "Error al cargar tareas",
+  "student.trabajos.search": "Buscar tareas",
+  "student.trabajos.pending": "Pendientes",
+  "student.trabajos.pendiente": "Pendiente",
+  "student.trabajos.entregado": "Entregada",
+  "student.trabajos.overdue": "Vencidas",
+  "student.trabajos.closed": "Cerradas",
+  "student.trabajos.empty": "No tienes tareas asignadas",
+  "student.trabajos.tipoPreguntas": "Preguntas",
+  "student.trabajos.tipoArchivo": "Archivo",
+  "student.trabajos.tipoMixto": "Mixto",
+  "student.trabajos.calificado": "Calificada",
+  "student.trabajos.due": "Vence",
+  "student.grades.title": "Calificaciones",
+  "student.grades.subtitle": "Detalle de contenidos, pruebas y tareas con filtros por materia, unidad y tema.",
+  "student.grades.realtime.active": "Tiempo real activo",
+  "student.grades.realtime.reconnecting": "Reconectando stream...",
+  "student.grades.filters.title": "Filtros",
+  "student.grades.filters.subject": "Materia",
+  "student.grades.filters.allSubjects": "Todas las materias",
+  "student.grades.filters.type": "Tipo",
+  "student.grades.filters.allTypes": "Todos los tipos",
+  "student.grades.filters.unit": "Unidad",
+  "student.grades.filters.allUnits": "Todas las unidades",
+  "student.grades.filters.topic": "Tema",
+  "student.grades.filters.allTopics": "Todos los temas",
+  "student.grades.filters.from": "Desde",
+  "student.grades.filters.to": "Hasta",
+  "student.grades.filters.search": "Buscar",
+  "student.grades.filters.searchPlaceholder": "Titulo, materia, unidad o tema",
+  "student.grades.filters.apply": "Aplicar filtros",
+  "student.grades.filters.clear": "Limpiar",
+  "student.grades.kpis.total": "Total calificaciones",
+  "student.grades.kpis.average10": "Promedio general /10",
+  "student.grades.kpis.exams": "Pruebas calificadas",
+  "student.grades.kpis.assignments": "Tareas calificadas",
+  "student.grades.charts.byType": "Distribucion de calificaciones por tipo",
+  "student.grades.charts.bySubject": "Promedio por materia (/10)",
+  "student.grades.list.title": "Detalle agrupado por Unidad y Tema",
+  "student.grades.list.backDashboard": "Volver al panel",
+  "student.grades.grouping.noUnit": "Sin unidad",
+  "student.grades.grouping.noTopic": "Sin tema",
+  "student.grades.grouping.unit": "Unidad",
+  "student.grades.grouping.topic": "Tema",
+  "student.grades.table.date": "Fecha",
+  "student.grades.table.type": "Tipo",
+  "student.grades.table.activity": "Actividad",
+  "student.grades.table.subject": "Materia",
+  "student.grades.table.grade10": "Nota /10",
+  "student.grades.table.score100": "Puntaje /100",
+  "student.grades.types.content": "Contenidos",
+  "student.grades.types.exam": "Pruebas",
+  "student.grades.types.assignment": "Tareas",
+  "student.grades.empty": "No hay calificaciones para los filtros seleccionados."
 }
+

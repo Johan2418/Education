@@ -14,7 +14,7 @@ export async function upsertProgresoSeccion(data: {
 
 export async function listProgresoSecciones(leccionId: string): Promise<ProgresoSeccion[]> {
   const res = await api.get<{ data: ProgresoSeccion[] }>(
-    `/lecciones/${leccionId}/progreso-secciones`
+    `/contenidos/${leccionId}/progreso-secciones`
   );
   return res.data;
 }

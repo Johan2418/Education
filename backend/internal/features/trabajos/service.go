@@ -13,16 +13,18 @@ import (
 	"time"
 
 	"github.com/arcanea/backend/internal/notifications"
+	"github.com/arcanea/backend/internal/realtime"
 	"gorm.io/gorm"
 )
 
 type Service struct {
-	repo     *Repository
-	notifier *notifications.Service
+	repo      *Repository
+	notifier  *notifications.Service
+	gradesHub *realtime.StudentGradesHub
 }
 
-func NewService(repo *Repository, notifier *notifications.Service) *Service {
-	return &Service{repo: repo, notifier: notifier}
+func NewService(repo *Repository, notifier *notifications.Service, gradesHub *realtime.StudentGradesHub) *Service {
+	return &Service{repo: repo, notifier: notifier, gradesHub: gradesHub}
 }
 
 func (s *Service) CreateTrabajo(ctx context.Context, req CreateTrabajoRequest, userID, userRole string) (*Trabajo, error) {
@@ -720,6 +722,7 @@ func (s *Service) CalificarEntrega(ctx context.Context, entregaID string, req Ca
 			}
 		}
 	}
+	s.publishGradeEvent(entrega.EstudianteID, entrega.TrabajoID)
 
 	return calificacion, nil
 }
@@ -871,8 +874,21 @@ func (s *Service) CalificarEntregaPorPregunta(ctx context.Context, entregaID str
 			s.notifier.NotifyEntregaCalificada(detalle.Trabajo.ID, email, title, total)
 		}
 	}
+	s.publishGradeEvent(entrega.EstudianteID, entrega.TrabajoID)
 
 	return detalle, nil
+}
+
+func (s *Service) publishGradeEvent(studentID, trabajoID string) {
+	if s.gradesHub == nil || strings.TrimSpace(studentID) == "" {
+		return
+	}
+	s.gradesHub.Publish(realtime.StudentGradeEvent{
+		Type:       "tarea_graded",
+		StudentID:  strings.TrimSpace(studentID),
+		Source:     "tarea",
+		ActivityID: strings.TrimSpace(trabajoID),
+	})
 }
 
 func (s *Service) AutoCalificarEntregaCerradas(ctx context.Context, entregaID, userID, userRole string) (*EntregaDetalleResponse, error) {

@@ -9,15 +9,17 @@ import (
 	"strings"
 	"time"
 
+	"github.com/arcanea/backend/internal/realtime"
 	"gorm.io/gorm"
 )
 
 type Service struct {
-	repo *Repository
+	repo      *Repository
+	gradesHub *realtime.StudentGradesHub
 }
 
-func NewService(repo *Repository) *Service {
-	return &Service{repo: repo}
+func NewService(repo *Repository, gradesHub *realtime.StudentGradesHub) *Service {
+	return &Service{repo: repo, gradesHub: gradesHub}
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -205,6 +207,7 @@ func (s *Service) SubmitResultado(ctx context.Context, req ResultadoPruebaReques
 			return nil, err
 		}
 	}
+	s.publishGradeEvent(usuarioID, "prueba_submitted", "prueba", canonical.PruebaID)
 
 	return resultado, nil
 }
@@ -213,7 +216,12 @@ func (s *Service) CalificarResultado(ctx context.Context, resultadoID string, re
 	if req.PuntajeObtenido != nil && (*req.PuntajeObtenido < 0 || *req.PuntajeObtenido > 100) {
 		return nil, errors.New("puntaje_obtenido debe estar entre 0 y 100")
 	}
-	return s.repo.UpdateResultadoByDocente(ctx, resultadoID, req, docenteID)
+	resultado, err := s.repo.UpdateResultadoByDocente(ctx, resultadoID, req, docenteID)
+	if err != nil {
+		return nil, err
+	}
+	s.publishGradeEvent(resultado.UsuarioID, "prueba_graded", "prueba", resultado.PruebaID)
+	return resultado, nil
 }
 
 func (s *Service) ListResultadosByPrueba(ctx context.Context, pruebaID string) ([]ResultadoPrueba, error) {
@@ -236,7 +244,14 @@ func (s *Service) UpsertProgreso(ctx context.Context, usuarioID string, req Prog
 	if req.LeccionID == "" {
 		return nil, errors.New("leccion_id es requerido")
 	}
-	return s.repo.UpsertProgreso(ctx, usuarioID, req)
+	progreso, err := s.repo.UpsertProgreso(ctx, usuarioID, req)
+	if err != nil {
+		return nil, err
+	}
+	if req.Puntaje != nil {
+		s.publishGradeEvent(usuarioID, "content_progress_updated", "contenido", req.LeccionID)
+	}
+	return progreso, nil
 }
 
 func (s *Service) ListMisProgresos(ctx context.Context, usuarioID string) ([]Progreso, error) {
@@ -258,7 +273,26 @@ func (s *Service) UpsertProgresoSeccion(ctx context.Context, userID string, req 
 	if req.LeccionSeccionID == "" {
 		return nil, errors.New("leccion_seccion_id es requerido")
 	}
-	return s.repo.UpsertProgresoSeccion(ctx, userID, req)
+	item, err := s.repo.UpsertProgresoSeccion(ctx, userID, req)
+	if err != nil {
+		return nil, err
+	}
+	if req.Puntuacion != nil {
+		s.publishGradeEvent(userID, "content_section_progress_updated", "contenido", req.LeccionSeccionID)
+	}
+	return item, nil
+}
+
+func (s *Service) publishGradeEvent(studentID, eventType, source, activityID string) {
+	if s.gradesHub == nil || strings.TrimSpace(studentID) == "" {
+		return
+	}
+	s.gradesHub.Publish(realtime.StudentGradeEvent{
+		Type:       eventType,
+		StudentID:  strings.TrimSpace(studentID),
+		Source:     source,
+		ActivityID: strings.TrimSpace(activityID),
+	})
 }
 
 func (s *Service) ListProgresoSeccionesByLeccion(ctx context.Context, userID, leccionID string) ([]ProgresoSeccion, error) {

@@ -17,6 +17,7 @@ import {
   LayoutDashboard,
   Library,
   ClipboardCheck,
+  BarChart3,
 } from "lucide-react";
 import HelpModal from "./HelpModal";
 import { useSidebar } from "@/app/layout/hooks/useSidebar";
@@ -344,9 +345,10 @@ const Sidebar: FC<SidebarProps> = ({
             <>
               <SectionLabel label={hook.t("sidebar.studentSection")} />
               <SidebarItem onClick={() => hook.navigate("/student/dashboard")} icon={LayoutDashboard} label={hook.t("sidebar.dashboard")} iconSize={16} />
+              <SidebarItem onClick={() => hook.navigate("/student/calificaciones")} icon={BarChart3} label={hook.t("sidebar.grades", { defaultValue: "Calificaciones" })} iconSize={16} />
               <SidebarItem onClick={() => hook.navigate("/student/recursos")} icon={Library} label={hook.t("teacher.recursos.title", { defaultValue: "Recursos" })} iconSize={16} />
               <SidebarItem onClick={() => hook.navigate("/student/examenes")} icon={ClipboardCheck} label={hook.t("sidebar.exams")} iconSize={16} />
-              <SidebarItem onClick={() => hook.navigate("/student/trabajos")} icon={BookOpenText} label={hook.t("student.trabajos.title", { defaultValue: "Mis Trabajos" })} iconSize={16} />
+              <SidebarItem onClick={() => hook.navigate("/student/trabajos")} icon={BookOpenText} label={hook.t("student.trabajos.title", { defaultValue: "Mis Tareas" })} iconSize={16} />
             </>
           )}
         </nav>
@@ -357,7 +359,7 @@ const Sidebar: FC<SidebarProps> = ({
             className="w-full flex items-center justify-center space-x-2 p-2.5 rounded-xl hover:bg-white/10 transition-all duration-200 text-sm text-white/60 hover:text-white"
             aria-label={hook.t("help")}
           >
-            <span>❔</span>
+            <span>?</span>
             <span>{hook.t("help")}</span>
           </button>
         </div>
@@ -368,4 +370,5 @@ const Sidebar: FC<SidebarProps> = ({
 };
 
 export default Sidebar;
+
 

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -20,6 +21,7 @@ import (
 	"github.com/arcanea/backend/internal/email"
 	jwtpkg "github.com/arcanea/backend/internal/jwt"
 	"github.com/arcanea/backend/internal/middleware"
+	"github.com/arcanea/backend/internal/realtime"
 
 	"github.com/arcanea/backend/internal/features/academic"
 	"github.com/arcanea/backend/internal/features/auth"
@@ -53,6 +55,7 @@ func main() {
 	// ── Dependency injection ────────────────────────────────
 	emailSvc := email.NewService(cfg.Email)
 	notifSvc := notifications.NewService(emailSvc)
+	gradesHub := realtime.NewStudentGradesHub()
 
 	authRepo := auth.NewRepository(db)
 	authSvc := auth.NewService(authRepo, jwtSvc, emailSvc)
@@ -60,14 +63,14 @@ func main() {
 
 	acadRepo := academic.NewRepository(db)
 	acadSvc := academic.NewService(acadRepo)
-	acadH := academic.NewHandler(acadSvc)
+	acadH := academic.NewHandler(acadSvc, gradesHub)
 
 	resRepo := resources.NewRepository(db)
 	resSvc := resources.NewService(resRepo, cfg.LibreOfficePath, cfg.ConversionAPI)
 	resH := resources.NewHandler(resSvc)
 
 	evalRepo := evaluations.NewRepository(db)
-	evalSvc := evaluations.NewService(evalRepo)
+	evalSvc := evaluations.NewService(evalRepo, gradesHub)
 	evalH := evaluations.NewHandler(evalSvc)
 
 	interactiveRepo := interactive.NewRepository(db)
@@ -75,7 +78,7 @@ func main() {
 	interactiveH := interactive.NewHandler(interactiveSvc)
 
 	trabRepo := trabajos.NewRepository(db)
-	trabSvc := trabajos.NewService(trabRepo, notifSvc)
+	trabSvc := trabajos.NewService(trabRepo, notifSvc, gradesHub)
 	trabH := trabajos.NewHandler(trabSvc)
 
 	libroRepo := libro.NewRepository(db)
@@ -153,6 +156,8 @@ func main() {
 		r.Get("/student/materias", acadH.ListMisMateriasEstudiante)
 		r.Get("/student/pruebas", evalH.ListMisPruebasEstudiante)
 		r.Get("/student/materias/calificaciones", acadH.ListMisCalificacionesMateriasEstudiante)
+		r.Get("/student/calificaciones/detalle", acadH.ListMisCalificacionesDetalleEstudiante)
+		r.Get("/student/calificaciones/stream", acadH.StreamMisCalificaciones)
 		r.Get("/materias/{materiaId}", acadH.GetMateria)
 		r.Get("/materias/{materiaId}/calificaciones", acadH.ListMateriaCalificaciones)
 		r.Post("/materias", acadH.CreateMateria)
@@ -192,16 +197,23 @@ func main() {
 		r.Delete("/temas/{temaId}", acadH.DeleteTema)
 
 		// ── Academic: Lecciones ─────────────────────────────
-		r.Get("/lecciones/recent", acadH.ListRecentLecciones)
+		r.Get("/contenidos/recent", acadH.ListRecentLecciones)
+		r.Get("/lecciones/recent", withDeprecatedRoute(acadH.ListRecentLecciones, "/contenidos/recent"))
 		r.Get("/contenido/recent", acadH.ListRecentContenido)
-		r.Get("/temas/{temaId}/lecciones", acadH.ListLecciones)
-		r.Get("/lecciones/{leccionId}", acadH.GetLeccion)
-		r.Post("/lecciones", acadH.CreateLeccion)
-		r.Put("/lecciones/{leccionId}", acadH.UpdateLeccion)
-		r.Delete("/lecciones/{leccionId}", acadH.DeleteLeccion)
+		r.Get("/temas/{temaId}/contenidos", acadH.ListLecciones)
+		r.Get("/temas/{temaId}/lecciones", withDeprecatedRoute(acadH.ListLecciones, "/temas/{temaId}/contenidos"))
+		r.Get("/contenidos/{leccionId}", acadH.GetLeccion)
+		r.Get("/lecciones/{leccionId}", withDeprecatedRoute(acadH.GetLeccion, "/contenidos/{leccionId}"))
+		r.Post("/contenidos", acadH.CreateLeccion)
+		r.Post("/lecciones", withDeprecatedRoute(acadH.CreateLeccion, "/contenidos"))
+		r.Put("/contenidos/{leccionId}", acadH.UpdateLeccion)
+		r.Put("/lecciones/{leccionId}", withDeprecatedRoute(acadH.UpdateLeccion, "/contenidos/{leccionId}"))
+		r.Delete("/contenidos/{leccionId}", acadH.DeleteLeccion)
+		r.Delete("/lecciones/{leccionId}", withDeprecatedRoute(acadH.DeleteLeccion, "/contenidos/{leccionId}"))
 
 		// Secciones de lección
-		r.Get("/lecciones/{leccionId}/secciones", acadH.ListSecciones)
+		r.Get("/contenidos/{leccionId}/secciones", acadH.ListSecciones)
+		r.Get("/lecciones/{leccionId}/secciones", withDeprecatedRoute(acadH.ListSecciones, "/contenidos/{leccionId}/secciones"))
 		r.Post("/secciones", acadH.CreateSeccion)
 		r.Put("/secciones/{seccionId}", acadH.UpdateSeccion)
 		r.Patch("/secciones/{seccionId}/lifecycle", acadH.PatchSeccionLifecycle)
@@ -210,7 +222,8 @@ func main() {
 		r.Get("/secciones/{seccionId}/gating-pdf", acadH.GetSeccionGatingPDF)
 
 		// Actividades interactivas
-		r.Get("/lecciones/{leccionId}/actividades-interactivas", interactiveH.ListActividadesByLeccion)
+		r.Get("/contenidos/{leccionId}/actividades-interactivas", interactiveH.ListActividadesByLeccion)
+		r.Get("/lecciones/{leccionId}/actividades-interactivas", withDeprecatedRoute(interactiveH.ListActividadesByLeccion, "/contenidos/{leccionId}/actividades-interactivas"))
 		r.Get("/actividades-interactivas/{actividadId}", interactiveH.GetActividad)
 		r.Post("/actividades-interactivas", interactiveH.CreateActividad)
 		r.Put("/actividades-interactivas/{actividadId}", interactiveH.UpdateActividad)
@@ -220,7 +233,8 @@ func main() {
 		r.Get("/actividades-interactivas/{actividadId}/intentos", interactiveH.ListIntentosByActividad)
 
 		// Foros
-		r.Get("/lecciones/{leccionId}/foros", acadH.ListForosByLeccion)
+		r.Get("/contenidos/{leccionId}/foros", acadH.ListForosByLeccion)
+		r.Get("/lecciones/{leccionId}/foros", withDeprecatedRoute(acadH.ListForosByLeccion, "/contenidos/{leccionId}/foros"))
 		r.Post("/foros", acadH.CreateForo)
 		r.Put("/foros/{foroId}", acadH.UpdateForo)
 		r.Delete("/foros/{foroId}", acadH.DeleteForo)
@@ -231,7 +245,8 @@ func main() {
 
 		// Progreso de video YouTube
 		r.Put("/video-progreso", acadH.UpsertVideoProgreso)
-		r.Get("/lecciones/{leccionId}/video-progreso", acadH.ListVideoProgresoByLeccion)
+		r.Get("/contenidos/{leccionId}/video-progreso", acadH.ListVideoProgresoByLeccion)
+		r.Get("/lecciones/{leccionId}/video-progreso", withDeprecatedRoute(acadH.ListVideoProgresoByLeccion, "/contenidos/{leccionId}/video-progreso"))
 
 		// ── Resources ───────────────────────────────────────
 		r.Get("/recursos", resH.ListRecursos)
@@ -267,7 +282,8 @@ func main() {
 		r.Delete("/modelos/{modeloId}", resH.DeleteModelo)
 
 		// ── Evaluations: Pruebas ────────────────────────────
-		r.Get("/lecciones/{leccionId}/pruebas", evalH.ListPruebas)
+		r.Get("/contenidos/{leccionId}/pruebas", evalH.ListPruebas)
+		r.Get("/lecciones/{leccionId}/pruebas", withDeprecatedRoute(evalH.ListPruebas, "/contenidos/{leccionId}/pruebas"))
 		r.Get("/materias/{materiaId}/pruebas", evalH.ListPruebasByMateria)
 		r.Get("/pruebas/{pruebaId}", evalH.GetPrueba)
 		r.Get("/pruebas/{pruebaId}/completa", evalH.GetPruebaCompleta)
@@ -296,28 +312,44 @@ func main() {
 		// Progreso (nivel lección)
 		r.Put("/progreso", evalH.UpsertProgreso)
 		r.Get("/progreso", evalH.ListMisProgresos)
-		r.Get("/lecciones/{leccionId}/progreso", evalH.GetProgreso)
+		r.Get("/contenidos/{leccionId}/progreso", evalH.GetProgreso)
+		r.Get("/lecciones/{leccionId}/progreso", withDeprecatedRoute(evalH.GetProgreso, "/contenidos/{leccionId}/progreso"))
 
 		// Progreso secciones
 		r.Put("/progreso-secciones", evalH.UpsertProgresoSeccion)
-		r.Get("/lecciones/{leccionId}/progreso-secciones", evalH.ListProgresoSecciones)
+		r.Get("/contenidos/{leccionId}/progreso-secciones", evalH.ListProgresoSecciones)
+		r.Get("/lecciones/{leccionId}/progreso-secciones", withDeprecatedRoute(evalH.ListProgresoSecciones, "/contenidos/{leccionId}/progreso-secciones"))
 
 		// ── Trabajos ───────────────────────────────────────
-		r.Get("/lecciones/{leccionId}/trabajos", trabH.ListTrabajosByLeccion)
-		r.Get("/materias/{materiaId}/trabajos", trabH.ListTrabajosByMateria)
+		r.Get("/contenidos/{leccionId}/tareas", trabH.ListTrabajosByLeccion)
+		r.Get("/lecciones/{leccionId}/trabajos", withDeprecatedRoute(trabH.ListTrabajosByLeccion, "/contenidos/{leccionId}/tareas"))
+		r.Get("/materias/{materiaId}/tareas", trabH.ListTrabajosByMateria)
+		r.Get("/materias/{materiaId}/trabajos", withDeprecatedRoute(trabH.ListTrabajosByMateria, "/materias/{materiaId}/tareas"))
+		r.Post("/tareas", trabH.CreateTrabajo)
 		r.Post("/trabajos", trabH.CreateTrabajo)
+		r.Put("/tareas/{trabajoId}", trabH.UpdateTrabajo)
 		r.Put("/trabajos/{trabajoId}", trabH.UpdateTrabajo)
+		r.Put("/tareas/{trabajoId}/preguntas", trabH.UpdateTrabajoPreguntas)
 		r.Put("/trabajos/{trabajoId}/preguntas", trabH.UpdateTrabajoPreguntas)
+		r.Put("/tareas/{trabajoId}/publicar", trabH.PublicarTrabajo)
 		r.Put("/trabajos/{trabajoId}/publicar", trabH.PublicarTrabajo)
+		r.Put("/tareas/{trabajoId}/cerrar", trabH.CerrarTrabajo)
 		r.Put("/trabajos/{trabajoId}/cerrar", trabH.CerrarTrabajo)
+		r.Delete("/tareas/{trabajoId}", trabH.DeleteTrabajo)
 		r.Delete("/trabajos/{trabajoId}", trabH.DeleteTrabajo)
+		r.Get("/tareas/{trabajoId}", trabH.GetTrabajo)
 		r.Get("/trabajos/{trabajoId}", trabH.GetTrabajo)
-		r.Get("/mis-trabajos", trabH.ListMisTrabajos)
+		r.Get("/mis-tareas", trabH.ListMisTrabajos)
+		r.Get("/mis-trabajos", withDeprecatedRoute(trabH.ListMisTrabajos, "/mis-tareas"))
 		r.Post("/upload", trabH.UploadFile)
+		r.Post("/tareas/{trabajoId}/entregas", trabH.UpsertEntrega)
 		r.Post("/trabajos/{trabajoId}/entregas", trabH.UpsertEntrega)
+		r.Get("/tareas/{trabajoId}/mi-entrega", trabH.GetMiEntrega)
 		r.Get("/trabajos/{trabajoId}/mi-entrega", trabH.GetMiEntrega)
+		r.Get("/tareas/{trabajoId}/formulario", trabH.GetTrabajoFormulario)
 		r.Get("/trabajos/{trabajoId}/formulario", trabH.GetTrabajoFormulario)
 		r.Put("/entregas/{entregaId}", trabH.UpdateEntregaByID)
+		r.Get("/tareas/{trabajoId}/entregas", trabH.ListEntregasByTrabajo)
 		r.Get("/trabajos/{trabajoId}/entregas", trabH.ListEntregasByTrabajo)
 		r.Get("/trabajos/analytics/v2", trabH.GetTrabajoAnalyticsV2)
 		r.Get("/trabajos/{trabajoId}/reportes", trabH.GetTrabajoReporte)
@@ -396,6 +428,17 @@ func main() {
 		log.Fatalf("shutdown: %v", err)
 	}
 	log.Println("Server stopped")
+}
+
+func withDeprecatedRoute(next http.HandlerFunc, successor string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Deprecation", "true")
+		w.Header().Set("Sunset", "Thu, 31 Dec 2026 23:59:59 GMT")
+		if strings.TrimSpace(successor) != "" {
+			w.Header().Set("Link", fmt.Sprintf("<%s>; rel=\"successor-version\"", successor))
+		}
+		next(w, r)
+	}
 }
 
 // FileServer conveniently sets up a http.FileServer handler to serve

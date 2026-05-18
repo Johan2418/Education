@@ -1,23 +1,28 @@
 package academic
 
 import (
+	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
 	jwtpkg "github.com/arcanea/backend/internal/jwt"
 	"github.com/arcanea/backend/internal/middleware"
+	"github.com/arcanea/backend/internal/realtime"
 	"github.com/arcanea/backend/internal/shared"
 )
 
 type Handler struct {
-	svc *Service
+	svc       *Service
+	gradesHub *realtime.StudentGradesHub
 }
 
-func NewHandler(svc *Service) *Handler {
-	return &Handler{svc: svc}
+func NewHandler(svc *Service, gradesHub *realtime.StudentGradesHub) *Handler {
+	return &Handler{svc: svc, gradesHub: gradesHub}
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -299,6 +304,163 @@ func (h *Handler) ListMisCalificacionesMateriasEstudiante(w http.ResponseWriter,
 		return
 	}
 	shared.Success(w, items)
+}
+
+func (h *Handler) ListMisCalificacionesDetalleEstudiante(w http.ResponseWriter, r *http.Request) {
+	claims := middleware.GetClaims(r.Context())
+	if claims == nil {
+		shared.Error(w, http.StatusUnauthorized, "No autenticado")
+		return
+	}
+	if claims.UserRole != "student" {
+		shared.Error(w, http.StatusForbidden, "No autorizado")
+		return
+	}
+
+	query := r.URL.Query()
+	filter := StudentGradeDetailFilters{}
+
+	if materiaID := strings.TrimSpace(query.Get("materia_id")); materiaID != "" {
+		filter.MateriaID = &materiaID
+	}
+
+	tipo := strings.TrimSpace(query.Get("tipo"))
+	if tipo == "" {
+		tipo = strings.TrimSpace(query.Get("type"))
+	}
+	if tipo != "" {
+		filter.Tipo = &tipo
+	}
+
+	if estado := strings.TrimSpace(query.Get("estado")); estado != "" {
+		filter.Estado = &estado
+	}
+
+	if unidadID := strings.TrimSpace(query.Get("unidad_id")); unidadID != "" {
+		filter.UnidadID = &unidadID
+	}
+	if temaID := strings.TrimSpace(query.Get("tema_id")); temaID != "" {
+		filter.TemaID = &temaID
+	}
+	if search := strings.TrimSpace(query.Get("q")); search != "" {
+		filter.Q = &search
+	}
+
+	if rawDesde := strings.TrimSpace(query.Get("desde")); rawDesde != "" {
+		desde, err := parseDateQuery(rawDesde, false)
+		if err != nil {
+			shared.Error(w, http.StatusBadRequest, "desde invalido. Usa RFC3339 o YYYY-MM-DD")
+			return
+		}
+		filter.Desde = &desde
+	}
+
+	if rawHasta := strings.TrimSpace(query.Get("hasta")); rawHasta != "" {
+		hasta, err := parseDateQuery(rawHasta, true)
+		if err != nil {
+			shared.Error(w, http.StatusBadRequest, "hasta invalido. Usa RFC3339 o YYYY-MM-DD")
+			return
+		}
+		filter.Hasta = &hasta
+	}
+
+	if rawLimit := strings.TrimSpace(query.Get("limit")); rawLimit != "" {
+		limit, err := strconv.Atoi(rawLimit)
+		if err != nil {
+			shared.Error(w, http.StatusBadRequest, "limit invalido")
+			return
+		}
+		filter.Limit = limit
+	}
+
+	if rawOffset := strings.TrimSpace(query.Get("offset")); rawOffset != "" {
+		offset, err := strconv.Atoi(rawOffset)
+		if err != nil {
+			shared.Error(w, http.StatusBadRequest, "offset invalido")
+			return
+		}
+		filter.Offset = offset
+	}
+
+	item, err := h.svc.ListMisCalificacionesDetalleEstudiante(r.Context(), claims.Subject, filter)
+	if err != nil {
+		shared.Error(w, mapAcademicStatus(err), err.Error())
+		return
+	}
+	shared.Success(w, item)
+}
+
+func (h *Handler) StreamMisCalificaciones(w http.ResponseWriter, r *http.Request) {
+	claims := middleware.GetClaims(r.Context())
+	if claims == nil {
+		shared.Error(w, http.StatusUnauthorized, "No autenticado")
+		return
+	}
+	if claims.UserRole != "student" {
+		shared.Error(w, http.StatusForbidden, "No autorizado")
+		return
+	}
+	if h.gradesHub == nil {
+		shared.Error(w, http.StatusServiceUnavailable, "stream no disponible")
+		return
+	}
+
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		shared.Error(w, http.StatusInternalServerError, "stream no soportado")
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("X-Accel-Buffering", "no")
+
+	events, cancel := h.gradesHub.Subscribe(claims.Subject)
+	defer cancel()
+
+	writeEvent := func(name string, payload any) error {
+		raw, err := json.Marshal(payload)
+		if err != nil {
+			return err
+		}
+		if _, err := fmt.Fprintf(w, "event: %s\n", name); err != nil {
+			return err
+		}
+		if _, err := fmt.Fprintf(w, "data: %s\n\n", raw); err != nil {
+			return err
+		}
+		flusher.Flush()
+		return nil
+	}
+
+	_ = writeEvent("connected", map[string]any{
+		"type":        "connected",
+		"student_id":  claims.Subject,
+		"occurred_at": time.Now().UTC().Format(time.RFC3339),
+	})
+
+	keepAlive := time.NewTicker(20 * time.Second)
+	defer keepAlive.Stop()
+
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		case evt, ok := <-events:
+			if !ok {
+				return
+			}
+			if err := writeEvent("grade_updated", evt); err != nil {
+				return
+			}
+		case <-keepAlive.C:
+			if _, err := fmt.Fprint(w, ": keepalive\n\n"); err != nil {
+				return
+			}
+			flusher.Flush()
+		}
+	}
 }
 
 func (h *Handler) ListMateriaCalificaciones(w http.ResponseWriter, r *http.Request) {
@@ -1262,6 +1424,22 @@ func mapAcademicStatus(err error) int {
 		return http.StatusConflict
 	}
 	return http.StatusBadRequest
+}
+
+func parseDateQuery(raw string, endOfDay bool) (time.Time, error) {
+	if parsed, err := time.Parse(time.RFC3339, raw); err == nil {
+		return parsed, nil
+	}
+
+	parsed, err := time.Parse("2006-01-02", raw)
+	if err != nil {
+		return time.Time{}, err
+	}
+
+	if endOfDay {
+		return parsed.Add(24*time.Hour - time.Nanosecond), nil
+	}
+	return parsed, nil
 }
 
 // ═══════════════════════════════════════════════════════════════

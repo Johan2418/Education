@@ -110,10 +110,10 @@ export default function StudentTrabajos() {
   if (error) {
     return (
       <div className="max-w-5xl mx-auto p-4">
-        <h1 className="text-2xl font-bold mb-4">{t("student.trabajos.title", { defaultValue: "Mis Trabajos" })}</h1>
+        <h1 className="text-2xl font-bold mb-4">{t("student.trabajos.title", { defaultValue: "Mis Tareas" })}</h1>
         <div className="bg-red-50 border border-red-200 rounded-lg p-6 text-center">
           <AlertCircle size={48} className="mx-auto mb-3 text-red-500" />
-          <p className="text-red-800 font-medium">{t("student.trabajos.error", { defaultValue: "Error al cargar trabajos" })}</p>
+          <p className="text-red-800 font-medium">{t("student.trabajos.error", { defaultValue: "Error al cargar tareas" })}</p>
           <p className="text-red-600 text-sm mt-2">{error}</p>
           <button
             onClick={() => void loadTrabajos()}
@@ -128,7 +128,7 @@ export default function StudentTrabajos() {
 
   return (
     <div className="max-w-5xl mx-auto p-4">
-      <h1 className="text-2xl font-bold mb-4">{t("student.trabajos.title", { defaultValue: "Mis Trabajos" })}</h1>
+      <h1 className="text-2xl font-bold mb-4">{t("student.trabajos.title", { defaultValue: "Mis Tareas" })}</h1>
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
         <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
           <p className="text-xs text-amber-700">{t("student.trabajos.pending", { defaultValue: "Pendientes" })}</p>
@@ -147,11 +147,11 @@ export default function StudentTrabajos() {
       <div className="relative mb-4">
         <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
         <input
-          aria-label={t("student.trabajos.search", { defaultValue: "Buscar trabajos" })}
+          aria-label={t("student.trabajos.search", { defaultValue: "Buscar tareas" })}
           className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder={t("student.trabajos.search", { defaultValue: "Buscar trabajos" })}
+          placeholder={t("student.trabajos.search", { defaultValue: "Buscar tareas" })}
         />
       </div>
       <div className="mb-4 flex flex-wrap gap-2">
@@ -188,7 +188,7 @@ export default function StudentTrabajos() {
       {filtered.length === 0 ? (
         <div className="bg-white rounded-lg shadow p-8 text-center text-gray-500">
           <ClipboardList size={40} className="mx-auto mb-2 text-gray-300" />
-          {t("student.trabajos.empty", { defaultValue: "No tienes trabajos asignados" })}
+          {t("student.trabajos.empty", { defaultValue: "No tienes tareas asignadas" })}
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

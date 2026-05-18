@@ -33,9 +33,11 @@ export interface MateriaCalificacionAlumno {
   estudiante_email?: string | null;
   promedio_contenidos_10?: number | null;
   promedio_lecciones_10?: number | null;
+  promedio_pruebas_10?: number | null;
   promedio_trabajos_10?: number | null;
   puntos_contenidos: number;
   puntos_lecciones: number;
+  puntos_pruebas?: number;
   puntos_trabajos: number;
   nota_final: number;
   estado_final: "sin_calificar" | "materia_no_completada" | "aprobada" | "reprobada";
@@ -52,6 +54,7 @@ export interface MateriaCalificacionesResponse {
   anio_escolar: string;
   peso_contenidos_pct: number;
   peso_lecciones_pct: number;
+  peso_pruebas_pct?: number;
   peso_trabajos_pct: number;
   puntaje_total: number;
   puntaje_minimo_aprobacion: number;
@@ -65,14 +68,17 @@ export interface MateriaCalificacionEstudianteResponse {
   anio_escolar: string;
   peso_contenidos_pct: number;
   peso_lecciones_pct: number;
+  peso_pruebas_pct?: number;
   peso_trabajos_pct: number;
   puntaje_total: number;
   puntaje_minimo_aprobacion: number;
   promedio_contenidos_10?: number | null;
   promedio_lecciones_10?: number | null;
+  promedio_pruebas_10?: number | null;
   promedio_trabajos_10?: number | null;
   puntos_contenidos: number;
   puntos_lecciones: number;
+  puntos_pruebas?: number;
   puntos_trabajos: number;
   nota_final: number;
   estado_final: "sin_calificar" | "materia_no_completada" | "aprobada" | "reprobada";
@@ -80,6 +86,88 @@ export interface MateriaCalificacionEstudianteResponse {
   componentes_completos: boolean;
   componentes_calificados: number;
   componentes_requeridos: number;
+}
+
+export type StudentGradeDetailTipo = "contenido" | "prueba" | "tarea";
+export type StudentGradeDetailEstado = "calificada" | "sin_calificar";
+
+export interface StudentGradeDetailItem {
+  id: string;
+  tipo: StudentGradeDetailTipo;
+  estado: StudentGradeDetailEstado;
+  fecha: string;
+  titulo: string;
+  materia_id?: string | null;
+  materia?: string | null;
+  unidad_id?: string | null;
+  unidad?: string | null;
+  tema_id?: string | null;
+  tema?: string | null;
+  referencia_id: string;
+  puntaje_100: number;
+  nota_10: number;
+}
+
+export interface StudentGradeTypeAggregate {
+  tipo: StudentGradeDetailTipo;
+  total: number;
+  promedio_10: number;
+  promedio_100: number;
+}
+
+export interface StudentGradeMateriaAggregate {
+  materia_id: string;
+  materia: string;
+  total: number;
+  promedio_10: number;
+  promedio_100: number;
+}
+
+export interface StudentGradeUnidadAggregate {
+  unidad_id: string;
+  unidad: string;
+  total: number;
+  promedio_10: number;
+  promedio_100: number;
+}
+
+export interface StudentGradeTemaAggregate {
+  tema_id: string;
+  tema: string;
+  total: number;
+  promedio_10: number;
+  promedio_100: number;
+}
+
+export interface StudentGradeAggregates {
+  total: number;
+  promedio_general_10: number;
+  promedio_general_100: number;
+  por_tipo: StudentGradeTypeAggregate[];
+  por_materia: StudentGradeMateriaAggregate[];
+  por_unidad: StudentGradeUnidadAggregate[];
+  por_tema: StudentGradeTemaAggregate[];
+}
+
+export interface StudentGradeDetailResponse {
+  items: StudentGradeDetailItem[];
+  total: number;
+  limit: number;
+  offset: number;
+  aggregates: StudentGradeAggregates;
+}
+
+export interface StudentGradeFilters {
+  materia_id?: string;
+  tipo?: StudentGradeDetailTipo | "all";
+  estado?: StudentGradeDetailEstado | "todos";
+  unidad_id?: string;
+  tema_id?: string;
+  desde?: string;
+  hasta?: string;
+  q?: string;
+  limit?: number;
+  offset?: number;
 }
 
 export interface Unidad {

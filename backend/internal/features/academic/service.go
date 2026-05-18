@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -244,6 +245,7 @@ func (s *Service) GetMateriaCalificaciones(ctx context.Context, materiaID, actor
 		AnioEscolar:             materia.AnioEscolar,
 		PesoContenidosPct:       materia.PesoContenidosPct,
 		PesoLeccionesPct:        materia.PesoLeccionesPct,
+		PesoPruebasPct:          materia.PesoLeccionesPct,
 		PesoTrabajosPct:         materia.PesoTrabajosPct,
 		PuntajeTotal:            materia.PuntajeTotal,
 		PuntajeMinimoAprobacion: materia.PuntajeMinimoAprobacion,
@@ -284,14 +286,17 @@ func (s *Service) ListMisCalificacionesMateriasEstudiante(ctx context.Context, e
 			AnioEscolar:             materia.AnioEscolar,
 			PesoContenidosPct:       materia.PesoContenidosPct,
 			PesoLeccionesPct:        materia.PesoLeccionesPct,
+			PesoPruebasPct:          materia.PesoLeccionesPct,
 			PesoTrabajosPct:         materia.PesoTrabajosPct,
 			PuntajeTotal:            materia.PuntajeTotal,
 			PuntajeMinimoAprobacion: materia.PuntajeMinimoAprobacion,
 			PromedioContenidos10:    calculo.PromedioContenidos10,
 			PromedioLecciones10:     calculo.PromedioLecciones10,
+			PromedioPruebas10:       calculo.PromedioLecciones10,
 			PromedioTrabajos10:      calculo.PromedioTrabajos10,
 			PuntosContenidos:        calculo.PuntosContenidos,
 			PuntosLecciones:         calculo.PuntosLecciones,
+			PuntosPruebas:           calculo.PuntosLecciones,
 			PuntosTrabajos:          calculo.PuntosTrabajos,
 			NotaFinal:               calculo.NotaFinal,
 			EstadoFinal:             calculo.EstadoFinal,
@@ -303,6 +308,43 @@ func (s *Service) ListMisCalificacionesMateriasEstudiante(ctx context.Context, e
 	}
 
 	return items, nil
+}
+
+func (s *Service) ListMisCalificacionesDetalleEstudiante(ctx context.Context, estudianteID string, rawFilter StudentGradeDetailFilters) (*StudentGradeDetailResponse, error) {
+	estudianteID = strings.TrimSpace(estudianteID)
+	if estudianteID == "" {
+		return nil, errRequired("estudiante_id")
+	}
+
+	filter, err := normalizeStudentGradeDetailFilters(rawFilter)
+	if err != nil {
+		return nil, err
+	}
+
+	rows, err := s.repo.ListStudentGradeDetailRows(ctx, estudianteID, filter)
+	if err != nil {
+		return nil, err
+	}
+
+	total := len(rows)
+	start := filter.Offset
+	if start > total {
+		start = total
+	}
+	end := start + filter.Limit
+	if end > total {
+		end = total
+	}
+	paged := rows[start:end]
+	aggregates := buildStudentGradeAggregates(rows)
+
+	return &StudentGradeDetailResponse{
+		Items:      paged,
+		Total:      total,
+		Limit:      filter.Limit,
+		Offset:     filter.Offset,
+		Aggregates: aggregates,
+	}, nil
 }
 
 // ─── Unidad ─────────────────────────────────────────────────
@@ -1254,9 +1296,11 @@ func buildMateriaCalificacionAlumno(materia Materia, row materiaCalificacionBase
 		EstudianteEmail:        row.EstudianteEmail,
 		PromedioContenidos10:   row.PromedioContenidos10,
 		PromedioLecciones10:    row.PromedioLecciones10,
+		PromedioPruebas10:      row.PromedioLecciones10,
 		PromedioTrabajos10:     row.PromedioTrabajos10,
 		PuntosContenidos:       puntosContenidos,
 		PuntosLecciones:        puntosLecciones,
+		PuntosPruebas:          puntosLecciones,
 		PuntosTrabajos:         puntosTrabajos,
 		NotaFinal:              notaFinal,
 		EstadoFinal:            estado,
@@ -1289,6 +1333,245 @@ func absFloat(value float64) float64 {
 		return -value
 	}
 	return value
+}
+
+type studentGradeScoreBucket struct {
+	total  int
+	sum10  float64
+	sum100 float64
+}
+
+func (b *studentGradeScoreBucket) add(item StudentGradeDetailItem) {
+	b.total++
+	b.sum10 += item.Nota10
+	b.sum100 += item.Puntaje100
+}
+
+func (b *studentGradeScoreBucket) avg10() float64 {
+	if b.total == 0 {
+		return 0
+	}
+	return round2(b.sum10 / float64(b.total))
+}
+
+func (b *studentGradeScoreBucket) avg100() float64 {
+	if b.total == 0 {
+		return 0
+	}
+	return round2(b.sum100 / float64(b.total))
+}
+
+func buildStudentGradeAggregates(items []StudentGradeDetailItem) StudentGradeAggregates {
+	totalBucket := &studentGradeScoreBucket{}
+	typeBuckets := map[string]*studentGradeScoreBucket{
+		"contenido": {},
+		"prueba":    {},
+		"tarea":     {},
+	}
+
+	type namedBucket struct {
+		id   string
+		name string
+		*studentGradeScoreBucket
+	}
+
+	materiaBuckets := map[string]*namedBucket{}
+	unidadBuckets := map[string]*namedBucket{}
+	temaBuckets := map[string]*namedBucket{}
+
+	for _, item := range items {
+		totalBucket.add(item)
+		if bucket, ok := typeBuckets[item.Tipo]; ok {
+			bucket.add(item)
+		}
+
+		if item.MateriaID != nil && strings.TrimSpace(*item.MateriaID) != "" {
+			key := strings.TrimSpace(*item.MateriaID)
+			if _, exists := materiaBuckets[key]; !exists {
+				materiaName := key
+				if item.Materia != nil && strings.TrimSpace(*item.Materia) != "" {
+					materiaName = strings.TrimSpace(*item.Materia)
+				}
+				materiaBuckets[key] = &namedBucket{
+					id:                      key,
+					name:                    materiaName,
+					studentGradeScoreBucket: &studentGradeScoreBucket{},
+				}
+			}
+			materiaBuckets[key].add(item)
+		}
+
+		if item.UnidadID != nil && strings.TrimSpace(*item.UnidadID) != "" {
+			key := strings.TrimSpace(*item.UnidadID)
+			if _, exists := unidadBuckets[key]; !exists {
+				unidadName := key
+				if item.Unidad != nil && strings.TrimSpace(*item.Unidad) != "" {
+					unidadName = strings.TrimSpace(*item.Unidad)
+				}
+				unidadBuckets[key] = &namedBucket{
+					id:                      key,
+					name:                    unidadName,
+					studentGradeScoreBucket: &studentGradeScoreBucket{},
+				}
+			}
+			unidadBuckets[key].add(item)
+		}
+
+		if item.TemaID != nil && strings.TrimSpace(*item.TemaID) != "" {
+			key := strings.TrimSpace(*item.TemaID)
+			if _, exists := temaBuckets[key]; !exists {
+				temaName := key
+				if item.Tema != nil && strings.TrimSpace(*item.Tema) != "" {
+					temaName = strings.TrimSpace(*item.Tema)
+				}
+				temaBuckets[key] = &namedBucket{
+					id:                      key,
+					name:                    temaName,
+					studentGradeScoreBucket: &studentGradeScoreBucket{},
+				}
+			}
+			temaBuckets[key].add(item)
+		}
+	}
+
+	porTipo := []StudentGradeTypeAggregate{
+		{
+			Tipo:        "contenido",
+			Total:       typeBuckets["contenido"].total,
+			Promedio10:  typeBuckets["contenido"].avg10(),
+			Promedio100: typeBuckets["contenido"].avg100(),
+		},
+		{
+			Tipo:        "prueba",
+			Total:       typeBuckets["prueba"].total,
+			Promedio10:  typeBuckets["prueba"].avg10(),
+			Promedio100: typeBuckets["prueba"].avg100(),
+		},
+		{
+			Tipo:        "tarea",
+			Total:       typeBuckets["tarea"].total,
+			Promedio10:  typeBuckets["tarea"].avg10(),
+			Promedio100: typeBuckets["tarea"].avg100(),
+		},
+	}
+
+	porMateria := make([]StudentGradeMateriaAggregate, 0, len(materiaBuckets))
+	for _, bucket := range materiaBuckets {
+		porMateria = append(porMateria, StudentGradeMateriaAggregate{
+			MateriaID:   bucket.id,
+			Materia:     bucket.name,
+			Total:       bucket.total,
+			Promedio10:  bucket.avg10(),
+			Promedio100: bucket.avg100(),
+		})
+	}
+	sort.Slice(porMateria, func(i, j int) bool {
+		return strings.ToLower(porMateria[i].Materia) < strings.ToLower(porMateria[j].Materia)
+	})
+
+	porUnidad := make([]StudentGradeUnidadAggregate, 0, len(unidadBuckets))
+	for _, bucket := range unidadBuckets {
+		porUnidad = append(porUnidad, StudentGradeUnidadAggregate{
+			UnidadID:    bucket.id,
+			Unidad:      bucket.name,
+			Total:       bucket.total,
+			Promedio10:  bucket.avg10(),
+			Promedio100: bucket.avg100(),
+		})
+	}
+	sort.Slice(porUnidad, func(i, j int) bool {
+		return strings.ToLower(porUnidad[i].Unidad) < strings.ToLower(porUnidad[j].Unidad)
+	})
+
+	porTema := make([]StudentGradeTemaAggregate, 0, len(temaBuckets))
+	for _, bucket := range temaBuckets {
+		porTema = append(porTema, StudentGradeTemaAggregate{
+			TemaID:      bucket.id,
+			Tema:        bucket.name,
+			Total:       bucket.total,
+			Promedio10:  bucket.avg10(),
+			Promedio100: bucket.avg100(),
+		})
+	}
+	sort.Slice(porTema, func(i, j int) bool {
+		return strings.ToLower(porTema[i].Tema) < strings.ToLower(porTema[j].Tema)
+	})
+
+	return StudentGradeAggregates{
+		Total:              totalBucket.total,
+		PromedioGeneral10:  totalBucket.avg10(),
+		PromedioGeneral100: totalBucket.avg100(),
+		PorTipo:            porTipo,
+		PorMateria:         porMateria,
+		PorUnidad:          porUnidad,
+		PorTema:            porTema,
+	}
+}
+
+func normalizeStudentGradeDetailFilters(filter StudentGradeDetailFilters) (StudentGradeDetailFilters, error) {
+	normalized := filter
+
+	normalized.MateriaID = normalizeOptionalString(filter.MateriaID)
+	normalized.UnidadID = normalizeOptionalString(filter.UnidadID)
+	normalized.TemaID = normalizeOptionalString(filter.TemaID)
+	normalized.Q = normalizeOptionalString(filter.Q)
+
+	if filter.Tipo != nil {
+		tipo := strings.ToLower(strings.TrimSpace(*filter.Tipo))
+		switch tipo {
+		case "contenido", "prueba", "tarea":
+			normalized.Tipo = &tipo
+		default:
+			return StudentGradeDetailFilters{}, errors.New("tipo invalido: use contenido, prueba o tarea")
+		}
+	} else {
+		normalized.Tipo = nil
+	}
+
+	if filter.Estado == nil {
+		defaultEstado := "calificada"
+		normalized.Estado = &defaultEstado
+	} else {
+		estado := strings.ToLower(strings.TrimSpace(*filter.Estado))
+		switch estado {
+		case "", "calificada":
+			estado = "calificada"
+			normalized.Estado = &estado
+		case "sin_calificar":
+			normalized.Estado = &estado
+		case "todos":
+			normalized.Estado = nil
+		default:
+			return StudentGradeDetailFilters{}, errors.New("estado invalido: use calificada, sin_calificar o todos")
+		}
+	}
+
+	if normalized.Limit <= 0 {
+		normalized.Limit = 50
+	}
+	if normalized.Limit > 200 {
+		normalized.Limit = 200
+	}
+	if normalized.Offset < 0 {
+		normalized.Offset = 0
+	}
+
+	if normalized.Desde != nil && normalized.Hasta != nil && normalized.Desde.After(*normalized.Hasta) {
+		return StudentGradeDetailFilters{}, errors.New("rango de fechas invalido")
+	}
+
+	return normalized, nil
+}
+
+func normalizeOptionalString(value *string) *string {
+	if value == nil {
+		return nil
+	}
+	trimmed := strings.TrimSpace(*value)
+	if trimmed == "" {
+		return nil
+	}
+	return &trimmed
 }
 
 func errRequired(field string) error {

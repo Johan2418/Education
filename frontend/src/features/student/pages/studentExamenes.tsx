@@ -138,7 +138,7 @@ export default function StudentExamenesPage() {
                   </span>
                 </div>
 
-                <p className="text-sm text-slate-600">{t("student.exams.subject")}: <span className="font-medium text-slate-800">{exam.materia_nombre || exam.leccion_titulo || t("student.exams.noSubject")}</span></p>
+                <p className="text-sm text-slate-600">{t("student.exams.subject")}: <span className="font-medium text-slate-800">{exam.materia_nombre || t("student.exams.noSubject")}</span></p>
 
                 {exam.fecha_activacion ? (
                   <p className="mt-2 text-xs text-slate-500">{t("student.exams.activation")}: {new Date(exam.fecha_activacion).toLocaleString()}</p>
@@ -157,7 +157,7 @@ export default function StudentExamenesPage() {
                 <div className="mt-4 flex items-center justify-between">
                   <span className="text-xs text-slate-500">{t("student.exams.minimum")}: {exam.puntaje_minimo ?? 0}%</span>
                   <button
-                    onClick={() => navigate(exam.leccion_id ? `/lesson/${exam.leccion_id}/prueba/${exam.id}` : `/prueba/${exam.id}`)}
+                    onClick={() => navigate(`/prueba/${exam.id}`)}
                     disabled={!canResolve}
                     className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-3.5 py-2 text-sm font-medium text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
                   >

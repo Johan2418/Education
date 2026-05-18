@@ -67,17 +67,17 @@ async function listTemas(unidadId: string): Promise<Tema[]> {
 }
 
 async function listLecciones(temaId: string): Promise<Leccion[]> {
-  const response = await api.get<ApiListResponse<Leccion>>(`/temas/${temaId}/lecciones`);
+  const response = await api.get<ApiListResponse<Leccion>>(`/temas/${temaId}/contenidos`);
   return sortByOrderAndName(unwrapList(response));
 }
 
 async function listSeccionesByLeccion(leccionId: string): Promise<LeccionSeccion[]> {
-  const response = await api.get<ApiListResponse<LeccionSeccion>>(`/lecciones/${leccionId}/secciones`);
+  const response = await api.get<ApiListResponse<LeccionSeccion>>(`/contenidos/${leccionId}/secciones`);
   return sortByOrderAndName(unwrapList(response));
 }
 
 async function listProgresoSeccionesByLeccion(leccionId: string): Promise<ProgresoSeccion[]> {
-  const response = await api.get<ApiListResponse<ProgresoSeccion>>(`/lecciones/${leccionId}/progreso-secciones`);
+  const response = await api.get<ApiListResponse<ProgresoSeccion>>(`/contenidos/${leccionId}/progreso-secciones`);
   return unwrapList(response);
 }
 

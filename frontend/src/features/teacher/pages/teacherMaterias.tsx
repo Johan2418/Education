@@ -190,7 +190,7 @@ export default function TeacherMaterias() {
     const puntajeMinimo = Number(gradingConfig.puntaje_minimo_aprobacion);
 
     if ([pesoContenidos, pesoLecciones, pesoTrabajos, puntajeTotal, puntajeMinimo].some((n) => !Number.isFinite(n))) {
-      toast.error("Todos los campos deben ser numÃ©ricos");
+      toast.error("Todos los campos deben ser numericos");
       return;
     }
     if (pesoContenidos < 0 || pesoLecciones < 0 || pesoTrabajos < 0) {
@@ -222,7 +222,7 @@ export default function TeacherMaterias() {
 
       const refreshed = await getMateriaCalificaciones(gradingTarget.materia_id);
       setGradingData(refreshed);
-      toast.success("ConfiguraciÃ³n guardada");
+      toast.success("Configuracion guardada");
     } catch (err) {
       toast.error(normalizeError(err));
     } finally {
@@ -336,7 +336,7 @@ export default function TeacherMaterias() {
             <div className="flex items-center justify-between border-b px-4 py-3">
               <div>
                 <h3 className="font-semibold text-lg">{t("teacher.subjects.grading.title", { defaultValue: "Calificaciones y ponderaci?n" })}</h3>
-                <p className="text-sm text-gray-500">{gradingTarget?.materia_nombre} Â· {gradingTarget?.curso_nombre}</p>
+                <p className="text-sm text-gray-500">{gradingTarget?.materia_nombre} · {gradingTarget?.curso_nombre}</p>
               </div>
               <button type="button" onClick={closeCalificaciones} className="p-2 rounded hover:bg-gray-100">
                 <X size={18} />
@@ -377,7 +377,7 @@ export default function TeacherMaterias() {
                 <div className={`flex items-center justify-between rounded border px-3 py-2 text-sm ${ponderacionValida ? "border-emerald-200 bg-emerald-50" : "border-rose-200 bg-rose-50"}`}>
                   <span>{t("teacher.subjects.grading.weightSum", { defaultValue: "Suma de ponderaciones" })}: {totalPonderacion}% {!ponderacionValida ? "(debe ser 100%)" : ""}</span>
                   <button type="button" disabled={gradingSaving} onClick={() => void handleSaveConfig()} className="px-3 py-1.5 rounded bg-amber-500 text-white hover:bg-amber-600 disabled:opacity-50">
-                    {gradingSaving ? t("teacher.subjects.grading.saving", { defaultValue: "Guardando..." }) : t("teacher.subjects.grading.saveConfig", { defaultValue: "Guardar configuraciÃ³n" })}
+                    {gradingSaving ? t("teacher.subjects.grading.saving", { defaultValue: "Guardando..." }) : t("teacher.subjects.grading.saveConfig", { defaultValue: "Guardar configuracion" })}
                   </button>
                 </div>
 

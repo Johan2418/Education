@@ -351,6 +351,23 @@ type materiaCalificacionBaseRow struct {
 	PromedioTrabajos10   *float64 `gorm:"column:promedio_trabajos_10"`
 }
 
+type studentGradeDetailRow struct {
+	ID         string    `gorm:"column:id"`
+	Tipo       string    `gorm:"column:tipo"`
+	Estado     string    `gorm:"column:estado"`
+	Fecha      time.Time `gorm:"column:fecha"`
+	Titulo     string    `gorm:"column:titulo"`
+	MateriaID  *string   `gorm:"column:materia_id"`
+	Materia    *string   `gorm:"column:materia"`
+	UnidadID   *string   `gorm:"column:unidad_id"`
+	Unidad     *string   `gorm:"column:unidad"`
+	TemaID     *string   `gorm:"column:tema_id"`
+	Tema       *string   `gorm:"column:tema"`
+	Referencia string    `gorm:"column:referencia_id"`
+	Puntaje100 float64   `gorm:"column:puntaje_100"`
+	Nota10     float64   `gorm:"column:nota_10"`
+}
+
 func (r *Repository) ListMateriaCalificacionBaseRows(ctx context.Context, materiaID string) ([]materiaCalificacionBaseRow, error) {
 	return r.listMateriaCalificacionBaseRows(ctx, materiaID, nil)
 }
@@ -407,25 +424,60 @@ func (r *Repository) listMateriaCalificacionBaseRows(ctx context.Context, materi
 		CROSS JOIN materia_cfg m
 		LEFT JOIN internal.profiles p ON p.id = st.estudiante_id
 		LEFT JOIN LATERAL (
-			SELECT
-				AVG(
+			SELECT AVG(scores.nota_10) AS promedio_contenidos_10
+			FROM (
+				SELECT
 					CASE
-						WHEN ps.puntuacion IS NULL THEN NULL
 						WHEN ps.puntuacion <= 10 THEN GREATEST(ps.puntuacion, 0)::double precision
 						ELSE (LEAST(GREATEST(ps.puntuacion, 0), 100) / 10.0)::double precision
-					END
-				) AS promedio_contenidos_10
-			FROM internal.progreso_seccion ps
-			JOIN internal.leccion_seccion ls ON ls.id = ps.leccion_seccion_id
-			JOIN internal.leccion l ON l.id = ls.leccion_id
-			JOIN internal.tema t ON t.id = l.tema_id
-			JOIN internal.unidad u ON u.id = t.unidad_id
-			WHERE ps.user_id = st.estudiante_id
-			  AND u.materia_id = m.id
-			  AND ls.calificable = TRUE
-			  AND ls.tipo::text <> 'prueba'
-			  AND ls.tipo::text <> 'trabajo'
-			  AND ps.puntuacion IS NOT NULL
+					END AS nota_10
+				FROM internal.progreso_seccion ps
+				JOIN internal.leccion_seccion ls ON ls.id = ps.leccion_seccion_id
+				JOIN internal.leccion l ON l.id = ls.leccion_id
+				JOIN internal.tema t ON t.id = l.tema_id
+				JOIN internal.unidad u ON u.id = t.unidad_id
+				WHERE ps.user_id = st.estudiante_id
+				  AND u.materia_id = m.id
+				  AND ls.calificable = TRUE
+				  AND ls.tipo::text <> 'prueba'
+				  AND ls.tipo::text <> 'trabajo'
+				  AND ps.puntuacion IS NOT NULL
+
+				UNION ALL
+
+				SELECT
+					CASE
+						WHEN prg.puntaje <= 10 THEN GREATEST(prg.puntaje, 0)::double precision
+						ELSE (LEAST(GREATEST(prg.puntaje, 0), 100) / 10.0)::double precision
+					END AS nota_10
+				FROM internal.progreso prg
+				JOIN internal.leccion l ON l.id = prg.leccion_id
+				JOIN internal.tema t ON t.id = l.tema_id
+				JOIN internal.unidad u ON u.id = t.unidad_id
+				WHERE prg.usuario_id = st.estudiante_id
+				  AND u.materia_id = m.id
+				  AND prg.puntaje IS NOT NULL
+				  AND (
+						COALESCE(l.nivel, '') = 'tema_contenido'
+						OR NOT EXISTS (
+							SELECT 1
+							FROM internal.leccion_seccion lsx
+							WHERE lsx.leccion_id = l.id
+							  AND lsx.tipo::text IN ('prueba', 'trabajo')
+						)
+				  )
+				  AND NOT EXISTS (
+						SELECT 1
+						FROM internal.progreso_seccion ps2
+						JOIN internal.leccion_seccion ls2 ON ls2.id = ps2.leccion_seccion_id
+						WHERE ps2.user_id = prg.usuario_id
+						  AND ls2.leccion_id = prg.leccion_id
+						  AND ls2.calificable = TRUE
+						  AND ls2.tipo::text <> 'prueba'
+						  AND ls2.tipo::text <> 'trabajo'
+						  AND ps2.puntuacion IS NOT NULL
+				  )
+			) scores
 		) contenidos ON TRUE
 		LEFT JOIN LATERAL (
 			WITH best_resultados AS (
@@ -435,35 +487,102 @@ func (r *Repository) listMateriaCalificacionBaseRows(ctx context.Context, materi
 					rp.puntaje_obtenido
 				FROM internal.resultado_prueba rp
 				ORDER BY rp.usuario_id, rp.prueba_id, rp.puntaje_obtenido DESC, COALESCE(rp.completed_at, rp.created_at) DESC
-			)
-			SELECT
-				AVG(
+			),
+			exam_scores AS (
+				SELECT
 					CASE
-						WHEN br.puntaje_obtenido IS NULL THEN NULL
 						WHEN br.puntaje_obtenido <= 10 THEN GREATEST(br.puntaje_obtenido, 0)::double precision
 						ELSE (LEAST(GREATEST(br.puntaje_obtenido, 0), 100) / 10.0)::double precision
-					END
-				) AS promedio_lecciones_10
-			FROM best_resultados br
-			JOIN internal.prueba p ON p.id = br.prueba_id
-			JOIN internal.leccion l ON l.id = p.leccion_id
-			JOIN internal.tema t ON t.id = l.tema_id
-			JOIN internal.unidad u ON u.id = t.unidad_id
-			WHERE br.usuario_id = st.estudiante_id
-			  AND u.materia_id = m.id
-			  AND br.puntaje_obtenido IS NOT NULL
+					END AS nota_10
+				FROM best_resultados br
+				JOIN internal.prueba p ON p.id = br.prueba_id
+				LEFT JOIN internal.leccion l ON l.id = p.leccion_id
+				LEFT JOIN internal.tema t ON t.id = l.tema_id
+				LEFT JOIN internal.unidad u ON u.id = t.unidad_id
+				LEFT JOIN internal.materia m_legacy ON m_legacy.id = u.materia_id
+				LEFT JOIN internal.materia m_direct ON m_direct.id = p.materia_id
+				WHERE br.usuario_id = st.estudiante_id
+				  AND br.puntaje_obtenido IS NOT NULL
+				  AND COALESCE(m_direct.id, m_legacy.id) = m.id
+
+				UNION ALL
+
+				SELECT
+					CASE
+						WHEN ps.puntuacion <= 10 THEN GREATEST(ps.puntuacion, 0)::double precision
+						ELSE (LEAST(GREATEST(ps.puntuacion, 0), 100) / 10.0)::double precision
+					END AS nota_10
+				FROM internal.progreso_seccion ps
+				JOIN internal.leccion_seccion ls ON ls.id = ps.leccion_seccion_id
+				JOIN internal.leccion l ON l.id = ls.leccion_id
+				JOIN internal.tema t ON t.id = l.tema_id
+				JOIN internal.unidad u ON u.id = t.unidad_id
+				LEFT JOIN internal.prueba p ON p.id = ls.prueba_id
+				LEFT JOIN internal.materia m_direct ON m_direct.id = p.materia_id
+				WHERE ps.user_id = st.estudiante_id
+				  AND ps.puntuacion IS NOT NULL
+				  AND ls.tipo::text = 'prueba'
+				  AND COALESCE(m_direct.id, u.materia_id) = m.id
+				  AND (
+						ls.prueba_id IS NULL
+						OR NOT EXISTS (
+							SELECT 1
+							FROM internal.resultado_prueba rp2
+							WHERE rp2.usuario_id = ps.user_id
+							  AND rp2.prueba_id = ls.prueba_id
+							  AND rp2.puntaje_obtenido IS NOT NULL
+						)
+				  )
+			)
+			SELECT AVG(nota_10) AS promedio_lecciones_10
+			FROM exam_scores
 		) examenes ON TRUE
 		LEFT JOIN LATERAL (
-			SELECT
-				AVG((LEAST(GREATEST(tc.puntaje, 0), 100) / 10.0)::double precision) AS promedio_trabajos_10
-			FROM internal.trabajo_entrega te
-			JOIN internal.trabajo tr ON tr.id = te.trabajo_id
-			JOIN internal.trabajo_calificacion tc ON tc.entrega_id = te.id
-			JOIN internal.leccion l ON l.id = tr.leccion_id
-			JOIN internal.tema t ON t.id = l.tema_id
-			JOIN internal.unidad u ON u.id = t.unidad_id
-			WHERE te.estudiante_id = st.estudiante_id
-			  AND u.materia_id = m.id
+			WITH task_scores AS (
+				SELECT
+					(LEAST(GREATEST(tc.puntaje, 0), 100) / 10.0)::double precision AS nota_10
+				FROM internal.trabajo_entrega te
+				JOIN internal.trabajo tr ON tr.id = te.trabajo_id
+				JOIN internal.trabajo_calificacion tc ON tc.entrega_id = te.id
+				LEFT JOIN internal.leccion l ON l.id = tr.leccion_id
+				LEFT JOIN internal.tema t ON t.id = l.tema_id
+				LEFT JOIN internal.unidad u ON u.id = t.unidad_id
+				LEFT JOIN internal.materia m_legacy ON m_legacy.id = u.materia_id
+				LEFT JOIN internal.materia m_direct ON m_direct.id = tr.materia_id
+				WHERE te.estudiante_id = st.estudiante_id
+				  AND COALESCE(m_direct.id, m_legacy.id) = m.id
+
+				UNION ALL
+
+				SELECT
+					CASE
+						WHEN ps.puntuacion <= 10 THEN GREATEST(ps.puntuacion, 0)::double precision
+						ELSE (LEAST(GREATEST(ps.puntuacion, 0), 100) / 10.0)::double precision
+					END AS nota_10
+				FROM internal.progreso_seccion ps
+				JOIN internal.leccion_seccion ls ON ls.id = ps.leccion_seccion_id
+				JOIN internal.leccion l ON l.id = ls.leccion_id
+				JOIN internal.tema t ON t.id = l.tema_id
+				JOIN internal.unidad u ON u.id = t.unidad_id
+				LEFT JOIN internal.trabajo tr ON tr.id = ls.trabajo_id
+				LEFT JOIN internal.materia m_direct ON m_direct.id = tr.materia_id
+				WHERE ps.user_id = st.estudiante_id
+				  AND ps.puntuacion IS NOT NULL
+				  AND ls.tipo::text = 'trabajo'
+				  AND COALESCE(m_direct.id, u.materia_id) = m.id
+				  AND (
+						ls.trabajo_id IS NULL
+						OR NOT EXISTS (
+							SELECT 1
+							FROM internal.trabajo_entrega te2
+							JOIN internal.trabajo_calificacion tc2 ON tc2.entrega_id = te2.id
+							WHERE te2.estudiante_id = ps.user_id
+							  AND te2.trabajo_id = ls.trabajo_id
+						)
+				  )
+			)
+			SELECT AVG(nota_10) AS promedio_trabajos_10
+			FROM task_scores
 		) trabajos ON TRUE
 		ORDER BY COALESCE(p.display_name, p.email, st.estudiante_id::text) ASC
 	`
@@ -471,6 +590,357 @@ func (r *Repository) listMateriaCalificacionBaseRows(ctx context.Context, materi
 	var rows []materiaCalificacionBaseRow
 	err := r.db.WithContext(ctx).Raw(query, args...).Scan(&rows).Error
 	return rows, err
+}
+
+func (r *Repository) ListStudentGradeDetailRows(ctx context.Context, estudianteID string, filter StudentGradeDetailFilters) ([]StudentGradeDetailItem, error) {
+	trimmedStudentID := strings.TrimSpace(estudianteID)
+	if trimmedStudentID == "" {
+		return nil, errors.New("estudiante_id es requerido")
+	}
+
+	query := `
+		WITH best_resultados AS (
+			SELECT DISTINCT ON (rp.usuario_id, rp.prueba_id)
+				rp.usuario_id,
+				rp.prueba_id,
+				rp.puntaje_obtenido,
+				COALESCE(rp.completed_at, rp.created_at) AS event_at
+			FROM internal.resultado_prueba rp
+			ORDER BY rp.usuario_id, rp.prueba_id, rp.puntaje_obtenido DESC, COALESCE(rp.completed_at, rp.created_at) DESC
+		),
+		grade_rows AS (
+			-- Contenidos (nuevo: progreso_seccion)
+			SELECT
+				CONCAT('contenido:seccion:', ps.leccion_seccion_id::text) AS id,
+				'contenido'::text AS tipo,
+				CASE WHEN ps.puntuacion IS NULL THEN 'sin_calificar' ELSE 'calificada' END AS estado,
+				COALESCE(ps.updated_at, ps.created_at) AS fecha,
+				COALESCE(rec.titulo, ai.titulo, fo.titulo, CONCAT('Contenido #', ls.orden::text)) AS titulo,
+				m.id AS materia_id,
+				m.nombre AS materia,
+				u.id AS unidad_id,
+				u.nombre AS unidad,
+				t.id AS tema_id,
+				t.nombre AS tema,
+				ps.leccion_seccion_id::text AS referencia_id,
+				CASE
+					WHEN ps.puntuacion IS NULL THEN 0::double precision
+					WHEN ps.puntuacion <= 10 THEN LEAST(GREATEST(ps.puntuacion * 10.0, 0), 100)::double precision
+					ELSE LEAST(GREATEST(ps.puntuacion, 0), 100)::double precision
+				END AS puntaje_100,
+				CASE
+					WHEN ps.puntuacion IS NULL THEN 0::double precision
+					WHEN ps.puntuacion <= 10 THEN LEAST(GREATEST(ps.puntuacion, 0), 10)::double precision
+					ELSE (LEAST(GREATEST(ps.puntuacion, 0), 100) / 10.0)::double precision
+				END AS nota_10
+			FROM internal.progreso_seccion ps
+			JOIN internal.leccion_seccion ls ON ls.id = ps.leccion_seccion_id
+			JOIN internal.leccion l ON l.id = ls.leccion_id
+			JOIN internal.tema t ON t.id = l.tema_id
+			JOIN internal.unidad u ON u.id = t.unidad_id
+			JOIN internal.materia m ON m.id = u.materia_id
+			LEFT JOIN internal.recurso rec ON rec.id = ls.recurso_id
+			LEFT JOIN internal.actividad_interactiva ai ON ai.id = ls.actividad_interactiva_id
+			LEFT JOIN internal.foro fo ON fo.id = ls.foro_id
+			WHERE ps.user_id = ?
+			  AND ls.calificable = TRUE
+			  AND ls.tipo::text <> 'prueba'
+			  AND ls.tipo::text <> 'trabajo'
+
+			UNION ALL
+
+			-- Contenidos (legacy: progreso nivel leccion)
+			SELECT
+				CONCAT('contenido:legacy:', prg.leccion_id::text) AS id,
+				'contenido'::text AS tipo,
+				'calificada'::text AS estado,
+				COALESCE(prg.updated_at, prg.created_at) AS fecha,
+				COALESCE(l.titulo, 'Contenido') AS titulo,
+				m.id AS materia_id,
+				m.nombre AS materia,
+				u.id AS unidad_id,
+				u.nombre AS unidad,
+				t.id AS tema_id,
+				t.nombre AS tema,
+				prg.leccion_id::text AS referencia_id,
+				CASE
+					WHEN prg.puntaje <= 10 THEN LEAST(GREATEST(prg.puntaje * 10.0, 0), 100)::double precision
+					ELSE LEAST(GREATEST(prg.puntaje, 0), 100)::double precision
+				END AS puntaje_100,
+				CASE
+					WHEN prg.puntaje <= 10 THEN LEAST(GREATEST(prg.puntaje, 0), 10)::double precision
+					ELSE (LEAST(GREATEST(prg.puntaje, 0), 100) / 10.0)::double precision
+				END AS nota_10
+			FROM internal.progreso prg
+			JOIN internal.leccion l ON l.id = prg.leccion_id
+			JOIN internal.tema t ON t.id = l.tema_id
+			JOIN internal.unidad u ON u.id = t.unidad_id
+			JOIN internal.materia m ON m.id = u.materia_id
+			WHERE prg.usuario_id = ?
+			  AND prg.puntaje IS NOT NULL
+			  AND (
+					COALESCE(l.nivel, '') = 'tema_contenido'
+					OR NOT EXISTS (
+						SELECT 1
+						FROM internal.leccion_seccion lsx
+						WHERE lsx.leccion_id = l.id
+						  AND lsx.tipo::text IN ('prueba', 'trabajo')
+					)
+			  )
+			  AND NOT EXISTS (
+					SELECT 1
+					FROM internal.progreso_seccion ps2
+					JOIN internal.leccion_seccion ls2 ON ls2.id = ps2.leccion_seccion_id
+					WHERE ps2.user_id = prg.usuario_id
+					  AND ls2.leccion_id = prg.leccion_id
+					  AND ls2.calificable = TRUE
+					  AND ls2.tipo::text <> 'prueba'
+					  AND ls2.tipo::text <> 'trabajo'
+					  AND ps2.puntuacion IS NOT NULL
+			  )
+
+			UNION ALL
+
+			-- Pruebas (nuevo: resultado_prueba)
+			SELECT
+				CONCAT('prueba:', br.prueba_id::text) AS id,
+				'prueba'::text AS tipo,
+				'calificada'::text AS estado,
+				COALESCE(br.event_at, NOW()) AS fecha,
+				pr.titulo AS titulo,
+				COALESCE(m_direct.id, m_legacy.id) AS materia_id,
+				COALESCE(m_direct.nombre, m_legacy.nombre) AS materia,
+				u.id AS unidad_id,
+				u.nombre AS unidad,
+				t.id AS tema_id,
+				t.nombre AS tema,
+				br.prueba_id::text AS referencia_id,
+				LEAST(GREATEST(br.puntaje_obtenido, 0), 100)::double precision AS puntaje_100,
+				(LEAST(GREATEST(br.puntaje_obtenido, 0), 100) / 10.0)::double precision AS nota_10
+			FROM best_resultados br
+			JOIN internal.prueba pr ON pr.id = br.prueba_id
+			LEFT JOIN internal.leccion l ON l.id = pr.leccion_id
+			LEFT JOIN internal.tema t ON t.id = l.tema_id
+			LEFT JOIN internal.unidad u ON u.id = t.unidad_id
+			LEFT JOIN internal.materia m_legacy ON m_legacy.id = u.materia_id
+			LEFT JOIN internal.materia m_direct ON m_direct.id = pr.materia_id
+			WHERE br.usuario_id = ?
+			  AND br.puntaje_obtenido IS NOT NULL
+
+			UNION ALL
+
+			-- Pruebas (fallback: progreso_seccion tipo prueba)
+			SELECT
+				CONCAT('prueba:seccion:', ps.leccion_seccion_id::text) AS id,
+				'prueba'::text AS tipo,
+				CASE WHEN ps.puntuacion IS NULL THEN 'sin_calificar' ELSE 'calificada' END AS estado,
+				COALESCE(ps.updated_at, ps.created_at) AS fecha,
+				COALESCE(pr.titulo, CONCAT('Prueba #', ls.orden::text)) AS titulo,
+				COALESCE(m_direct.id, m.id) AS materia_id,
+				COALESCE(m_direct.nombre, m.nombre) AS materia,
+				u.id AS unidad_id,
+				u.nombre AS unidad,
+				t.id AS tema_id,
+				t.nombre AS tema,
+				COALESCE(ls.prueba_id::text, ps.leccion_seccion_id::text) AS referencia_id,
+				CASE
+					WHEN ps.puntuacion IS NULL THEN 0::double precision
+					WHEN ps.puntuacion <= 10 THEN LEAST(GREATEST(ps.puntuacion * 10.0, 0), 100)::double precision
+					ELSE LEAST(GREATEST(ps.puntuacion, 0), 100)::double precision
+				END AS puntaje_100,
+				CASE
+					WHEN ps.puntuacion IS NULL THEN 0::double precision
+					WHEN ps.puntuacion <= 10 THEN LEAST(GREATEST(ps.puntuacion, 0), 10)::double precision
+					ELSE (LEAST(GREATEST(ps.puntuacion, 0), 100) / 10.0)::double precision
+				END AS nota_10
+			FROM internal.progreso_seccion ps
+			JOIN internal.leccion_seccion ls ON ls.id = ps.leccion_seccion_id
+			JOIN internal.leccion l ON l.id = ls.leccion_id
+			JOIN internal.tema t ON t.id = l.tema_id
+			JOIN internal.unidad u ON u.id = t.unidad_id
+			JOIN internal.materia m ON m.id = u.materia_id
+			LEFT JOIN internal.prueba pr ON pr.id = ls.prueba_id
+			LEFT JOIN internal.materia m_direct ON m_direct.id = pr.materia_id
+			WHERE ps.user_id = ?
+			  AND ls.tipo::text = 'prueba'
+			  AND ps.puntuacion IS NOT NULL
+			  AND (
+					ls.prueba_id IS NULL
+					OR NOT EXISTS (
+						SELECT 1
+						FROM internal.resultado_prueba rp2
+						WHERE rp2.usuario_id = ps.user_id
+						  AND rp2.prueba_id = ls.prueba_id
+						  AND rp2.puntaje_obtenido IS NOT NULL
+					)
+			  )
+
+			UNION ALL
+
+			-- Tareas (nuevo: trabajo_calificacion)
+			SELECT
+				CONCAT('tarea:', tr.id::text) AS id,
+				'tarea'::text AS tipo,
+				'calificada'::text AS estado,
+				COALESCE(tc.updated_at, tc.created_at, te.updated_at, te.created_at) AS fecha,
+				tr.titulo AS titulo,
+				COALESCE(m_direct.id, m_legacy.id) AS materia_id,
+				COALESCE(m_direct.nombre, m_legacy.nombre) AS materia,
+				u.id AS unidad_id,
+				u.nombre AS unidad,
+				t.id AS tema_id,
+				t.nombre AS tema,
+				tr.id::text AS referencia_id,
+				LEAST(GREATEST(tc.puntaje, 0), 100)::double precision AS puntaje_100,
+				(LEAST(GREATEST(tc.puntaje, 0), 100) / 10.0)::double precision AS nota_10
+			FROM internal.trabajo_entrega te
+			JOIN internal.trabajo tr ON tr.id = te.trabajo_id
+			JOIN internal.trabajo_calificacion tc ON tc.entrega_id = te.id
+			LEFT JOIN internal.leccion l ON l.id = tr.leccion_id
+			LEFT JOIN internal.tema t ON t.id = l.tema_id
+			LEFT JOIN internal.unidad u ON u.id = t.unidad_id
+			LEFT JOIN internal.materia m_legacy ON m_legacy.id = u.materia_id
+			LEFT JOIN internal.materia m_direct ON m_direct.id = tr.materia_id
+			WHERE te.estudiante_id = ?
+
+			UNION ALL
+
+			-- Tareas (fallback: progreso_seccion tipo trabajo)
+			SELECT
+				CONCAT('tarea:seccion:', ps.leccion_seccion_id::text) AS id,
+				'tarea'::text AS tipo,
+				CASE WHEN ps.puntuacion IS NULL THEN 'sin_calificar' ELSE 'calificada' END AS estado,
+				COALESCE(ps.updated_at, ps.created_at) AS fecha,
+				COALESCE(tr.titulo, CONCAT('Tarea #', ls.orden::text)) AS titulo,
+				COALESCE(m_direct.id, m.id) AS materia_id,
+				COALESCE(m_direct.nombre, m.nombre) AS materia,
+				u.id AS unidad_id,
+				u.nombre AS unidad,
+				t.id AS tema_id,
+				t.nombre AS tema,
+				COALESCE(ls.trabajo_id::text, ps.leccion_seccion_id::text) AS referencia_id,
+				CASE
+					WHEN ps.puntuacion IS NULL THEN 0::double precision
+					WHEN ps.puntuacion <= 10 THEN LEAST(GREATEST(ps.puntuacion * 10.0, 0), 100)::double precision
+					ELSE LEAST(GREATEST(ps.puntuacion, 0), 100)::double precision
+				END AS puntaje_100,
+				CASE
+					WHEN ps.puntuacion IS NULL THEN 0::double precision
+					WHEN ps.puntuacion <= 10 THEN LEAST(GREATEST(ps.puntuacion, 0), 10)::double precision
+					ELSE (LEAST(GREATEST(ps.puntuacion, 0), 100) / 10.0)::double precision
+				END AS nota_10
+			FROM internal.progreso_seccion ps
+			JOIN internal.leccion_seccion ls ON ls.id = ps.leccion_seccion_id
+			JOIN internal.leccion l ON l.id = ls.leccion_id
+			JOIN internal.tema t ON t.id = l.tema_id
+			JOIN internal.unidad u ON u.id = t.unidad_id
+			JOIN internal.materia m ON m.id = u.materia_id
+			LEFT JOIN internal.trabajo tr ON tr.id = ls.trabajo_id
+			LEFT JOIN internal.materia m_direct ON m_direct.id = tr.materia_id
+			WHERE ps.user_id = ?
+			  AND ls.tipo::text = 'trabajo'
+			  AND ps.puntuacion IS NOT NULL
+			  AND (
+					ls.trabajo_id IS NULL
+					OR NOT EXISTS (
+						SELECT 1
+						FROM internal.trabajo_entrega te2
+						JOIN internal.trabajo_calificacion tc2 ON tc2.entrega_id = te2.id
+						WHERE te2.estudiante_id = ps.user_id
+						  AND te2.trabajo_id = ls.trabajo_id
+					)
+			  )
+		)
+		SELECT
+			id,
+			tipo,
+			estado,
+			fecha,
+			titulo,
+			materia_id,
+			materia,
+			unidad_id,
+			unidad,
+			tema_id,
+			tema,
+			referencia_id,
+			puntaje_100,
+			nota_10
+		FROM grade_rows
+		WHERE 1 = 1
+	`
+
+	args := []interface{}{
+		trimmedStudentID, // contenido moderno
+		trimmedStudentID, // contenido legacy
+		trimmedStudentID, // prueba moderna
+		trimmedStudentID, // prueba fallback por seccion
+		trimmedStudentID, // tarea moderna
+		trimmedStudentID, // tarea fallback por seccion
+	}
+
+	if filter.MateriaID != nil && strings.TrimSpace(*filter.MateriaID) != "" {
+		query += " AND materia_id = ?"
+		args = append(args, strings.TrimSpace(*filter.MateriaID))
+	}
+	if filter.Tipo != nil && strings.TrimSpace(*filter.Tipo) != "" {
+		query += " AND tipo = ?"
+		args = append(args, strings.TrimSpace(*filter.Tipo))
+	}
+	if filter.UnidadID != nil && strings.TrimSpace(*filter.UnidadID) != "" {
+		query += " AND unidad_id = ?"
+		args = append(args, strings.TrimSpace(*filter.UnidadID))
+	}
+	if filter.TemaID != nil && strings.TrimSpace(*filter.TemaID) != "" {
+		query += " AND tema_id = ?"
+		args = append(args, strings.TrimSpace(*filter.TemaID))
+	}
+	if filter.Estado != nil && strings.TrimSpace(*filter.Estado) != "" {
+		query += " AND estado = ?"
+		args = append(args, strings.TrimSpace(*filter.Estado))
+	}
+	if filter.Desde != nil {
+		query += " AND fecha >= ?"
+		args = append(args, *filter.Desde)
+	}
+	if filter.Hasta != nil {
+		query += " AND fecha <= ?"
+		args = append(args, *filter.Hasta)
+	}
+	if filter.Q != nil && strings.TrimSpace(*filter.Q) != "" {
+		term := "%" + strings.ToLower(strings.TrimSpace(*filter.Q)) + "%"
+		query += " AND (LOWER(COALESCE(titulo, '')) LIKE ? OR LOWER(COALESCE(materia, '')) LIKE ? OR LOWER(COALESCE(unidad, '')) LIKE ? OR LOWER(COALESCE(tema, '')) LIKE ?)"
+		args = append(args, term, term, term, term)
+	}
+
+	query += " ORDER BY fecha DESC, tipo ASC, titulo ASC"
+
+	var rows []studentGradeDetailRow
+	if err := r.db.WithContext(ctx).Raw(query, args...).Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+
+	items := make([]StudentGradeDetailItem, 0, len(rows))
+	for _, row := range rows {
+		items = append(items, StudentGradeDetailItem{
+			ID:         row.ID,
+			Tipo:       row.Tipo,
+			Estado:     row.Estado,
+			Fecha:      row.Fecha,
+			Titulo:     row.Titulo,
+			MateriaID:  row.MateriaID,
+			Materia:    row.Materia,
+			UnidadID:   row.UnidadID,
+			Unidad:     row.Unidad,
+			TemaID:     row.TemaID,
+			Tema:       row.Tema,
+			Referencia: row.Referencia,
+			Puntaje100: row.Puntaje100,
+			Nota10:     row.Nota10,
+		})
+	}
+
+	return items, nil
 }
 
 func (r *Repository) IsTeacherAssignedToMateria(ctx context.Context, teacherID, materiaID string) (bool, error) {

@@ -91,7 +91,7 @@
       "deleteError": "Error deleting record",
       "deleteSuccess": "Record deleted successfully",
       "undoError": "Error undoing: {{message}}",
-      "deleteSuccessDetailed": "ðŸ—‘ï¸ Record deleted successfully",
+      "deleteSuccessDetailed": "🗑️ Record deleted successfully",
       "loadLessonsError": "Error loading lessons",
       "loadRecordsError": "Error loading records"
     },
@@ -167,7 +167,7 @@
     "shortcut": {
       "save": "Save (Ctrl/Cmd + S)",
       "close": "Close modal (Esc)",
-      "navigateSuggestions": "Navigate suggestions (â†‘/â†“)",
+      "navigateSuggestions": "Navigate suggestions (↑/↓)",
       "applySuggestion": "Apply suggestion (Enter)",
       "tabNavigate": "Navigate between fields (Tab)"
         ,
@@ -222,7 +222,7 @@
   "news": "News",
   "newsHelp": "Here you will find the latest news, new models and experiments available in QuimicaUleam.",
   "newWaterMolecule": "New 3D Water Molecule",
-  "newWaterMoleculeDesc": "Explore the molecular structure of Hâ‚‚O with our new interactive model.",
+  "newWaterMoleculeDesc": "Explore the molecular structure of H₂O with our new interactive model.",
   "updatedPeriodicTable": "Updated Periodic Table",
   "updatedPeriodicTableDesc": "Access detailed information about all chemical elements.",
   "virtualExperiments": "Virtual Experiments Available",
@@ -284,9 +284,9 @@
     }
     ,
     "status": {
-      "completed": "Completed â€” review resources and results",
-      "inProgress": "In progress â€” current score {{score}}%",
-      "notStarted": "Not started â€” begin the lesson to make progress"
+      "completed": "Completed — review resources and results",
+      "inProgress": "In progress — current score {{score}}%",
+      "notStarted": "Not started — begin the lesson to make progress"
     }
   },
   "contents.loadLessonsError": "Error loading lessons",
@@ -389,8 +389,8 @@
             "ai3d": "AI 3D"
           },
           "generateDesc": {
-            "billboard": "âš¡ Create a textured plane with your image (instant)",
-            "ai3d": "âœ¨ Generate a real 3D model using Meshy.ai (1-3 minutes)"
+            "billboard": "⚡ Create a textured plane with your image (instant)",
+            "ai3d": "✨ Generate a real 3D model using Meshy.ai (1-3 minutes)"
           },
           "apiKeyLabel": "Meshy.ai API Key",
           "apiKeyGet": "get it here",
@@ -492,7 +492,7 @@
         "fileLabel": "File",
         "fileHint": "Click or drag a file",
         "fileUploading": "Uploading...",
-        "fileUploaded": "âœ“ File uploaded",
+        "fileUploaded": "✓ File uploaded",
         "fileChange": "Change",
         "cancel": "Cancel",
         "create": "Create Model",
@@ -929,8 +929,8 @@
         "minQuestionsToPublish": "Minimum questions required to publish",
         "noExercisePages": "No pages with exercises or questions were detected",
         "progressTitle": "Creation progress",
-        "progressDetail": "Phase: {{phase}} Â· Page: {{page}} Â· Processed: {{processed}}/{{total}}",
-        "progressSummary": "Created: {{created}} Â· Skipped (regex): {{regex}} Â· Skipped (AI): {{ia}} Â· Failed: {{failed}}",
+        "progressDetail": "Phase: {{phase}} · Page: {{page}} · Processed: {{processed}}/{{total}}",
+        "progressSummary": "Created: {{created}} · Skipped (regex): {{regex}} · Skipped (AI): {{ia}} · Failed: {{failed}}",
         "loaded": "Book uploaded successfully",
         "createdBatch": "Assignments created from book",
         "createdBatchManual": "Assignments created from book and sent for manual review",
@@ -1109,16 +1109,16 @@
     "email": "Email",
     "emailPlaceholder": "user@example.com",
     "password": "Password", 
-    "passwordPlaceholder": "â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢",
+    "passwordPlaceholder": "••••••••",
     "rememberMe": "Remember me",
     "forgotPassword": "Forgot password?",
     "noAccount": "Don't have an account?",
     "submit": "Sign in",
     "loading": "Signing in...",
-    "success": "Login successful âœ…",
+    "success": "Login successful ✅",
     "errors": {
       "allFields": "Please complete all fields.",
-      "invalid": "Invalid email or password âŒ"
+      "invalid": "Invalid email or password ❌"
       ,
       "blocked": "Too many attempts. Try again later.",
       "blockedTimer": "Try again in {{count}} seconds.",
@@ -1430,7 +1430,7 @@
         "name": "Name",
         "description": "Description",
         "teacher": "Assigned teacher",
-        "noTeacher": "â€” Not assigned â€”",
+        "noTeacher": "— Not assigned —",
         "active": "Active"
       },
       "table": {
@@ -1536,7 +1536,7 @@
         "fileLabel": "File",
         "fileHint": "Click or drag a file",
         "fileUploading": "Uploading...",
-        "fileUploaded": "âœ“ File uploaded",
+        "fileUploaded": "✓ File uploaded",
         "fileChange": "Change",
         "cancel": "Cancel",
         "create": "Create Model",
@@ -1752,9 +1752,9 @@
 ,
   "student.dashboard.subtitle": "Continue your learning path"
 ,
-  "student.dashboard.completedLessons": "Completed lessons"
+  "student.dashboard.completedLessons": "Completed contents"
 ,
-  "student.dashboard.pendingLessons": "Pending lessons"
+  "student.dashboard.pendingLessons": "Pending contents"
 ,
   "student.dashboard.averageScore": "Average score"
 ,
@@ -1764,7 +1764,7 @@
 ,
   "student.dashboard.history": "History"
 ,
-  "student.dashboard.lastLesson": "Last viewed lesson"
+  "student.dashboard.lastLesson": "Last viewed content"
 ,
   "student.dashboard.lastAccess": "Last access"
 ,
@@ -1772,19 +1772,120 @@
 ,
   "student.dashboard.continue": "Continue learning"
 ,
-  "student.dashboard.noHistory": "You have not started any lesson yet"
+  "student.dashboard.noHistory": "You have not started any content yet"
 ,
   "student.dashboard.quickStats": "Quick stats"
 ,
-  "student.dashboard.totalLessons": "Available lessons"
+  "student.dashboard.totalLessons": "Available contents"
 ,
-  "student.dashboard.totalProgress": "Lessons in progress"
+  "student.dashboard.totalProgress": "Contents in progress"
 ,
   "student.dashboard.enrolledSubjects": "Enrolled subjects"
 ,
-  "student.dashboard.noFollowedContent": "You have not started any lesson yet"
+  "student.dashboard.noFollowedContent": "You have not started any content yet"
 ,
   "student.dashboard.noFollowedContentDesc": "Explore available contents to start learning."
 ,
-  "student.dashboard.browseContents": "Browse contents"
+  "student.dashboard.browseContents": "Browse contents",
+  "student.dashboard.academicPanel": "Academic panel for Contents, Tests and Tasks",
+  "student.dashboard.generalAverage": "Overall average /10",
+  "student.dashboard.realtime.active": "Realtime active",
+  "student.dashboard.realtime.reconnecting": "Reconnecting...",
+  "student.dashboard.cards.completedContents": "Completed contents",
+  "student.dashboard.cards.pendingContents": "Pending contents",
+  "student.dashboard.cards.pendingExams": "Pending tests",
+  "student.dashboard.cards.pendingAssignments": "Pending tasks",
+  "student.dashboard.cards.approvedSubjects": "Approved subjects",
+  "student.dashboard.sections.recentContent": "Recent content activity",
+  "student.dashboard.sections.quickSummary": "Quick summary",
+  "student.dashboard.sections.performanceBySubject": "Performance by subject (/10)",
+  "student.dashboard.sections.subjectStatus": "Subjects status",
+  "student.dashboard.sections.gradesBySubject": "Grades by subject",
+  "student.dashboard.sections.assignedExams": "Assigned tests",
+  "student.dashboard.sections.upcomingAssignments": "Upcoming tasks",
+  "student.dashboard.summary.availableContents": "Available contents",
+  "student.dashboard.summary.completedExams": "Completed exams",
+  "student.dashboard.summary.submittedAssignments": "Submitted tasks",
+  "student.dashboard.summary.gradedAssignments": "Graded tasks",
+  "student.dashboard.table.subject": "Subject",
+  "student.dashboard.table.contents": "Contents",
+  "student.dashboard.table.exams": "Tests",
+  "student.dashboard.table.assignments": "Tasks",
+  "student.dashboard.table.finalGrade": "Final grade",
+  "student.dashboard.table.status": "Status",
+  "student.dashboard.status.approved": "Approved",
+  "student.dashboard.status.failed": "Failed",
+  "student.dashboard.status.notCompleted": "Subject not completed",
+  "student.dashboard.status.ungraded": "Ungraded",
+  "student.dashboard.empty.noAssignedExams": "You have no assigned tests.",
+  "student.dashboard.empty.noAssignments": "You have no assigned tasks.",
+  "student.dashboard.examTable.exam": "Exam",
+  "student.dashboard.examTable.subject": "Subject",
+  "student.dashboard.examTable.action": "Action",
+  "student.dashboard.examTable.noSubject": "-",
+  "student.dashboard.examTable.viewExam": "View exam",
+  "student.dashboard.assignments.dueAt": "Due: {{date}}",
+  "student.dashboard.assignments.noDueDate": "No due date",
+  "student.dashboard.assignments.status.graded": "Graded",
+  "student.dashboard.assignments.status.submitted": "Submitted",
+  "student.dashboard.assignments.status.pending": "Pending",
+  "student.dashboard.continueContent": "Continue content",
+  "student.dashboard.noContentStarted": "You have not started any content yet.",
+  "sidebar.grades": "Grades",
+  "student.trabajos.title": "My Tasks",
+  "student.trabajos.error": "Error loading tasks",
+  "student.trabajos.search": "Search tasks",
+  "student.trabajos.pending": "Pending",
+  "student.trabajos.pendiente": "Pending",
+  "student.trabajos.entregado": "Submitted",
+  "student.trabajos.overdue": "Overdue",
+  "student.trabajos.closed": "Closed",
+  "student.trabajos.empty": "You have no assigned tasks",
+  "student.trabajos.tipoPreguntas": "Questions",
+  "student.trabajos.tipoArchivo": "File",
+  "student.trabajos.tipoMixto": "Mixed",
+  "student.trabajos.calificado": "Graded",
+  "student.trabajos.due": "Due",
+  "student.grades.title": "Grades",
+  "student.grades.subtitle": "Detailed view of contents, tests and tasks with filters by subject, unit and topic.",
+  "student.grades.realtime.active": "Realtime active",
+  "student.grades.realtime.reconnecting": "Reconnecting stream...",
+  "student.grades.filters.title": "Filters",
+  "student.grades.filters.subject": "Subject",
+  "student.grades.filters.allSubjects": "All subjects",
+  "student.grades.filters.type": "Type",
+  "student.grades.filters.allTypes": "All types",
+  "student.grades.filters.unit": "Unit",
+  "student.grades.filters.allUnits": "All units",
+  "student.grades.filters.topic": "Topic",
+  "student.grades.filters.allTopics": "All topics",
+  "student.grades.filters.from": "From",
+  "student.grades.filters.to": "To",
+  "student.grades.filters.search": "Search",
+  "student.grades.filters.searchPlaceholder": "Title, subject, unit or topic",
+  "student.grades.filters.apply": "Apply filters",
+  "student.grades.filters.clear": "Clear",
+  "student.grades.kpis.total": "Total grades",
+  "student.grades.kpis.average10": "Overall average /10",
+  "student.grades.kpis.exams": "Graded tests",
+  "student.grades.kpis.assignments": "Graded tasks",
+  "student.grades.charts.byType": "Grade distribution by type",
+  "student.grades.charts.bySubject": "Average by subject (/10)",
+  "student.grades.list.title": "Detail grouped by Unit and Topic",
+  "student.grades.list.backDashboard": "Back to dashboard",
+  "student.grades.grouping.noUnit": "No unit",
+  "student.grades.grouping.noTopic": "No topic",
+  "student.grades.grouping.unit": "Unit",
+  "student.grades.grouping.topic": "Topic",
+  "student.grades.table.date": "Date",
+  "student.grades.table.type": "Type",
+  "student.grades.table.activity": "Activity",
+  "student.grades.table.subject": "Subject",
+  "student.grades.table.grade10": "Grade /10",
+  "student.grades.table.score100": "Score /100",
+  "student.grades.types.content": "Contents",
+  "student.grades.types.exam": "Tests",
+  "student.grades.types.assignment": "Tasks",
+  "student.grades.empty": "There are no grades for the selected filters."
 }
+

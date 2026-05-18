@@ -46,6 +46,7 @@ import StudentRecursoViewer from "@/features/resources/pages/studentRecursoViewe
 import TeacherRecursosPersonales from "@/features/resources/pages/teacherRecursosPersonales";
 import StudentDashboard from "@/features/student/pages/studentDashboard";
 import StudentExamenesPage from "@/features/student/pages/studentExamenes";
+import StudentCalificacionesPage from "@/features/student/pages/studentCalificaciones";
 import StudentTrabajos from "@/features/trabajos/pages/studentTrabajos";
 import StudentTrabajoDetail from "@/features/trabajos/pages/studentTrabajoDetail";
 import Molecules from "@/features/chemistry/pages/molecules";
@@ -186,6 +187,7 @@ function App() {
               <Route path="/student/dashboard" element={<StudentDashboard highContrast={highContrast} />} />
               <Route path="/student/recursos" element={<StudentRecursos />} />
               <Route path="/student/recursos/:recursoId" element={<StudentRecursoViewer />} />
+              <Route path="/student/calificaciones" element={<StudentCalificacionesPage />} />
               <Route path="/student/examenes" element={<StudentExamenesPage />} />
               <Route path="/student/trabajos" element={<StudentTrabajos />} />
               <Route path="/student/trabajos/:trabajoId" element={<StudentTrabajoDetail />} />

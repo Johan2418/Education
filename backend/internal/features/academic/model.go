@@ -263,9 +263,11 @@ type MateriaCalificacionAlumno struct {
 	EstudianteEmail        *string  `json:"estudiante_email,omitempty"`
 	PromedioContenidos10   *float64 `json:"promedio_contenidos_10,omitempty"`
 	PromedioLecciones10    *float64 `json:"promedio_lecciones_10,omitempty"`
+	PromedioPruebas10      *float64 `json:"promedio_pruebas_10,omitempty"`
 	PromedioTrabajos10     *float64 `json:"promedio_trabajos_10,omitempty"`
 	PuntosContenidos       float64  `json:"puntos_contenidos"`
 	PuntosLecciones        float64  `json:"puntos_lecciones"`
+	PuntosPruebas          float64  `json:"puntos_pruebas"`
 	PuntosTrabajos         float64  `json:"puntos_trabajos"`
 	NotaFinal              float64  `json:"nota_final"`
 	EstadoFinal            string   `json:"estado_final"`
@@ -282,6 +284,7 @@ type MateriaCalificacionesResponse struct {
 	AnioEscolar             string                      `json:"anio_escolar"`
 	PesoContenidosPct       float64                     `json:"peso_contenidos_pct"`
 	PesoLeccionesPct        float64                     `json:"peso_lecciones_pct"`
+	PesoPruebasPct          float64                     `json:"peso_pruebas_pct"`
 	PesoTrabajosPct         float64                     `json:"peso_trabajos_pct"`
 	PuntajeTotal            float64                     `json:"puntaje_total"`
 	PuntajeMinimoAprobacion float64                     `json:"puntaje_minimo_aprobacion"`
@@ -295,14 +298,17 @@ type MateriaCalificacionEstudianteResponse struct {
 	AnioEscolar             string   `json:"anio_escolar"`
 	PesoContenidosPct       float64  `json:"peso_contenidos_pct"`
 	PesoLeccionesPct        float64  `json:"peso_lecciones_pct"`
+	PesoPruebasPct          float64  `json:"peso_pruebas_pct"`
 	PesoTrabajosPct         float64  `json:"peso_trabajos_pct"`
 	PuntajeTotal            float64  `json:"puntaje_total"`
 	PuntajeMinimoAprobacion float64  `json:"puntaje_minimo_aprobacion"`
 	PromedioContenidos10    *float64 `json:"promedio_contenidos_10,omitempty"`
 	PromedioLecciones10     *float64 `json:"promedio_lecciones_10,omitempty"`
+	PromedioPruebas10       *float64 `json:"promedio_pruebas_10,omitempty"`
 	PromedioTrabajos10      *float64 `json:"promedio_trabajos_10,omitempty"`
 	PuntosContenidos        float64  `json:"puntos_contenidos"`
 	PuntosLecciones         float64  `json:"puntos_lecciones"`
+	PuntosPruebas           float64  `json:"puntos_pruebas"`
 	PuntosTrabajos          float64  `json:"puntos_trabajos"`
 	NotaFinal               float64  `json:"nota_final"`
 	EstadoFinal             string   `json:"estado_final"`
@@ -310,6 +316,85 @@ type MateriaCalificacionEstudianteResponse struct {
 	ComponentesCompletos    bool     `json:"componentes_completos"`
 	ComponentesCalificados  int      `json:"componentes_calificados"`
 	ComponentesRequeridos   int      `json:"componentes_requeridos"`
+}
+
+type StudentGradeDetailFilters struct {
+	MateriaID *string
+	Tipo      *string
+	UnidadID  *string
+	TemaID    *string
+	Estado    *string
+	Desde     *time.Time
+	Hasta     *time.Time
+	Q         *string
+	Limit     int
+	Offset    int
+}
+
+type StudentGradeDetailItem struct {
+	ID         string    `json:"id"`
+	Tipo       string    `json:"tipo"`
+	Estado     string    `json:"estado"`
+	Fecha      time.Time `json:"fecha"`
+	Titulo     string    `json:"titulo"`
+	MateriaID  *string   `json:"materia_id,omitempty"`
+	Materia    *string   `json:"materia,omitempty"`
+	UnidadID   *string   `json:"unidad_id,omitempty"`
+	Unidad     *string   `json:"unidad,omitempty"`
+	TemaID     *string   `json:"tema_id,omitempty"`
+	Tema       *string   `json:"tema,omitempty"`
+	Referencia string    `json:"referencia_id"`
+	Puntaje100 float64   `json:"puntaje_100"`
+	Nota10     float64   `json:"nota_10"`
+}
+
+type StudentGradeTypeAggregate struct {
+	Tipo        string  `json:"tipo"`
+	Total       int     `json:"total"`
+	Promedio10  float64 `json:"promedio_10"`
+	Promedio100 float64 `json:"promedio_100"`
+}
+
+type StudentGradeMateriaAggregate struct {
+	MateriaID   string  `json:"materia_id"`
+	Materia     string  `json:"materia"`
+	Total       int     `json:"total"`
+	Promedio10  float64 `json:"promedio_10"`
+	Promedio100 float64 `json:"promedio_100"`
+}
+
+type StudentGradeUnidadAggregate struct {
+	UnidadID    string  `json:"unidad_id"`
+	Unidad      string  `json:"unidad"`
+	Total       int     `json:"total"`
+	Promedio10  float64 `json:"promedio_10"`
+	Promedio100 float64 `json:"promedio_100"`
+}
+
+type StudentGradeTemaAggregate struct {
+	TemaID      string  `json:"tema_id"`
+	Tema        string  `json:"tema"`
+	Total       int     `json:"total"`
+	Promedio10  float64 `json:"promedio_10"`
+	Promedio100 float64 `json:"promedio_100"`
+}
+
+type StudentGradeAggregates struct {
+	Total              int                            `json:"total"`
+	PromedioGeneral10  float64                        `json:"promedio_general_10"`
+	PromedioGeneral100 float64                        `json:"promedio_general_100"`
+	PorTipo            []StudentGradeTypeAggregate    `json:"por_tipo"`
+	PorMateria         []StudentGradeMateriaAggregate `json:"por_materia"`
+	PorUnidad          []StudentGradeUnidadAggregate  `json:"por_unidad"`
+	PorTema            []StudentGradeTemaAggregate    `json:"por_tema"`
+}
+
+type StudentGradeDetailResponse struct {
+	Items      []StudentGradeDetailItem `json:"items"`
+	Total      int                      `json:"total"`
+	Limit      int                      `json:"limit"`
+	Offset     int                      `json:"offset"`
+	Aggregates StudentGradeAggregates   `json:"aggregates"`
 }
 
 // ─── Unidad ─────────────────────────────────────────────────
