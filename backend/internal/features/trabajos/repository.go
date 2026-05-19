@@ -61,18 +61,60 @@ func (r *Repository) CreateTrabajo(ctx context.Context, req CreateTrabajoRequest
 func (r *Repository) ListTrabajosByLeccion(ctx context.Context, leccionID string) ([]Trabajo, error) {
 	var items []Trabajo
 	err := r.db.WithContext(ctx).
-		Where("leccion_id = ?", leccionID).
-		Order("created_at DESC").
-		Find(&items).Error
+		Raw(`
+			SELECT
+				tr.*,
+				le.estado::text AS libro_extraccion_estado,
+				CASE
+					WHEN le.trabajo_id IS NULL THEN NULL
+					ELSE (le.confirmado_por IS NOT NULL)
+				END AS libro_extraccion_confirmado,
+				CASE
+					WHEN tr.estado = 'borrador'
+						AND tr.extraido_de_libro = true
+						AND tr.id_extraccion IS NOT NULL
+					THEN (
+						COALESCE(le.estado::text, 'pendiente') <> 'aprobado'
+						OR le.confirmado_por IS NULL
+					)
+					ELSE false
+				END AS libro_revision_manual_pendiente
+			FROM internal.trabajo tr
+			LEFT JOIN internal.libro_extraccion le ON le.id = tr.id_extraccion
+			WHERE tr.leccion_id = ?
+			ORDER BY tr.created_at DESC
+		`, leccionID).
+		Scan(&items).Error
 	return items, err
 }
 
 func (r *Repository) ListTrabajosByMateria(ctx context.Context, materiaID string) ([]Trabajo, error) {
 	var items []Trabajo
 	err := r.db.WithContext(ctx).
-		Where("materia_id = ?", materiaID).
-		Order("created_at DESC").
-		Find(&items).Error
+		Raw(`
+			SELECT
+				tr.*,
+				le.estado::text AS libro_extraccion_estado,
+				CASE
+					WHEN le.trabajo_id IS NULL THEN NULL
+					ELSE (le.confirmado_por IS NOT NULL)
+				END AS libro_extraccion_confirmado,
+				CASE
+					WHEN tr.estado = 'borrador'
+						AND tr.extraido_de_libro = true
+						AND tr.id_extraccion IS NOT NULL
+					THEN (
+						COALESCE(le.estado::text, 'pendiente') <> 'aprobado'
+						OR le.confirmado_por IS NULL
+					)
+					ELSE false
+				END AS libro_revision_manual_pendiente
+			FROM internal.trabajo tr
+			LEFT JOIN internal.libro_extraccion le ON le.id = tr.id_extraccion
+			WHERE tr.materia_id = ?
+			ORDER BY tr.created_at DESC
+		`, materiaID).
+		Scan(&items).Error
 	return items, err
 }
 
@@ -1115,6 +1157,31 @@ func (r *Repository) IsTeacherOfMateria(ctx context.Context, teacherID, materiaI
 		Where("m.id = ? AND c.teacher_id = ?", materiaID, teacherID).
 		Count(&count).Error
 	return count > 0, err
+}
+
+func (r *Repository) ResolveMateriaIDByLeccion(ctx context.Context, leccionID string) (*string, error) {
+	leccionID = strings.TrimSpace(leccionID)
+	if leccionID == "" {
+		return nil, errors.New("leccion_id es requerido")
+	}
+
+	var materiaID string
+	err := r.db.WithContext(ctx).
+		Table("internal.leccion l").
+		Select("m.id").
+		Joins("JOIN internal.tema t ON t.id = l.tema_id").
+		Joins("JOIN internal.unidad u ON u.id = t.unidad_id").
+		Joins("JOIN internal.materia m ON m.id = u.materia_id").
+		Where("l.id = ?", leccionID).
+		Limit(1).
+		Scan(&materiaID).Error
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(materiaID) == "" {
+		return nil, gorm.ErrRecordNotFound
+	}
+	return &materiaID, nil
 }
 
 func (r *Repository) CountEntregasByTrabajo(ctx context.Context, trabajoID string) (int64, error) {

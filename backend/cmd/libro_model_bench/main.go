@@ -159,6 +159,9 @@ func main() {
 	if err != nil {
 		fatal(err.Error())
 	}
+	if err := validateBenchmarkDatasets(analysisData, mcpData); err != nil {
+		fatal(err.Error())
+	}
 
 	report := benchmarkReport{
 		GeneratedAt:         time.Now().UTC(),
@@ -892,4 +895,14 @@ func extractAnyIntPtr(data map[string]interface{}, key string) *int {
 func fatal(message string) {
 	fmt.Fprintln(os.Stderr, message)
 	os.Exit(1)
+}
+
+func validateBenchmarkDatasets(analysisData []analysisSample, mcpData []mcpSample) error {
+	if len(analysisData) == 0 {
+		return errors.New(
+			"analysis dataset is empty (analysis_samples=0). Run `go run ./cmd/libro_dataset_export --out-dir ../qa-reports/libro-datasets` and ensure reviewed extractions are approved and confirmed before benchmarking",
+		)
+	}
+	_ = mcpData
+	return nil
 }

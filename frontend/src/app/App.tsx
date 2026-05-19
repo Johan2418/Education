@@ -28,6 +28,7 @@ import AdminUsers from "@/features/admin/pages/adminUsers";
 import AdminDashboard from "@/features/admin/pages/adminDashboard";
 import AdminModelos from "@/features/admin/pages/adminModelos";
 import AdminCursos from "@/features/admin/pages/adminCursos";
+import AdminCalificacionesPage from "@/features/admin/pages/adminCalificaciones";
 import AdminBulkImport from "@/features/admin/pages/adminBulkImport";
 import AdminBulkEnroll from "@/features/admin/pages/adminBulkEnroll";
 import TeacherEstudiantes from "@/features/teacher/pages/teacherEstudiantes";
@@ -178,6 +179,7 @@ function App() {
               <Route path="/teacher/estudiantes" element={<TeacherEstudiantes />} />
               <Route path="/admin/users" element={<AdminUsers />} />
               <Route path="/admin/dashboard" element={<AdminDashboard highContrast={highContrast} />} />
+              <Route path="/admin/calificaciones" element={<AdminCalificacionesPage />} />
               <Route path="/admin/modelos" element={<AdminModelos />} />
               <Route path="/admin/cursos" element={<AdminCursos />} />
               <Route path="/admin/bulk-import" element={<AdminBulkImport />} />

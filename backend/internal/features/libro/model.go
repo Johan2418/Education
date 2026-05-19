@@ -131,9 +131,16 @@ type ExtractLibroRequest struct {
 	PaginaFin         *int                         `json:"pagina_fin"`
 	Idioma            string                       `json:"idioma"`
 	MaxPreguntas      *int                         `json:"max_preguntas"`
+	ModoFormulario    *string                      `json:"modo_formulario,omitempty"`
 	ImagenesPorPagina map[string]string            `json:"imagenes_por_pagina"`
 	ImagenesMetadata  map[string]PdfPaginaMetadata `json:"imagenes_metadata_por_pagina"`
 }
+
+const (
+	ModoFormularioAbierto     = "abierto"
+	ModoFormularioCerradoAuto = "cerrado_auto"
+	ModoFormularioMixtoAuto   = "mixto_auto"
+)
 
 type PdfTextoRegion struct {
 	Texto  string  `json:"texto"`
@@ -189,11 +196,11 @@ type LibroPageGroupSummary struct {
 }
 
 type ExtractLibroResponse struct {
-	Extraccion     *LibroExtraccion  `json:"extraccion"`
-	Preguntas      []TrabajoPregunta `json:"preguntas"`
+	Extraccion     *LibroExtraccion        `json:"extraccion"`
+	Preguntas      []TrabajoPregunta       `json:"preguntas"`
 	PageGroups     []LibroPageGroupSummary `json:"page_groups,omitempty"`
-	Reutilizado    bool              `json:"reutilizado"`
-	LibroRecursoID *string           `json:"libro_recurso_id,omitempty"`
+	Reutilizado    bool                    `json:"reutilizado"`
+	LibroRecursoID *string                 `json:"libro_recurso_id,omitempty"`
 }
 
 type ConfirmarLibroResponse struct {
@@ -225,28 +232,35 @@ const (
 )
 
 type ExtractLibroAsyncResponse struct {
-	JobID     string              `json:"job_id"`
-	TrabajoID string              `json:"trabajo_id"`
-	Estado    EstadoExtraccionJob `json:"estado"`
-	Progress  int                 `json:"progress"`
-	Message   string              `json:"message"`
+	JobID          string              `json:"job_id"`
+	TrabajoID      string              `json:"trabajo_id"`
+	Estado         EstadoExtraccionJob `json:"estado"`
+	Progress       int                 `json:"progress"`
+	Message        string              `json:"message"`
+	QueuedAt       time.Time           `json:"queued_at"`
+	QueueDepthPeak int                 `json:"queue_depth_peak"`
 }
 
 type LibroExtractJobStatusResponse struct {
-	JobID        string                `json:"job_id"`
-	TrabajoID    string                `json:"trabajo_id"`
-	Estado       EstadoExtraccionJob   `json:"estado"`
-	Progress     int                   `json:"progress"`
-	Message      string                `json:"message"`
-	Error        *string               `json:"error,omitempty"`
-	ErrorType    *string               `json:"error_type,omitempty"`
-	ErrorMessage *string               `json:"error_message,omitempty"`
-	StartedAt    time.Time             `json:"started_at"`
-	UpdatedAt    time.Time             `json:"updated_at"`
-	CompletedAt  *time.Time            `json:"completed_at,omitempty"`
-	FailedAt     *time.Time            `json:"failed_at,omitempty"`
-	DurationMs   int64                 `json:"duration_ms"`
-	Result       *ExtractLibroResponse `json:"result,omitempty"`
+	JobID          string                `json:"job_id"`
+	TrabajoID      string                `json:"trabajo_id"`
+	Estado         EstadoExtraccionJob   `json:"estado"`
+	Progress       int                   `json:"progress"`
+	Message        string                `json:"message"`
+	Error          *string               `json:"error,omitempty"`
+	ErrorType      *string               `json:"error_type,omitempty"`
+	ErrorMessage   *string               `json:"error_message,omitempty"`
+	QueuedAt       time.Time             `json:"queued_at"`
+	StartedAt      *time.Time            `json:"started_at,omitempty"`
+	UpdatedAt      time.Time             `json:"updated_at"`
+	CompletedAt    *time.Time            `json:"completed_at,omitempty"`
+	FailedAt       *time.Time            `json:"failed_at,omitempty"`
+	WaitMs         int64                 `json:"wait_ms"`
+	RunMs          int64                 `json:"run_ms"`
+	DurationMs     int64                 `json:"duration_ms"`
+	TotalMs        int64                 `json:"total_ms"`
+	QueueDepthPeak int                   `json:"queue_depth_peak"`
+	Result         *ExtractLibroResponse `json:"result,omitempty"`
 }
 
 type LibroRecursoListQuery struct {
@@ -426,17 +440,17 @@ type LibroChatReportResponse struct {
 }
 
 type LibroChatSendMessageResponse struct {
-	SessionID    string        `json:"session_id"`
-	RecursoID    string        `json:"recurso_id"`
-	UserMessage  string        `json:"user_message"`
-	Answer       string        `json:"answer"`
-	Model        *string       `json:"model,omitempty"`
-	UsedFallback bool          `json:"used_fallback"`
-	LatencyMs    int64         `json:"latency_ms"`
-	ToolCalls    []MCPToolCall `json:"tool_calls"`
-	PolicyMode   string        `json:"policy_mode,omitempty"`
-	GuardrailApplied bool      `json:"guardrail_applied"`
-	GuardrailReason  *string   `json:"guardrail_reason,omitempty"`
+	SessionID        string        `json:"session_id"`
+	RecursoID        string        `json:"recurso_id"`
+	UserMessage      string        `json:"user_message"`
+	Answer           string        `json:"answer"`
+	Model            *string       `json:"model,omitempty"`
+	UsedFallback     bool          `json:"used_fallback"`
+	LatencyMs        int64         `json:"latency_ms"`
+	ToolCalls        []MCPToolCall `json:"tool_calls"`
+	PolicyMode       string        `json:"policy_mode,omitempty"`
+	GuardrailApplied bool          `json:"guardrail_applied"`
+	GuardrailReason  *string       `json:"guardrail_reason,omitempty"`
 }
 
 type LibroChatFeedbackRequest struct {

@@ -159,7 +159,7 @@ func exportAnalysisRows(db *gorm.DB, since time.Time, limit int, evalPercent int
 	query := db.
 		Table("internal.libro_extraccion").
 		Select("trabajo_id, libro_recurso_id, snapshots, updated_at").
-		Where("updated_at >= ? AND snapshots IS NOT NULL AND snapshots::text <> '{}'", since).
+		Where("updated_at >= ? AND estado::text = 'aprobado' AND confirmado_por IS NOT NULL AND snapshots IS NOT NULL AND snapshots::text <> '{}'", since).
 		Order("updated_at DESC")
 	if limit > 0 {
 		query = query.Limit(limit)

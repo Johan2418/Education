@@ -1,5 +1,12 @@
 export const API_BASE_URL = (import.meta.env.VITE_API_URL ?? "").trim() || "http://localhost:9082";
 const REQUEST_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+
+export interface ApiRequestOptions {
+  timeoutMs?: number;
+  retryOnAbort?: number;
+  retryDelayMs?: number;
+}
+
 const STORAGE_KEYS = {
   accessToken: "access_token",
   refreshToken: "refresh_token",
@@ -188,10 +195,31 @@ function withAuthHeaders(headers: HeadersInit = {}): Headers {
   return merged;
 }
 
-async function doFetch(path: string, options: RequestInit = {}, retryOn401 = true): Promise<Response> {
+function isAbortLikeError(err: unknown): boolean {
+  if (typeof err !== "object" || err === null) return false;
+  const maybe = err as { name?: unknown; message?: unknown };
+  if (typeof maybe.name === "string" && maybe.name === "AbortError") return true;
+  if (typeof maybe.message === "string" && maybe.message.toLowerCase().includes("aborted")) return true;
+  return false;
+}
+
+function wait(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function doFetch(
+  path: string,
+  options: RequestInit = {},
+  retryOn401 = true,
+  requestOptions?: ApiRequestOptions,
+  abortAttempt: number = 0,
+): Promise<Response> {
   const targetUrl = /^https?:\/\//i.test(path) ? path : `${API_BASE_URL}${path}`;
+  const timeoutMs = Math.max(1_000, requestOptions?.timeoutMs ?? REQUEST_TIMEOUT_MS);
+  const retryOnAbort = Math.max(0, requestOptions?.retryOnAbort ?? 0);
+  const retryDelayMs = Math.max(100, requestOptions?.retryDelayMs ?? 450);
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
     const res = await fetch(targetUrl, {
@@ -203,23 +231,35 @@ async function doFetch(path: string, options: RequestInit = {}, retryOn401 = tru
     if (res.status === 401 && retryOn401 && getRefreshToken()) {
       const refreshed = await ensureRefreshed();
       if (refreshed) {
-        return doFetch(path, options, false);
+        return doFetch(path, options, false, requestOptions, abortAttempt);
       }
     }
 
     return res;
+  } catch (err) {
+    if (isAbortLikeError(err) && abortAttempt < retryOnAbort) {
+      console.warn("[api] request timeout, retrying", {
+        path: targetUrl,
+        attempt: abortAttempt + 1,
+        maxRetries: retryOnAbort,
+        timeoutMs,
+      });
+      await wait(retryDelayMs * (abortAttempt + 1));
+      return doFetch(path, options, retryOn401, requestOptions, abortAttempt + 1);
+    }
+    throw err;
   } finally {
     clearTimeout(timeoutId);
   }
 }
 
-async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
+async function request<T>(path: string, options: RequestInit = {}, requestOptions?: ApiRequestOptions): Promise<T> {
   const headers = new Headers(options.headers ?? {});
   if (!headers.has("Content-Type") && options.body && !(options.body instanceof FormData)) {
     headers.set("Content-Type", "application/json");
   }
 
-  const res = await doFetch(path, { ...options, headers });
+  const res = await doFetch(path, { ...options, headers }, true, requestOptions);
 
   if (!res.ok) {
     throw await parseApiError(res);
@@ -248,14 +288,14 @@ export function isAuthenticated(): boolean {
 }
 
 export const api = {
-  get: <T>(path: string) => request<T>(path),
-  post: <T>(path: string, body?: unknown) =>
-    request<T>(path, { method: "POST", body: body ? JSON.stringify(body) : undefined }),
-  put: <T>(path: string, body?: unknown) =>
-    request<T>(path, { method: "PUT", body: body ? JSON.stringify(body) : undefined }),
-  patch: <T>(path: string, body?: unknown) =>
-    request<T>(path, { method: "PATCH", body: body ? JSON.stringify(body) : undefined }),
-  delete: <T>(path: string) => request<T>(path, { method: "DELETE" }),
+  get: <T>(path: string, requestOptions?: ApiRequestOptions) => request<T>(path, {}, requestOptions),
+  post: <T>(path: string, body?: unknown, requestOptions?: ApiRequestOptions) =>
+    request<T>(path, { method: "POST", body: body ? JSON.stringify(body) : undefined }, requestOptions),
+  put: <T>(path: string, body?: unknown, requestOptions?: ApiRequestOptions) =>
+    request<T>(path, { method: "PUT", body: body ? JSON.stringify(body) : undefined }, requestOptions),
+  patch: <T>(path: string, body?: unknown, requestOptions?: ApiRequestOptions) =>
+    request<T>(path, { method: "PATCH", body: body ? JSON.stringify(body) : undefined }, requestOptions),
+  delete: <T>(path: string, requestOptions?: ApiRequestOptions) => request<T>(path, { method: "DELETE" }, requestOptions),
 };
 
 export function isMissingRouteError(err: unknown): boolean {

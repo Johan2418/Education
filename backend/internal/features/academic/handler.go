@@ -2,6 +2,7 @@ package academic
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -380,72 +381,35 @@ func (h *Handler) ListCalificacionesDetalleDocente(w http.ResponseWriter, r *htt
 		return
 	}
 
-	query := r.URL.Query()
-	filter := TeacherGradeDetailFilters{}
-
-	if cursoID := strings.TrimSpace(query.Get("curso_id")); cursoID != "" {
-		filter.CursoID = &cursoID
-	}
-	if materiaID := strings.TrimSpace(query.Get("materia_id")); materiaID != "" {
-		filter.MateriaID = &materiaID
-	}
-	if estudianteID := strings.TrimSpace(query.Get("estudiante_id")); estudianteID != "" {
-		filter.EstudianteID = &estudianteID
+	filter, err := parseTeacherGradeDetailFilters(r)
+	if err != nil {
+		shared.Error(w, http.StatusBadRequest, err.Error())
+		return
 	}
 
-	tipo := strings.TrimSpace(query.Get("tipo"))
-	if tipo == "" {
-		tipo = strings.TrimSpace(query.Get("type"))
+	item, err := h.svc.ListCalificacionesDetalleDocente(r.Context(), claims.Subject, claims.UserRole, filter)
+	if err != nil {
+		shared.Error(w, mapAcademicStatus(err), err.Error())
+		return
 	}
-	if tipo != "" {
-		filter.Tipo = &tipo
+	shared.Success(w, item)
+}
+
+func (h *Handler) ListCalificacionesDetalleAdmin(w http.ResponseWriter, r *http.Request) {
+	claims := middleware.GetClaims(r.Context())
+	if claims == nil {
+		shared.Error(w, http.StatusUnauthorized, "No autenticado")
+		return
+	}
+	if !isAdminRole(claims.UserRole) {
+		shared.Error(w, http.StatusForbidden, "No autorizado")
+		return
 	}
 
-	if estado := strings.TrimSpace(query.Get("estado")); estado != "" {
-		filter.Estado = &estado
-	}
-	if unidadID := strings.TrimSpace(query.Get("unidad_id")); unidadID != "" {
-		filter.UnidadID = &unidadID
-	}
-	if temaID := strings.TrimSpace(query.Get("tema_id")); temaID != "" {
-		filter.TemaID = &temaID
-	}
-	if search := strings.TrimSpace(query.Get("q")); search != "" {
-		filter.Q = &search
-	}
-
-	if rawDesde := strings.TrimSpace(query.Get("desde")); rawDesde != "" {
-		desde, err := parseDateQuery(rawDesde, false)
-		if err != nil {
-			shared.Error(w, http.StatusBadRequest, "desde invalido. Usa RFC3339 o YYYY-MM-DD")
-			return
-		}
-		filter.Desde = &desde
-	}
-	if rawHasta := strings.TrimSpace(query.Get("hasta")); rawHasta != "" {
-		hasta, err := parseDateQuery(rawHasta, true)
-		if err != nil {
-			shared.Error(w, http.StatusBadRequest, "hasta invalido. Usa RFC3339 o YYYY-MM-DD")
-			return
-		}
-		filter.Hasta = &hasta
-	}
-
-	if rawLimit := strings.TrimSpace(query.Get("limit")); rawLimit != "" {
-		limit, err := strconv.Atoi(rawLimit)
-		if err != nil {
-			shared.Error(w, http.StatusBadRequest, "limit invalido")
-			return
-		}
-		filter.Limit = limit
-	}
-	if rawOffset := strings.TrimSpace(query.Get("offset")); rawOffset != "" {
-		offset, err := strconv.Atoi(rawOffset)
-		if err != nil {
-			shared.Error(w, http.StatusBadRequest, "offset invalido")
-			return
-		}
-		filter.Offset = offset
+	filter, err := parseTeacherGradeDetailFilters(r)
+	if err != nil {
+		shared.Error(w, http.StatusBadRequest, err.Error())
+		return
 	}
 
 	item, err := h.svc.ListCalificacionesDetalleDocente(r.Context(), claims.Subject, claims.UserRole, filter)
@@ -1473,6 +1437,77 @@ func resolveDocenteTarget(claims *jwtpkg.Claims, r *http.Request) (string, bool)
 
 func isAdminRole(role string) bool {
 	return role == "admin" || role == "super_admin"
+}
+
+func parseTeacherGradeDetailFilters(r *http.Request) (TeacherGradeDetailFilters, error) {
+	query := r.URL.Query()
+	filter := TeacherGradeDetailFilters{}
+
+	if anioEscolar := strings.TrimSpace(query.Get("anio_escolar")); anioEscolar != "" {
+		filter.AnioEscolar = &anioEscolar
+	}
+	if cursoID := strings.TrimSpace(query.Get("curso_id")); cursoID != "" {
+		filter.CursoID = &cursoID
+	}
+	if materiaID := strings.TrimSpace(query.Get("materia_id")); materiaID != "" {
+		filter.MateriaID = &materiaID
+	}
+	if estudianteID := strings.TrimSpace(query.Get("estudiante_id")); estudianteID != "" {
+		filter.EstudianteID = &estudianteID
+	}
+
+	tipo := strings.TrimSpace(query.Get("tipo"))
+	if tipo == "" {
+		tipo = strings.TrimSpace(query.Get("type"))
+	}
+	if tipo != "" {
+		filter.Tipo = &tipo
+	}
+
+	if estado := strings.TrimSpace(query.Get("estado")); estado != "" {
+		filter.Estado = &estado
+	}
+	if unidadID := strings.TrimSpace(query.Get("unidad_id")); unidadID != "" {
+		filter.UnidadID = &unidadID
+	}
+	if temaID := strings.TrimSpace(query.Get("tema_id")); temaID != "" {
+		filter.TemaID = &temaID
+	}
+	if search := strings.TrimSpace(query.Get("q")); search != "" {
+		filter.Q = &search
+	}
+
+	if rawDesde := strings.TrimSpace(query.Get("desde")); rawDesde != "" {
+		desde, err := parseDateQuery(rawDesde, false)
+		if err != nil {
+			return TeacherGradeDetailFilters{}, errors.New("desde invalido. Usa RFC3339 o YYYY-MM-DD")
+		}
+		filter.Desde = &desde
+	}
+	if rawHasta := strings.TrimSpace(query.Get("hasta")); rawHasta != "" {
+		hasta, err := parseDateQuery(rawHasta, true)
+		if err != nil {
+			return TeacherGradeDetailFilters{}, errors.New("hasta invalido. Usa RFC3339 o YYYY-MM-DD")
+		}
+		filter.Hasta = &hasta
+	}
+
+	if rawLimit := strings.TrimSpace(query.Get("limit")); rawLimit != "" {
+		limit, err := strconv.Atoi(rawLimit)
+		if err != nil {
+			return TeacherGradeDetailFilters{}, errors.New("limit invalido")
+		}
+		filter.Limit = limit
+	}
+	if rawOffset := strings.TrimSpace(query.Get("offset")); rawOffset != "" {
+		offset, err := strconv.Atoi(rawOffset)
+		if err != nil {
+			return TeacherGradeDetailFilters{}, errors.New("offset invalido")
+		}
+		filter.Offset = offset
+	}
+
+	return filter, nil
 }
 
 func mapAcademicStatus(err error) int {

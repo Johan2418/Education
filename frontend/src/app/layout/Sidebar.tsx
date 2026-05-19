@@ -331,6 +331,12 @@ const Sidebar: FC<SidebarProps> = ({
             <>
               <SectionLabel label={hook.t("sidebar.administration")} />
               <SidebarItem onClick={() => hook.navigate("/admin/dashboard")} icon={LayoutDashboard} label={hook.t("admin.dashboard.title")} iconSize={16} />
+              <SidebarItem
+                onClick={() => hook.navigate("/admin/calificaciones")}
+                icon={BarChart3}
+                label={hook.t("admin.grades.title", { defaultValue: "Calificaciones" })}
+                iconSize={16}
+              />
               <SidebarItem onClick={() => hook.navigate("/admin/users")} icon={PersonStanding} label={hook.t("admin.users.title")} iconSize={16} />
               <SidebarItem onClick={() => hook.navigate("/admin/cursos")} icon={BookOpenText} label={hook.t("admin.cursos.title", { defaultValue: "Cursos" })} iconSize={16} />
               <SidebarItem onClick={() => hook.navigate("/admin/bulk-import")} icon={FileSpreadsheet} label={hook.t("sidebar.createAccountsBulk")} iconSize={16} />

@@ -28,8 +28,31 @@ func NewService(repo *Repository, notifier *notifications.Service, gradesHub *re
 }
 
 func (s *Service) CreateTrabajo(ctx context.Context, req CreateTrabajoRequest, userID, userRole string) (*Trabajo, error) {
-	if req.MateriaID == nil || strings.TrimSpace(req.Titulo) == "" {
-		return nil, errors.New("materia_id y titulo son requeridos")
+	req.Titulo = strings.TrimSpace(req.Titulo)
+	if req.Titulo == "" {
+		return nil, errors.New("titulo es requerido")
+	}
+
+	if req.MateriaID != nil {
+		req.MateriaID = trimOptionalText(req.MateriaID)
+	}
+	if req.MateriaID == nil && req.LeccionID != nil {
+		req.LeccionID = trimOptionalText(req.LeccionID)
+	}
+
+	if req.MateriaID == nil && req.LeccionID != nil {
+		resolvedMateriaID, err := s.repo.ResolveMateriaIDByLeccion(ctx, *req.LeccionID)
+		if err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil, errors.New("materia_id requerido o leccion_id invalido")
+			}
+			return nil, err
+		}
+		req.MateriaID = resolvedMateriaID
+	}
+
+	if req.MateriaID == nil {
+		return nil, errors.New("materia_id requerido o leccion_id invalido")
 	}
 	if req.NotaMaxima != nil && *req.NotaMaxima <= 0 {
 		return nil, errors.New("nota_maxima debe ser > 0")

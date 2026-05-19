@@ -81,3 +81,111 @@ func TestLoadLibroModelConfigOverrides(t *testing.T) {
 		t.Fatalf("unexpected benchmark batch id: %q", cfg.LibroModel.BenchmarkBatchID)
 	}
 }
+
+func TestLoadLibroAsyncConfigDefaults(t *testing.T) {
+	setRequiredEnv(t)
+	t.Setenv("LIBRO_EXTRACT_WORKERS", "")
+	t.Setenv("LIBRO_EXTRACT_QUEUE_SIZE", "")
+	t.Setenv("LIBRO_EXTRACT_JOB_TTL_MINUTES", "")
+
+	cfg := Load()
+
+	if cfg.LibroAsync.ExtractWorkers != 2 {
+		t.Fatalf("unexpected default extract workers: %d", cfg.LibroAsync.ExtractWorkers)
+	}
+	if cfg.LibroAsync.ExtractQueueSize != 100 {
+		t.Fatalf("unexpected default extract queue size: %d", cfg.LibroAsync.ExtractQueueSize)
+	}
+	if cfg.LibroAsync.ExtractJobTTLMinutes != 60 {
+		t.Fatalf("unexpected default extract job ttl: %d", cfg.LibroAsync.ExtractJobTTLMinutes)
+	}
+}
+
+func TestLoadLibroAsyncConfigOverrides(t *testing.T) {
+	setRequiredEnv(t)
+	t.Setenv("LIBRO_EXTRACT_WORKERS", "4")
+	t.Setenv("LIBRO_EXTRACT_QUEUE_SIZE", "240")
+	t.Setenv("LIBRO_EXTRACT_JOB_TTL_MINUTES", "90")
+
+	cfg := Load()
+
+	if cfg.LibroAsync.ExtractWorkers != 4 {
+		t.Fatalf("unexpected extract workers override: %d", cfg.LibroAsync.ExtractWorkers)
+	}
+	if cfg.LibroAsync.ExtractQueueSize != 240 {
+		t.Fatalf("unexpected extract queue size override: %d", cfg.LibroAsync.ExtractQueueSize)
+	}
+	if cfg.LibroAsync.ExtractJobTTLMinutes != 90 {
+		t.Fatalf("unexpected extract job ttl override: %d", cfg.LibroAsync.ExtractJobTTLMinutes)
+	}
+}
+
+func TestLoadLibroExtractionConfigDefaults(t *testing.T) {
+	setRequiredEnv(t)
+	t.Setenv("LIBRO_IA_MIN_CONFIDENCE", "")
+	t.Setenv("LIBRO_IA_MIN_CLOSED_CONFIDENCE", "")
+	t.Setenv("LIBRO_IA_MIN_SHORT_FIDELITY", "")
+	t.Setenv("LIBRO_IA_MIN_LONG_FIDELITY", "")
+	t.Setenv("LIBRO_IA_MIN_QUESTION_CHARS", "")
+	t.Setenv("LIBRO_IA_MIN_QUESTION_TOKENS", "")
+	t.Setenv("LIBRO_IA_HEURISTIC_SENTENCE_MIN_CHARS", "")
+
+	cfg := Load()
+	extract := cfg.LibroIA.LibroExtraction
+
+	if extract.MinConfidence != 0.55 {
+		t.Fatalf("unexpected default min confidence: %.2f", extract.MinConfidence)
+	}
+	if extract.MinClosedConfidence != 0.72 {
+		t.Fatalf("unexpected default min closed confidence: %.2f", extract.MinClosedConfidence)
+	}
+	if extract.ShortFidelityMin != 0.72 {
+		t.Fatalf("unexpected default short fidelity: %.2f", extract.ShortFidelityMin)
+	}
+	if extract.LongFidelityMin != 0.78 {
+		t.Fatalf("unexpected default long fidelity: %.2f", extract.LongFidelityMin)
+	}
+	if extract.MinQuestionChars != 20 {
+		t.Fatalf("unexpected default min chars: %d", extract.MinQuestionChars)
+	}
+	if extract.MinQuestionTokens != 4 {
+		t.Fatalf("unexpected default min tokens: %d", extract.MinQuestionTokens)
+	}
+	if extract.HeuristicSentenceMinChars != 28 {
+		t.Fatalf("unexpected default heuristic sentence min chars: %d", extract.HeuristicSentenceMinChars)
+	}
+}
+
+func TestLoadLibroExtractionConfigProfileFallbackAndOverrides(t *testing.T) {
+	setRequiredEnv(t)
+	t.Setenv("LIBRO_IA_MIN_CONFIDENCE", "0.61")
+	t.Setenv("LIBRO_IA_MIN_CLOSED_CONFIDENCE", "0.79")
+	t.Setenv("LIBRO_IA_MIN_SHORT_FIDELITY", "0.80")
+	t.Setenv("LIBRO_IA_MIN_LONG_FIDELITY", "0.83")
+	t.Setenv("LIBRO_IA_MIN_QUESTION_CHARS", "26")
+	t.Setenv("LIBRO_IA_MIN_QUESTION_TOKENS", "5")
+	t.Setenv("LIBRO_IA_HEURISTIC_SENTENCE_MIN_CHARS", "34")
+	t.Setenv("LIBRO_ANALYSIS_MIN_CONFIDENCE", "0.67")
+	t.Setenv("LIBRO_ANALYSIS_MIN_CLOSED_CONFIDENCE", "0.81")
+
+	cfg := Load()
+
+	if cfg.LibroAnalysis.LibroExtraction.MinConfidence != 0.67 {
+		t.Fatalf("expected analysis min confidence override, got %.2f", cfg.LibroAnalysis.LibroExtraction.MinConfidence)
+	}
+	if cfg.LibroAnalysis.LibroExtraction.MinClosedConfidence != 0.81 {
+		t.Fatalf("expected analysis min closed confidence override, got %.2f", cfg.LibroAnalysis.LibroExtraction.MinClosedConfidence)
+	}
+	if cfg.LibroAnalysis.LibroExtraction.MinQuestionChars != 26 {
+		t.Fatalf("expected analysis min chars to inherit LIBRO_IA, got %d", cfg.LibroAnalysis.LibroExtraction.MinQuestionChars)
+	}
+	if cfg.LibroMCP.LibroExtraction.MinQuestionTokens != 5 {
+		t.Fatalf("expected MCP min tokens to inherit LIBRO_IA, got %d", cfg.LibroMCP.LibroExtraction.MinQuestionTokens)
+	}
+	if cfg.LibroMCP.LibroExtraction.MinClosedConfidence != 0.79 {
+		t.Fatalf("expected MCP min closed confidence to inherit LIBRO_IA, got %.2f", cfg.LibroMCP.LibroExtraction.MinClosedConfidence)
+	}
+	if cfg.LibroMCP.LibroExtraction.HeuristicSentenceMinChars != 34 {
+		t.Fatalf("expected MCP heuristic sentence min chars to inherit LIBRO_IA, got %d", cfg.LibroMCP.LibroExtraction.HeuristicSentenceMinChars)
+	}
+}

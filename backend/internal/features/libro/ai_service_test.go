@@ -1,9 +1,12 @@
 package libro
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 	"testing"
+
+	"github.com/arcanea/backend/internal/config"
 )
 
 func TestSplitContentByPageMarkersProcessesAllPages(t *testing.T) {
@@ -100,6 +103,7 @@ func TestParseModelQuestionsPayloadToleratesStringNumbers(t *testing.T) {
 			"texto": "¿Qué es la fotosíntesis?",
 			"tipo": "definicion",
 			"opciones": [],
+			"respuesta_correcta": "",
 			"pagina_libro": "12",
 			"confianza_ia": "0.91",
 			"respuesta_esperada_tipo": "abierta",
@@ -119,5 +123,175 @@ func TestParseModelQuestionsPayloadToleratesStringNumbers(t *testing.T) {
 	}
 	if items[0].ConfianzaIA == nil || *items[0].ConfianzaIA <= 0 {
 		t.Fatalf("expected confianza_ia parsed, got %+v", items[0].ConfianzaIA)
+	}
+}
+
+func TestIsLikelyEvaluableQuestionTextRejectsNoiseHeadings(t *testing.T) {
+	ai := NewAIService(config.HuggingFaceConfig{})
+	if ai.isLikelyEvaluableQuestionText("Pelicula: Noticia: Web:") {
+		t.Fatalf("expected non-evaluable heading block to be rejected")
+	}
+}
+
+func TestIsLikelyEvaluableQuestionTextAcceptsExercisePrompt(t *testing.T) {
+	ai := NewAIService(config.HuggingFaceConfig{})
+	text := "Lee la noticia anterior y responde: ¿Que es el microquimerismo?"
+	if !ai.isLikelyEvaluableQuestionText(text) {
+		t.Fatalf("expected evaluable prompt to pass filtering")
+	}
+}
+
+func TestPassesConfidenceThresholdUsesConfiguredMinimum(t *testing.T) {
+	ai := NewAIService(config.HuggingFaceConfig{
+		LibroExtraction: config.LibroExtractionConfig{MinConfidence: 0.8},
+	})
+	low := 0.61
+	high := 0.87
+
+	if ai.passesConfidenceThreshold(&low) {
+		t.Fatalf("expected low confidence question to be filtered out")
+	}
+	if !ai.passesConfidenceThreshold(&high) {
+		t.Fatalf("expected high confidence question to pass")
+	}
+	if !ai.passesConfidenceThreshold(nil) {
+		t.Fatalf("expected nil confidence to pass (backward compatibility)")
+	}
+}
+
+func TestIsFaithfulQuestionTextHonorsConfiguredThresholds(t *testing.T) {
+	ai := NewAIService(config.HuggingFaceConfig{
+		LibroExtraction: config.LibroExtractionConfig{
+			ShortFidelityMin: 0.9,
+			LongFidelityMin:  0.9,
+		},
+	})
+	source := "La mitosis tiene cuatro fases: profase, metafase, anafase y telofase."
+	question := "Menciona tres fases de la mitosis."
+	if ai.isFaithfulQuestionText(question, source) {
+		t.Fatalf("expected strict fidelity thresholds to reject partial paraphrase")
+	}
+}
+
+func TestHeuristicExtractSkipsPureTheoryContent(t *testing.T) {
+	content := "Genoma y dotacion cromosomica. Esta informacion se localiza en un numero fijo de cromosomas."
+	got := heuristicExtract(content, 5, nil, 20, 4, 28)
+	if len(got) != 0 {
+		t.Fatalf("expected no heuristic questions for pure theory content, got %d", len(got))
+	}
+}
+
+func TestExtractQuestionCandidatesFromInlineMarkersDetectsFlattenedNumberedItems(t *testing.T) {
+	content := "Autoevaluacion 1. Explica la funcion del ADN en la herencia biologica 2. Describe dos diferencias entre ADN y ARN 3. Justifica por que los genes influyen en los rasgos"
+	got := extractQuestionCandidatesFromInlineMarkers(content, 20, 4)
+	if len(got) < 2 {
+		t.Fatalf("expected at least 2 inline candidates, got %d", len(got))
+	}
+}
+
+func TestHeuristicExtractDetectsFlattenedNumberedItems(t *testing.T) {
+	content := "1. Explica la funcion del ADN en la herencia biologica 2. Describe dos diferencias entre ADN y ARN 3. Justifica por que los genes influyen en los rasgos"
+	got := heuristicExtract(content, 5, nil, 20, 4, 28)
+	if len(got) < 2 {
+		t.Fatalf("expected heuristic extraction to recover multiple numbered items, got %d", len(got))
+	}
+}
+
+func TestParseModelQuestionsPayloadParsesRespuestaCorrecta(t *testing.T) {
+	raw := `[
+		{
+			"texto": "La mitosis tiene fases. ¿Cuál es la fase final?",
+			"tipo": "opcion_multiple",
+			"opciones": ["Profase","Metafase","Anafase","Telofase"],
+			"respuesta_correcta": "d",
+			"pagina_libro": 8,
+			"confianza_ia": 0.92
+		}
+	]`
+
+	items, err := parseModelQuestionsPayload(raw)
+	if err != nil {
+		t.Fatalf("unexpected parse error: %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("expected 1 item, got %d", len(items))
+	}
+	if items[0].RespuestaCorrecta == nil || strings.TrimSpace(*items[0].RespuestaCorrecta) != "d" {
+		t.Fatalf("expected respuesta_correcta=d, got %+v", items[0].RespuestaCorrecta)
+	}
+}
+
+func TestNormalizeQuestionFormByModeFallsBackToOpenWhenClosedIsInvalid(t *testing.T) {
+	options := json.RawMessage(`["A","B"]`)
+	confLow := 0.51
+	answer := "A"
+
+	tipo, opts, correct := normalizeQuestionFormByMode(
+		"opcion_multiple",
+		options,
+		&answer,
+		&confLow,
+		ModoFormularioMixtoAuto,
+		0.72,
+	)
+
+	if tipo != "respuesta_corta" {
+		t.Fatalf("expected fallback to respuesta_corta, got %q", tipo)
+	}
+	if string(opts) != "[]" {
+		t.Fatalf("expected empty options in fallback, got %s", string(opts))
+	}
+	if correct != nil {
+		t.Fatalf("expected nil correct answer in fallback, got %+v", correct)
+	}
+}
+
+func TestNormalizeQuestionFormByModeKeepsValidClosedQuestion(t *testing.T) {
+	options := json.RawMessage(`["Procariota","Eucariota"]`)
+	answer := "2"
+	conf := 0.91
+
+	tipo, opts, correct := normalizeQuestionFormByMode(
+		"opcion_multiple",
+		options,
+		&answer,
+		&conf,
+		ModoFormularioMixtoAuto,
+		0.72,
+	)
+
+	if tipo != "opcion_multiple" {
+		t.Fatalf("expected opcion_multiple, got %q", tipo)
+	}
+	if string(opts) == "[]" {
+		t.Fatalf("expected normalized options")
+	}
+	if correct == nil || *correct != "Eucariota" {
+		t.Fatalf("expected resolved correct answer Eucariota, got %+v", correct)
+	}
+}
+
+func TestNormalizeQuestionFormByModeFallsBackWhenClosedAnswerDoesNotMatchOptions(t *testing.T) {
+	options := json.RawMessage(`["Núcleo","Citoplasma"]`)
+	answer := "Mitocondria"
+	conf := 0.95
+
+	tipo, opts, correct := normalizeQuestionFormByMode(
+		"opcion_multiple",
+		options,
+		&answer,
+		&conf,
+		ModoFormularioMixtoAuto,
+		0.72,
+	)
+
+	if tipo != "respuesta_corta" {
+		t.Fatalf("expected fallback to respuesta_corta, got %q", tipo)
+	}
+	if string(opts) != "[]" {
+		t.Fatalf("expected empty options on fallback, got %s", string(opts))
+	}
+	if correct != nil {
+		t.Fatalf("expected nil correct answer on fallback, got %+v", correct)
 	}
 }

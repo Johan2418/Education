@@ -7,6 +7,9 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "test:libro-heuristica": "node scripts/test-libro-heuristica.mjs",
+    "qa:libro:batch": "node scripts/benchmark-libro-batch.mjs",
+    "qa:libro:smoke": "node scripts/benchmark-libro-batch.mjs --mode=smoke",
+    "qa:libro:stress": "node scripts/benchmark-libro-batch.mjs --mode=stress --repeat=8 --concurrency=4 --max-pages=0 --max-preguntas=0 --timeout=420000",
     "lint": "eslint .",
     "preview": "vite preview"
   },

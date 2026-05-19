@@ -25,7 +25,7 @@ const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 const ROLE_HELP: Record<UserRole, string> = {
   student: "Puede acceder al contenido y completar actividades.",
-  teacher: "Puede gestionar materias, lecciones y seguimiento academico.",
+  teacher: "Puede gestionar materias, contenidos, pruebas y seguimiento academico.",
   resource_manager: "Puede administrar modelos y recursos compartidos.",
   admin: "Puede operar usuarios, cursos y configuracion administrativa.",
   super_admin: "Control total del sistema y de permisos administrativos.",

@@ -28,25 +28,82 @@ type Service struct {
 	metricsByID           map[string]*LibroObservabilityResponse
 	jobsMu                sync.RWMutex
 	jobsByID              map[string]*extractLibroJob
+	runtimeMu             sync.RWMutex
+	extractRuntime        AsyncExtractRuntimeConfig
+	extractQueue          chan string
+	extractQueuePeak      int
+	extractWorkersStarted bool
+	extractWorkersOnce    sync.Once
+	extractCleanupOnce    sync.Once
+	extractRunner         extractJobRunner
 }
 
 type extractLibroJob struct {
-	JobID        string
-	TrabajoID    string
-	UserID       string
-	Role         string
-	Req          ExtractLibroRequest
-	Estado       EstadoExtraccionJob
-	Progress     int
-	Message      string
-	Error        *string
-	ErrorType    *string
-	ErrorMessage *string
-	StartedAt    time.Time
-	UpdatedAt    time.Time
-	CompletedAt  *time.Time
-	FailedAt     *time.Time
-	Result       *ExtractLibroResponse
+	JobID          string
+	TrabajoID      string
+	UserID         string
+	Role           string
+	Req            ExtractLibroRequest
+	Estado         EstadoExtraccionJob
+	Progress       int
+	Message        string
+	Error          *string
+	ErrorType      *string
+	ErrorMessage   *string
+	QueuedAt       time.Time
+	StartedAt      *time.Time
+	UpdatedAt      time.Time
+	CompletedAt    *time.Time
+	FailedAt       *time.Time
+	WaitMs         int64
+	RunMs          int64
+	TotalMs        int64
+	QueueDepthPeak int
+	WorkerID       int
+	Result         *ExtractLibroResponse
+}
+
+type extractJobRunner func(ctx context.Context, trabajoID string, req ExtractLibroRequest, userID, role string) (*ExtractLibroResponse, error)
+
+type AsyncExtractRuntimeConfig struct {
+	Workers       int
+	QueueSize     int
+	JobTTLMinutes int
+}
+
+const (
+	defaultExtractWorkers       = 2
+	defaultExtractQueueSize     = 100
+	defaultExtractJobTTLMinutes = 60
+	minExtractWorkers           = 1
+	maxExtractWorkers           = 16
+	minExtractQueueSize         = 10
+	maxExtractQueueSize         = 5000
+	minExtractJobTTLMinutes     = 5
+	maxExtractJobTTLMinutes     = 24 * 60
+)
+
+func normalizeAsyncRuntimeConfig(cfg AsyncExtractRuntimeConfig) AsyncExtractRuntimeConfig {
+	out := cfg
+	if out.Workers < minExtractWorkers {
+		out.Workers = defaultExtractWorkers
+	}
+	if out.Workers > maxExtractWorkers {
+		out.Workers = maxExtractWorkers
+	}
+	if out.QueueSize < minExtractQueueSize {
+		out.QueueSize = defaultExtractQueueSize
+	}
+	if out.QueueSize > maxExtractQueueSize {
+		out.QueueSize = maxExtractQueueSize
+	}
+	if out.JobTTLMinutes < minExtractJobTTLMinutes {
+		out.JobTTLMinutes = defaultExtractJobTTLMinutes
+	}
+	if out.JobTTLMinutes > maxExtractJobTTLMinutes {
+		out.JobTTLMinutes = maxExtractJobTTLMinutes
+	}
+	return out
 }
 
 func NewService(repo *Repository, analysisAI *AIService, mcpAI *AIService) *Service {
@@ -56,14 +113,205 @@ func NewService(repo *Repository, analysisAI *AIService, mcpAI *AIService) *Serv
 	if mcpAI == nil {
 		mcpAI = analysisAI
 	}
-	return &Service{
-		repo:        repo,
-		analysisAI:  analysisAI,
-		mcpAI:       mcpAI,
-		mcp:         newMCPOrchestrator(repo),
-		metricsByID: make(map[string]*LibroObservabilityResponse),
-		jobsByID:    make(map[string]*extractLibroJob),
+	runtime := normalizeAsyncRuntimeConfig(AsyncExtractRuntimeConfig{})
+	svc := &Service{
+		repo:           repo,
+		analysisAI:     analysisAI,
+		mcpAI:          mcpAI,
+		mcp:            newMCPOrchestrator(repo),
+		metricsByID:    make(map[string]*LibroObservabilityResponse),
+		jobsByID:       make(map[string]*extractLibroJob),
+		extractRuntime: runtime,
 	}
+	svc.extractRunner = svc.ExtractLibro
+	return svc
+}
+
+func (s *Service) SetAsyncExtractRuntimeConfig(cfg AsyncExtractRuntimeConfig) {
+	if s == nil {
+		return
+	}
+	normalized := normalizeAsyncRuntimeConfig(cfg)
+	s.runtimeMu.Lock()
+	s.extractRuntime = normalized
+	// Queue size can only be changed before workers are started.
+	if !s.extractWorkersStarted {
+		s.extractQueue = make(chan string, normalized.QueueSize)
+		s.extractQueuePeak = 0
+	}
+	s.runtimeMu.Unlock()
+}
+
+func (s *Service) setExtractRunnerForTests(runner extractJobRunner) {
+	if s == nil {
+		return
+	}
+	if runner == nil {
+		s.extractRunner = s.ExtractLibro
+		return
+	}
+	s.extractRunner = runner
+}
+
+func (s *Service) ensureAsyncWorkersStarted() {
+	if s == nil {
+		return
+	}
+	s.extractWorkersOnce.Do(func() {
+		s.runtimeMu.RLock()
+		cfg := s.extractRuntime
+		queue := s.extractQueue
+		s.runtimeMu.RUnlock()
+		if queue == nil {
+			queue = make(chan string, cfg.QueueSize)
+			s.runtimeMu.Lock()
+			s.extractQueue = queue
+			s.runtimeMu.Unlock()
+		}
+		s.runtimeMu.Lock()
+		s.extractWorkersStarted = true
+		s.runtimeMu.Unlock()
+		for workerID := 1; workerID <= cfg.Workers; workerID++ {
+			id := workerID
+			go s.extractWorkerLoop(id, queue)
+		}
+		s.startAsyncJobCleanupLoop(cfg)
+	})
+}
+
+func (s *Service) startAsyncJobCleanupLoop(cfg AsyncExtractRuntimeConfig) {
+	s.extractCleanupOnce.Do(func() {
+		interval := time.Minute
+		ttl := time.Duration(cfg.JobTTLMinutes) * time.Minute
+		if ttl < 2*time.Minute {
+			interval = 30 * time.Second
+		}
+		go func() {
+			ticker := time.NewTicker(interval)
+			defer ticker.Stop()
+			for range ticker.C {
+				s.cleanupFinishedJobs(ttl, time.Now())
+			}
+		}()
+	})
+}
+
+func (s *Service) cleanupFinishedJobs(ttl time.Duration, now time.Time) int {
+	if s == nil {
+		return 0
+	}
+	if ttl <= 0 {
+		return 0
+	}
+	removed := 0
+	s.jobsMu.Lock()
+	for jobID, job := range s.jobsByID {
+		if job == nil {
+			delete(s.jobsByID, jobID)
+			removed++
+			continue
+		}
+		if job.Estado != EstadoJobCompletado && job.Estado != EstadoJobError {
+			continue
+		}
+		reference := job.UpdatedAt
+		if job.CompletedAt != nil {
+			reference = *job.CompletedAt
+		}
+		if now.Sub(reference) >= ttl {
+			delete(s.jobsByID, jobID)
+			removed++
+		}
+	}
+	s.jobsMu.Unlock()
+	return removed
+}
+
+func (s *Service) currentQueueDepthPeak() int {
+	s.runtimeMu.RLock()
+	defer s.runtimeMu.RUnlock()
+	return s.extractQueuePeak
+}
+
+func (s *Service) registerQueueDepthPeak(depth int) int {
+	s.runtimeMu.Lock()
+	if depth > s.extractQueuePeak {
+		s.extractQueuePeak = depth
+	}
+	peak := s.extractQueuePeak
+	s.runtimeMu.Unlock()
+	return peak
+}
+
+func (s *Service) extractWorkerLoop(workerID int, queue <-chan string) {
+	for jobID := range queue {
+		s.runExtractJob(workerID, jobID)
+	}
+}
+
+func (s *Service) runExtractJob(workerID int, jobID string) {
+	started := time.Now()
+	s.updateJob(jobID, func(job *extractLibroJob) {
+		job.Estado = EstadoJobEnProgreso
+		job.Progress = 10
+		job.Message = "iniciando extraccion"
+		job.StartedAt = &started
+		if !job.QueuedAt.IsZero() {
+			job.WaitMs = started.Sub(job.QueuedAt).Milliseconds()
+		}
+		job.WorkerID = workerID
+		job.UpdatedAt = started
+	})
+
+	s.updateJob(jobID, func(job *extractLibroJob) {
+		job.Progress = 35
+		job.Message = "procesando contenido"
+		job.UpdatedAt = time.Now()
+	})
+
+	job := s.getJob(jobID)
+	if job == nil {
+		return
+	}
+
+	runner := s.extractRunner
+	if runner == nil {
+		runner = s.ExtractLibro
+	}
+	result, err := runner(context.Background(), job.TrabajoID, job.Req, job.UserID, job.Role)
+	if err != nil {
+		now := time.Now()
+		runMs := now.Sub(started).Milliseconds()
+		errorType := classifyExtractError(err)
+		message := userErrorMessage(errorType, err)
+		s.updateJob(jobID, func(current *extractLibroJob) {
+			current.Estado = EstadoJobError
+			current.Progress = 100
+			current.Message = "extraccion fallo"
+			current.Error = &message
+			current.ErrorType = &errorType
+			current.ErrorMessage = &message
+			current.RunMs = runMs
+			current.TotalMs = calcJobTotalDurationMs(current, now)
+			current.UpdatedAt = now
+			current.CompletedAt = &now
+			current.FailedAt = &now
+		})
+		return
+	}
+
+	now := time.Now()
+	runMs := now.Sub(started).Milliseconds()
+	s.updateJob(jobID, func(current *extractLibroJob) {
+		current.Estado = EstadoJobCompletado
+		current.Progress = 100
+		current.Message = "extraccion completada"
+		current.Result = result
+		current.RunMs = runMs
+		current.TotalMs = calcJobTotalDurationMs(current, now)
+		current.UpdatedAt = now
+		current.CompletedAt = &now
+	})
 }
 
 func (s *Service) SetModelLifecycleMetadata(trainingRevision string, benchmarkBatchID string) {
@@ -81,38 +329,19 @@ func (s *Service) StartExtractLibroAsync(ctx context.Context, trabajoID string, 
 	if err := s.authorizeTrabajo(ctx, trabajoID, userID, role); err != nil {
 		return nil, err
 	}
-
-	jobID, err := newExtractJobID()
+	job, err := s.enqueueExtractJob(trabajoID, req, userID, role)
 	if err != nil {
 		return nil, err
 	}
 
-	now := time.Now()
-	job := &extractLibroJob{
-		JobID:     jobID,
-		TrabajoID: trabajoID,
-		UserID:    userID,
-		Role:      role,
-		Req:       req,
-		Estado:    EstadoJobPendiente,
-		Progress:  0,
-		Message:   "job pendiente",
-		StartedAt: now,
-		UpdatedAt: now,
-	}
-
-	s.jobsMu.Lock()
-	s.jobsByID[jobID] = job
-	s.jobsMu.Unlock()
-
-	go s.runExtractJob(jobID)
-
 	return &ExtractLibroAsyncResponse{
-		JobID:     jobID,
-		TrabajoID: trabajoID,
-		Estado:    job.Estado,
-		Progress:  job.Progress,
-		Message:   job.Message,
+		JobID:          job.JobID,
+		TrabajoID:      job.TrabajoID,
+		Estado:         job.Estado,
+		Progress:       job.Progress,
+		Message:        job.Message,
+		QueuedAt:       job.QueuedAt,
+		QueueDepthPeak: job.QueueDepthPeak,
 	}, nil
 }
 
@@ -128,71 +357,82 @@ func (s *Service) GetExtractLibroJob(ctx context.Context, trabajoID, jobID, user
 		return nil, errors.New("job no encontrado")
 	}
 
+	now := time.Now()
 	return &LibroExtractJobStatusResponse{
-		JobID:        job.JobID,
-		TrabajoID:    job.TrabajoID,
-		Estado:       job.Estado,
-		Progress:     job.Progress,
-		Message:      job.Message,
-		Error:        job.Error,
-		ErrorType:    job.ErrorType,
-		ErrorMessage: job.ErrorMessage,
-		StartedAt:    job.StartedAt,
-		UpdatedAt:    job.UpdatedAt,
-		CompletedAt:  job.CompletedAt,
-		FailedAt:     job.FailedAt,
-		DurationMs:   calcJobDurationMs(job, time.Now()),
-		Result:       job.Result,
+		JobID:          job.JobID,
+		TrabajoID:      job.TrabajoID,
+		Estado:         job.Estado,
+		Progress:       job.Progress,
+		Message:        job.Message,
+		Error:          job.Error,
+		ErrorType:      job.ErrorType,
+		ErrorMessage:   job.ErrorMessage,
+		QueuedAt:       job.QueuedAt,
+		StartedAt:      job.StartedAt,
+		UpdatedAt:      job.UpdatedAt,
+		CompletedAt:    job.CompletedAt,
+		FailedAt:       job.FailedAt,
+		WaitMs:         job.WaitMs,
+		RunMs:          calcJobRunDurationMs(job, now),
+		DurationMs:     calcJobRunDurationMs(job, now),
+		TotalMs:        calcJobTotalDurationMs(job, now),
+		QueueDepthPeak: job.QueueDepthPeak,
+		Result:         job.Result,
 	}, nil
 }
 
-func (s *Service) runExtractJob(jobID string) {
-	s.updateJob(jobID, func(job *extractLibroJob) {
-		job.Estado = EstadoJobEnProgreso
-		job.Progress = 10
-		job.Message = "iniciando extraccion"
-		job.UpdatedAt = time.Now()
-	})
+func (s *Service) enqueueExtractJob(trabajoID string, req ExtractLibroRequest, userID, role string) (*extractLibroJob, error) {
+	if s == nil {
+		return nil, errors.New("servicio de libro no disponible")
+	}
+	s.ensureAsyncWorkersStarted()
 
-	s.updateJob(jobID, func(job *extractLibroJob) {
-		job.Progress = 35
-		job.Message = "procesando contenido"
-		job.UpdatedAt = time.Now()
-	})
-
-	job := s.getJob(jobID)
-	if job == nil {
-		return
+	jobID, err := newExtractJobID()
+	if err != nil {
+		return nil, err
 	}
 
-	result, err := s.ExtractLibro(context.Background(), job.TrabajoID, job.Req, job.UserID, job.Role)
-	if err != nil {
-		now := time.Now()
-		errorType := classifyExtractError(err)
-		message := userErrorMessage(errorType, err)
-		s.updateJob(jobID, func(current *extractLibroJob) {
-			current.Estado = EstadoJobError
-			current.Progress = 100
-			current.Message = "extraccion fallo"
-			current.Error = &message
-			current.ErrorType = &errorType
-			current.ErrorMessage = &message
-			current.UpdatedAt = now
-			current.CompletedAt = &now
-			current.FailedAt = &now
-		})
-		return
+	s.runtimeMu.RLock()
+	queue := s.extractQueue
+	depthBefore := 0
+	if queue != nil {
+		depthBefore = len(queue)
+	}
+	s.runtimeMu.RUnlock()
+	if queue == nil {
+		return nil, errors.New("cola de extraccion no disponible")
 	}
 
 	now := time.Now()
-	s.updateJob(jobID, func(current *extractLibroJob) {
-		current.Estado = EstadoJobCompletado
-		current.Progress = 100
-		current.Message = "extraccion completada"
-		current.Result = result
-		current.UpdatedAt = now
-		current.CompletedAt = &now
-	})
+	job := &extractLibroJob{
+		JobID:     jobID,
+		TrabajoID: trabajoID,
+		UserID:    userID,
+		Role:      role,
+		Req:       req,
+		Estado:    EstadoJobPendiente,
+		Progress:  0,
+		Message:   "job pendiente",
+		QueuedAt:  now,
+		UpdatedAt: now,
+	}
+
+	s.jobsMu.Lock()
+	s.jobsByID[jobID] = job
+	s.jobsMu.Unlock()
+
+	peak := s.registerQueueDepthPeak(depthBefore + 1)
+	job.QueueDepthPeak = peak
+
+	select {
+	case queue <- jobID:
+		return job, nil
+	default:
+		s.jobsMu.Lock()
+		delete(s.jobsByID, jobID)
+		s.jobsMu.Unlock()
+		return nil, errors.New("cola de extraccion saturada. Intenta nuevamente en unos segundos")
+	}
 }
 
 func (s *Service) getJob(jobID string) *extractLibroJob {
@@ -396,6 +636,7 @@ func (s *Service) ExtractLibro(ctx context.Context, trabajoID string, req Extrac
 		"model_profile":        "analysis",
 		"model_name":           safeAIModelName(s.analysisAI),
 		"model_tag":            safeAIModelName(s.analysisAI),
+		"modo_formulario":      normalizeModoFormulario(req.ModoFormulario),
 		"used_fallback":        usadoFallback,
 		"page_groups_detected": len(pageGroups),
 	}))
@@ -1046,10 +1287,14 @@ func (s *Service) RevisarLibro(ctx context.Context, trabajoID string, req Revisi
 
 			tipo := inferQuestionTypeFromText(baseTipo, itemText)
 			opciones := normalizeOptionsForQuestion(p.Opciones, tipo, itemText, len(parts) == 1)
-			if tipo == "opcion_multiple" && isEmptyJSONArray(opciones) {
-				tipo = "respuesta_corta"
-				opciones = []byte("[]")
-			}
+			tipo, opciones, respuestaCorrecta := normalizeQuestionFormByMode(
+				tipo,
+				opciones,
+				p.RespuestaCorrecta,
+				p.ConfianzaIA,
+				ModoFormularioMixtoAuto,
+				s.minClosedConfidenceThreshold(),
+			)
 
 			var imageBase64 *string
 			var imageFuente *string
@@ -1072,7 +1317,7 @@ func (s *Service) RevisarLibro(ctx context.Context, trabajoID string, req Revisi
 				Texto:                 itemText,
 				Tipo:                  tipo,
 				Opciones:              opciones,
-				RespuestaCorrecta:     trimOrNil(p.RespuestaCorrecta),
+				RespuestaCorrecta:     respuestaCorrecta,
 				PuntajeMaximo:         puntajeMaximo,
 				PaginaLibro:           p.PaginaLibro,
 				ConfianzaIA:           p.ConfianzaIA,
@@ -1318,6 +1563,13 @@ func resolveModelTag(modelName string, ai *AIService) string {
 		return resolved
 	}
 	return safeAIModelName(ai)
+}
+
+func (s *Service) minClosedConfidenceThreshold() float64 {
+	if s == nil || s.analysisAI == nil {
+		return 0.72
+	}
+	return s.analysisAI.minClosedConfidenceThreshold()
 }
 
 func (s *Service) appendModelLifecycleMetadata(meta map[string]interface{}) map[string]interface{} {
@@ -1658,18 +1910,48 @@ func buildChatFallbackAnswer(userMessage string, bundle *mcpContextBundle) strin
 	return strings.Join(lines, "\n")
 }
 
-func calcJobDurationMs(job *extractLibroJob, now time.Time) int64 {
-	if job == nil || job.StartedAt.IsZero() {
+func calcJobRunDurationMs(job *extractLibroJob, now time.Time) int64 {
+	if job == nil {
+		return 0
+	}
+	if job.RunMs > 0 {
+		return job.RunMs
+	}
+	if job.StartedAt == nil || job.StartedAt.IsZero() {
 		return 0
 	}
 	end := now
 	if job.CompletedAt != nil {
 		end = *job.CompletedAt
+	} else if job.FailedAt != nil {
+		end = *job.FailedAt
 	}
-	if end.Before(job.StartedAt) {
+	if end.Before(*job.StartedAt) {
 		return 0
 	}
-	return end.Sub(job.StartedAt).Milliseconds()
+	return end.Sub(*job.StartedAt).Milliseconds()
+}
+
+func calcJobTotalDurationMs(job *extractLibroJob, now time.Time) int64 {
+	if job == nil {
+		return 0
+	}
+	if job.TotalMs > 0 {
+		return job.TotalMs
+	}
+	if job.QueuedAt.IsZero() {
+		return calcJobRunDurationMs(job, now)
+	}
+	end := now
+	if job.CompletedAt != nil {
+		end = *job.CompletedAt
+	} else if job.FailedAt != nil {
+		end = *job.FailedAt
+	}
+	if end.Before(job.QueuedAt) {
+		return 0
+	}
+	return end.Sub(job.QueuedAt).Milliseconds()
 }
 
 func classifyExtractError(err error) string {

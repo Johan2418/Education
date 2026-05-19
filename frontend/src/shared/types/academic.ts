@@ -179,6 +179,7 @@ export interface TeacherGradeDetailItem {
   estado: TeacherGradeDetailEstado;
   fecha: string;
   titulo: string;
+  anio_escolar?: string | null;
   curso_id?: string | null;
   curso?: string | null;
   materia_id?: string | null;
@@ -245,6 +246,13 @@ export interface TeacherGradeTemaAggregate {
   promedio_100: number;
 }
 
+export interface TeacherGradeAnioAggregate {
+  anio_escolar: string;
+  total: number;
+  promedio_10: number;
+  promedio_100: number;
+}
+
 export interface TeacherGradeAggregates {
   total: number;
   promedio_general_10: number;
@@ -255,6 +263,7 @@ export interface TeacherGradeAggregates {
   por_estudiante: TeacherGradeEstudianteAggregate[];
   por_unidad: TeacherGradeUnidadAggregate[];
   por_tema: TeacherGradeTemaAggregate[];
+  por_anio: TeacherGradeAnioAggregate[];
 }
 
 export interface TeacherGradeDetailResponse {
@@ -262,10 +271,12 @@ export interface TeacherGradeDetailResponse {
   total: number;
   limit: number;
   offset: number;
+  anio_escolar_activo: string;
   aggregates: TeacherGradeAggregates;
 }
 
 export interface TeacherGradeFilters {
+  anio_escolar?: string;
   curso_id?: string;
   materia_id?: string;
   estudiante_id?: string;

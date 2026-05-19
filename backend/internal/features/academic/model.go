@@ -398,6 +398,7 @@ type StudentGradeDetailResponse struct {
 }
 
 type TeacherGradeDetailFilters struct {
+	AnioEscolar  *string
 	CursoID      *string
 	MateriaID    *string
 	EstudianteID *string
@@ -418,6 +419,7 @@ type TeacherGradeDetailItem struct {
 	Estado          string    `json:"estado"`
 	Fecha           time.Time `json:"fecha"`
 	Titulo          string    `json:"titulo"`
+	AnioEscolar     *string   `json:"anio_escolar,omitempty"`
 	CursoID         *string   `json:"curso_id,omitempty"`
 	Curso           *string   `json:"curso,omitempty"`
 	MateriaID       *string   `json:"materia_id,omitempty"`
@@ -484,6 +486,13 @@ type TeacherGradeTemaAggregate struct {
 	Promedio100 float64 `json:"promedio_100"`
 }
 
+type TeacherGradeAnioAggregate struct {
+	AnioEscolar string  `json:"anio_escolar"`
+	Total       int     `json:"total"`
+	Promedio10  float64 `json:"promedio_10"`
+	Promedio100 float64 `json:"promedio_100"`
+}
+
 type TeacherGradeAggregates struct {
 	Total              int                               `json:"total"`
 	PromedioGeneral10  float64                           `json:"promedio_general_10"`
@@ -494,14 +503,16 @@ type TeacherGradeAggregates struct {
 	PorEstudiante      []TeacherGradeEstudianteAggregate `json:"por_estudiante"`
 	PorUnidad          []TeacherGradeUnidadAggregate     `json:"por_unidad"`
 	PorTema            []TeacherGradeTemaAggregate       `json:"por_tema"`
+	PorAnio            []TeacherGradeAnioAggregate       `json:"por_anio"`
 }
 
 type TeacherGradeDetailResponse struct {
-	Items      []TeacherGradeDetailItem `json:"items"`
-	Total      int                      `json:"total"`
-	Limit      int                      `json:"limit"`
-	Offset     int                      `json:"offset"`
-	Aggregates TeacherGradeAggregates   `json:"aggregates"`
+	Items             []TeacherGradeDetailItem `json:"items"`
+	Total             int                      `json:"total"`
+	Limit             int                      `json:"limit"`
+	Offset            int                      `json:"offset"`
+	AnioEscolarActivo string                   `json:"anio_escolar_activo"`
+	Aggregates        TeacherGradeAggregates   `json:"aggregates"`
 }
 
 // ─── Unidad ─────────────────────────────────────────────────

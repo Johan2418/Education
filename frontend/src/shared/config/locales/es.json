@@ -934,15 +934,18 @@
       "bookReview": {
         "title": "Revision secuencial de trabajos de libro",
         "progress": "Trabajo {{current}} de {{total}}",
-        "publishHint": "Al aprobar, este trabajo se publica automaticamente y puedes continuar al siguiente.",
+        "publishHint": "Al aprobar, este trabajo queda listo para activacion manual y puedes continuar al siguiente.",
         "skipContinue": "Omitir y continuar",
         "finishWithoutApprove": "Finalizar sin aprobar",
         "approveContinue": "Aprobar y continuar",
         "approveFinish": "Aprobar y finalizar",
+        "finishPublish": "Finalizar y dejar activable",
+        "readyToActivate": "Listo para activar",
         "completed": "Revision secuencial completada",
         "titleRequired": "El titulo es obligatorio para aprobar",
         "notFound": "No se encontro el trabajo para revisar",
-        "autoPublished": "Aprobado y publicado desde revision secuencial"
+        "autoPublished": "Aprobado y publicado desde revision secuencial",
+        "autoReadyToActivate": "Aprobado y confirmado desde revision secuencial (pendiente de activacion manual)"
       },
       "reports": "Reportes",
       "libro": {
@@ -1902,6 +1905,30 @@
   "student.grades.types.content": "Contenidos",
   "student.grades.types.exam": "Pruebas",
   "student.grades.types.assignment": "Tareas",
-  "student.grades.empty": "No hay calificaciones para los filtros seleccionados."
+  "student.grades.empty": "No hay calificaciones para los filtros seleccionados.",
+  "admin.dashboard.title": "Panel de administración",
+  "admin.dashboard.subtitle": "Seguimiento global de usuarios, cursos y rendimiento académico por contenidos, pruebas y tareas.",
+  "admin.dashboard.adminPanel": "Panel de administración",
+  "admin.dashboard.users": "Usuarios",
+  "admin.dashboard.cursos": "Cursos",
+  "admin.dashboard.modelos": "Modelos 3D",
+  "admin.dashboard.grades": "Calificaciones",
+  "admin.dashboard.students": "Estudiantes",
+  "admin.dashboard.teachers": "Profesores",
+  "admin.dashboard.gradedContents": "Contenidos calificados",
+  "admin.dashboard.gradedTests": "Pruebas calificadas",
+  "admin.dashboard.gradedTasks": "Tareas calificadas",
+  "admin.dashboard.averageGrade": "Promedio general /10",
+  "admin.dashboard.activeSchoolYear": "Año escolar activo",
+  "admin.dashboard.topCourse": "Curso destacado",
+  "admin.dashboard.systemSummary": "Resumen académico del sistema",
+  "admin.dashboard.ctaGrades": "Ir a calificaciones",
+  "admin.grades.title": "Calificaciones globales",
+  "admin.grades.subtitle": "Vista general de contenidos, pruebas y tareas con filtros por año escolar, curso, materia, unidad y tema.",
+  "admin.grades.filters.schoolYear": "Año escolar",
+  "admin.grades.filters.allYears": "Todos los años",
+  "admin.grades.kpi.topCourse": "Curso destacado",
+  "admin.grades.charts.byCourse": "Promedio por curso (/10)",
+  "admin.grades.activeYear": "Año escolar activo"
 }
 

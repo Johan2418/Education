@@ -110,6 +110,7 @@ export async function getTeacherGradeDetails(filters: TeacherGradeFilters = {}):
   };
 
   append("curso_id", filters.curso_id);
+  append("anio_escolar", filters.anio_escolar);
   append("materia_id", filters.materia_id);
   append("estudiante_id", filters.estudiante_id);
   if (filters.tipo && filters.tipo !== "all") append("tipo", filters.tipo);
@@ -131,6 +132,7 @@ export async function getTeacherGradeDetails(filters: TeacherGradeFilters = {}):
     total: 0,
     limit: filters.limit ?? 50,
     offset: filters.offset ?? 0,
+    anio_escolar_activo: "",
     aggregates: {
       total: 0,
       promedio_general_10: 0,
@@ -141,6 +143,7 @@ export async function getTeacherGradeDetails(filters: TeacherGradeFilters = {}):
       por_estudiante: [],
       por_unidad: [],
       por_tema: [],
+      por_anio: [],
     },
   };
 }

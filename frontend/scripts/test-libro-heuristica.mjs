@@ -72,6 +72,26 @@ run("acepta numeracion", () => {
   assert.equal(isLikelyExercisePage("1) Opcion uno\n2) Opcion dos"), true);
 });
 
+run("PDF biologia: detecta bloque de preguntas guiadas", () => {
+  const text = "Lee la noticia anterior y responde. ¿Que es el microquimerismo? ¿Por que es el ADN importante?";
+  assert.equal(isLikelyExercisePage(text), true);
+});
+
+run("PDF biologia: detecta autoevaluacion con preguntas", () => {
+  const text = "AUTOEVALUACION. Trabajo personal. ¿Que aprendi en esta unidad? Contesta las siguientes preguntas.";
+  assert.equal(isLikelyExercisePage(text), true);
+});
+
+run("PDF biologia: descarta encabezados sueltos de recurso", () => {
+  const text = "Pelicula: Noticia: Web:";
+  assert.equal(isLikelyExercisePage(text), false);
+});
+
+run("PDF biologia: descarta pagina teorica sin senales de ejercicio", () => {
+  const text = "Genoma y dotacion cromosomica. Esta informacion se localiza en un numero fijo de cromosomas.";
+  assert.equal(isLikelyExercisePage(text), false);
+});
+
 run("safeguard usa todas las paginas si filtro cae bajo 30%", () => {
   const parsed = Array.from({ length: 200 }, (_, i) => ({ page: i + 1 }));
   const candidates = parsed.slice(0, 48);

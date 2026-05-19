@@ -44,6 +44,7 @@ export type {
   TeacherGradeEstudianteAggregate,
   TeacherGradeUnidadAggregate,
   TeacherGradeTemaAggregate,
+  TeacherGradeAnioAggregate,
   TeacherGradeAggregates,
   TeacherGradeDetailResponse,
   TeacherGradeFilters,

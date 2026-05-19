@@ -25,6 +25,10 @@ type Trabajo struct {
 	Estado           string     `json:"estado" gorm:"column:estado;type:internal.estado_trabajo"`
 	ExtraidoDeLibro  bool       `json:"extraido_de_libro" gorm:"column:extraido_de_libro"`
 	IDExtraccion     *string    `json:"id_extraccion" gorm:"column:id_extraccion"`
+	// Optional extraction metadata for list endpoints (read-only, non-breaking extension).
+	LibroExtraccionEstado        *string `json:"libro_extraccion_estado,omitempty" gorm:"->;column:libro_extraccion_estado"`
+	LibroExtraccionConfirmado    *bool   `json:"libro_extraccion_confirmado,omitempty" gorm:"->;column:libro_extraccion_confirmado"`
+	LibroRevisionManualPendiente *bool   `json:"libro_revision_manual_pendiente,omitempty" gorm:"->;column:libro_revision_manual_pendiente"`
 	// New fields for enhanced assignment system
 	TipoTrabajo               string          `json:"tipo_trabajo" gorm:"column:tipo_trabajo;type:internal.tipo_trabajo;default:'preguntas'"`
 	PermiteArchivo            bool            `json:"permite_archivo" gorm:"column:permite_archivo;default:false"`

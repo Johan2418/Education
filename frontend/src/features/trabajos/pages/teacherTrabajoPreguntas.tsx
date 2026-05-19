@@ -90,7 +90,7 @@ function mapPreguntaToInput(pregunta: TrabajoPregunta): PreguntaInputWithDraftOp
 
 
 function createEmptyPregunta(trabajo?: Trabajo | null): PreguntaInputWithDraftOptions {
-  const isClosedEnded = trabajo?.calificacion_automatica;
+  const isClosedEnded = !!trabajo?.calificacion_automatica && !trabajo?.extraido_de_libro;
   return {
     texto: "",
     tipo: isClosedEnded ? "opcion_multiple" : "respuesta_corta",
@@ -112,6 +112,7 @@ export default function TeacherTrabajoPreguntas() {
   const [saving, setSaving] = useState(false);
   const [trabajo, setTrabajo] = useState<Trabajo | null>(null);
   const [preguntas, setPreguntas] = useState<PreguntaInputWithDraftOptions[]>([]);
+  const allowMixedTypes = !!trabajo?.extraido_de_libro;
 
   const totalPuntaje = useMemo(
     () => preguntas.reduce((acc, pregunta) => acc + Number(pregunta.puntaje_maximo || 0), 0),
@@ -320,8 +321,18 @@ export default function TeacherTrabajoPreguntas() {
             <h1 className="text-2xl font-bold">{t("teacher.workQuestionBank.title")}</h1>
             <p className="text-sm text-gray-500 mt-1">{trabajo?.titulo}</p>
           </div>
-          <span className={`text-xs px-2.5 py-1 rounded-full ${trabajo?.calificacion_automatica ? "bg-emerald-100 text-emerald-700" : "bg-blue-100 text-blue-700"}`}>
-            {trabajo?.calificacion_automatica ? t("teacher.workQuestionBank.closed") : t("teacher.workQuestionBank.open")}
+          <span className={`text-xs px-2.5 py-1 rounded-full ${
+            allowMixedTypes
+              ? "bg-violet-100 text-violet-700"
+              : trabajo?.calificacion_automatica
+                ? "bg-emerald-100 text-emerald-700"
+                : "bg-blue-100 text-blue-700"
+          }`}>
+            {allowMixedTypes
+              ? t("teacher.workQuestionBank.mixed", { defaultValue: "Mixto" })
+              : trabajo?.calificacion_automatica
+                ? t("teacher.workQuestionBank.closed")
+                : t("teacher.workQuestionBank.open")}
           </span>
         </div>
         <p className="text-sm text-gray-500 mt-2">{t("teacher.workQuestionBank.totalScore")}: {totalPuntaje.toFixed(2)}</p>
@@ -360,7 +371,14 @@ export default function TeacherTrabajoPreguntas() {
                   value={pregunta.tipo}
                   onChange={(e) => handleChangeTipo(index, e.target.value as TrabajoPreguntaInput["tipo"])}
                 >
-                  {trabajo?.calificacion_automatica ? (
+                  {allowMixedTypes ? (
+                    <>
+                      <option value="opcion_multiple">{t("teacher.workQuestionBank.types.multipleChoice")}</option>
+                      <option value="verdadero_falso">{t("teacher.workQuestionBank.types.trueFalse")}</option>
+                      <option value="respuesta_corta">{t("teacher.workQuestionBank.types.shortAnswer")}</option>
+                      <option value="completar">{t("teacher.workQuestionBank.types.complete", { defaultValue: "Completar" })}</option>
+                    </>
+                  ) : trabajo?.calificacion_automatica ? (
                     <>
                       <option value="opcion_multiple">{t("teacher.workQuestionBank.types.multipleChoice")}</option>
                       <option value="verdadero_falso">{t("teacher.workQuestionBank.types.trueFalse")}</option>

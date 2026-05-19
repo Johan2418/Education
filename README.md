@@ -66,6 +66,9 @@ LIBRO_MCP_TIMEOUT_SECONDS=90
 LIBRO_MODEL_BENCH_ENABLED=true
 LIBRO_MODEL_TRAINING_REVISION=2026.05.0
 LIBRO_MODEL_BENCHMARK_BATCH_ID=2026.05.0
+LIBRO_EXTRACT_WORKERS=2
+LIBRO_EXTRACT_QUEUE_SIZE=100
+LIBRO_EXTRACT_JOB_TTL_MINUTES=60
 
 OLLAMA_CANDIDATE_MODELS=qwen2.5:1.5b,qwen2.5:3b,qwen2.5:latest,llama3.2:3b,phi3:mini
 LIBRO_ANALYSIS_BASE_MODEL=qwen2.5:latest
@@ -90,6 +93,51 @@ go run ./cmd/libro_model_bench --out-dir ../qa-reports
 # 3) Métricas operativas por model_tag (producción)
 go run ./cmd/libro_eval --window-days 30
 ```
+
+## Quick QA Libro (smoke + carga)
+
+Objetivo: validar heuristica, flujo multilibro y rendimiento operativo de forma reproducible usando PDFs locales (por defecto `libro_prueba/`).
+
+```bash
+# 1) Tests backend (scheduler + confirmacion sin publicacion + metadata)
+cd backend
+go test ./...
+
+# 2) Tests de heuristica frontend
+cd ../frontend
+npm install
+npm run test:libro-heuristica
+
+# 3) Smoke rapido (1-2 libros, corrida corta)
+npm run qa:libro:smoke
+
+# 4) Carga opcional (repite libros para simular lote)
+npm run qa:libro:stress
+
+# 5) Ejecucion custom por carpeta/repeticion/concurrencia
+node scripts/benchmark-libro-batch.mjs \
+  --mode=stress \
+  --books-dir=../libro_prueba \
+  --repeat=10 \
+  --concurrency=4 \
+  --max-pages=0 \
+  --max-preguntas=0 \
+  --timeout=420000
+```
+
+Salidas:
+- Reportes JSON/CSV en `qa-reports/libro-batch-*.{json,csv}`
+- Comparativo automatico `comparison_vs_previous` contra la corrida anterior compatible (misma configuracion)
+
+Campos clave del reporte:
+- `books_total`, `jobs_ok`, `jobs_failed`
+- `throughput_books_min`
+- `latency_ms_p50`, `latency_ms_p95`
+- `error_breakdown`
+
+Umbrales recomendados (guia inicial):
+- Smoke: `jobs_failed = 0` y `latency_ms_p95` estable entre corridas
+- Stress: sin errores de saturacion inesperados y `latency_ms_p95` sin crecimiento descontrolado
 
 ## Jerarquía Académica
 

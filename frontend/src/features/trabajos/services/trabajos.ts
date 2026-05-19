@@ -1,4 +1,4 @@
-import api, { authenticatedFetch } from "@/shared/lib/api";
+import api, { authenticatedFetch, type ApiRequestOptions } from "@/shared/lib/api";
 import type {
   CalificarEntregaPorPreguntaRequest,
   CalificarEntregaRequest,
@@ -50,13 +50,13 @@ function normalizeFechaVencimiento(fecha?: string): string | undefined {
   return trimmed;
 }
 
-export async function listTrabajosByLeccion(leccionId: string): Promise<Trabajo[]> {
-  const res = await api.get<ApiData<Trabajo[]>>(`/contenidos/${leccionId}/tareas`);
+export async function listTrabajosByLeccion(leccionId: string, requestOptions?: ApiRequestOptions): Promise<Trabajo[]> {
+  const res = await api.get<ApiData<Trabajo[]>>(`/contenidos/${leccionId}/tareas`, requestOptions);
   return res.data || [];
 }
 
-export async function listTrabajosByMateria(materiaId: string): Promise<Trabajo[]> {
-  const res = await api.get<ApiData<Trabajo[]>>(`/materias/${materiaId}/tareas`);
+export async function listTrabajosByMateria(materiaId: string, requestOptions?: ApiRequestOptions): Promise<Trabajo[]> {
+  const res = await api.get<ApiData<Trabajo[]>>(`/materias/${materiaId}/tareas`, requestOptions);
   return res.data || [];
 }
 

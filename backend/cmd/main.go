@@ -85,6 +85,11 @@ func main() {
 	libroAnalysisAISvc := libro.NewAIService(cfg.LibroAnalysis)
 	libroMCPAISvc := libro.NewAIService(cfg.LibroMCP)
 	libroSvc := libro.NewService(libroRepo, libroAnalysisAISvc, libroMCPAISvc)
+	libroSvc.SetAsyncExtractRuntimeConfig(libro.AsyncExtractRuntimeConfig{
+		Workers:       cfg.LibroAsync.ExtractWorkers,
+		QueueSize:     cfg.LibroAsync.ExtractQueueSize,
+		JobTTLMinutes: cfg.LibroAsync.ExtractJobTTLMinutes,
+	})
 	libroSvc.SetModelLifecycleMetadata(cfg.LibroModel.TrainingRevision, cfg.LibroModel.BenchmarkBatchID)
 	libroH := libro.NewHandler(libroSvc)
 
@@ -392,6 +397,7 @@ func main() {
 			r.Post("/admin/users/{id}/reject-role", authH.RejectRole)
 			r.Delete("/admin/users/{id}", authH.DeleteUser)
 			r.Post("/admin/create-admin", authH.CreateAdmin)
+			r.Get("/admin/calificaciones/detalle", acadH.ListCalificacionesDetalleAdmin)
 			r.Post("/admin/bulk-import/map-columns", bulkH.MapColumns)
 			r.Post("/admin/bulk-import", bulkH.AdminBulkImport)
 		})

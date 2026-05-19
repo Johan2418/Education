@@ -29,6 +29,7 @@ const EMPTY_RESPONSE: TeacherGradeDetailResponse = {
   total: 0,
   limit: PAGE_SIZE,
   offset: 0,
+  anio_escolar_activo: "",
   aggregates: {
     total: 0,
     promedio_general_10: 0,
@@ -39,6 +40,7 @@ const EMPTY_RESPONSE: TeacherGradeDetailResponse = {
     por_estudiante: [],
     por_unidad: [],
     por_tema: [],
+    por_anio: [],
   },
 };
 
@@ -150,6 +152,7 @@ export default function TeacherCalificacionesPage() {
   const fetchAllGradePages = useCallback(async (activeFilters: TeacherGradeFilters): Promise<TeacherGradeDetailResponse> => {
     let offset = 0;
     let total = 0;
+    let anioEscolarActivo = "";
     let aggregates = EMPTY_RESPONSE.aggregates;
     const items: TeacherGradeDetailItem[] = [];
 
@@ -162,6 +165,7 @@ export default function TeacherCalificacionesPage() {
 
       if (page === 0) {
         total = response.total;
+        anioEscolarActivo = response.anio_escolar_activo || "";
         aggregates = response.aggregates;
       }
 
@@ -175,6 +179,7 @@ export default function TeacherCalificacionesPage() {
       total,
       limit: items.length,
       offset: 0,
+      anio_escolar_activo: anioEscolarActivo,
       aggregates,
     };
   }, []);

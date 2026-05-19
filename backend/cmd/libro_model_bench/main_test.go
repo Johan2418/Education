@@ -1,6 +1,7 @@
 package main
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/arcanea/backend/internal/features/libro"
@@ -65,5 +66,15 @@ func TestCompareQuestions(t *testing.T) {
 	}
 	if pageAccuracy < 0.49 || pageAccuracy > 0.51 {
 		t.Fatalf("expected page accuracy near 0.5, got %.4f", pageAccuracy)
+	}
+}
+
+func TestValidateBenchmarkDatasetsFailsWhenAnalysisIsEmpty(t *testing.T) {
+	err := validateBenchmarkDatasets(nil, []mcpSample{{ID: "mcp:1"}})
+	if err == nil {
+		t.Fatalf("expected fail-fast error when analysis dataset is empty")
+	}
+	if got := err.Error(); got == "" || !strings.Contains(normalizeText(got), "analysis dataset is empty") {
+		t.Fatalf("unexpected error message: %q", got)
 	}
 }

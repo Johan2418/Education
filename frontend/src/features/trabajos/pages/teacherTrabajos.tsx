@@ -7,10 +7,10 @@ import * as pdfjsLib from "pdfjs-dist";
 import pdfWorkerSrc from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import { extractRawText } from "mammoth";
 
-import api from "@/shared/lib/api";
+import api, { type ApiRequestOptions } from "@/shared/lib/api";
 import { getMe } from "@/shared/lib/auth";
 import { convertDocxToPdf, convertPptxToPdf } from "@/features/trabajos/services/trabajos";
-import type { Curso, Leccion, Materia, Tema, Unidad } from "@/shared/types";
+import type { Curso, Materia } from "@/shared/types";
 import type { CreateTrabajoRequest, LibroPreguntaInput, PdfPaginaMetadata, Trabajo, UpdateTrabajoRequest, EntregaConCalificacion } from "@/shared/types/trabajos";
 import {
   confirmarLibro,
@@ -19,7 +19,7 @@ import {
   deleteTrabajo,
   extractLibro,
   getLibroEstado,
-  listTrabajosByLeccion,
+  getTrabajo,
   listTrabajosByMateria,
   listEntregasByTrabajo,
   publicarTrabajo,
@@ -27,11 +27,6 @@ import {
   updateTrabajo,
 } from "@/features/trabajos/services/trabajos";
 import { useAppConfirm } from "@/shared/hooks/useAppConfirm";
-
-interface LeccionOption {
-  id: string;
-  titulo: string;
-}
 
 interface TrabajoRow extends Trabajo {
   leccion_titulo?: string;
@@ -72,14 +67,81 @@ interface ReviewPersistedProgress {
 interface LibroReviewMeta {
   estado: string;
   confirmado: boolean;
+  pendiente_manual?: boolean;
+}
+
+function mergeTrabajoRows(base: TrabajoRow, candidate: TrabajoRow): TrabajoRow {
+  const merged: TrabajoRow = { ...base };
+
+  if (!merged.materia_titulo && candidate.materia_titulo) {
+    merged.materia_titulo = candidate.materia_titulo;
+  }
+  if (!merged.leccion_titulo && candidate.leccion_titulo) {
+    merged.leccion_titulo = candidate.leccion_titulo;
+  }
+  if (!merged.extraido_de_libro && candidate.extraido_de_libro) {
+    merged.extraido_de_libro = true;
+  }
+  if (!merged.id_extraccion && candidate.id_extraccion) {
+    merged.id_extraccion = candidate.id_extraccion;
+  }
+  if (!merged.libro_extraccion_estado && candidate.libro_extraccion_estado) {
+    merged.libro_extraccion_estado = candidate.libro_extraccion_estado;
+  }
+  if (typeof merged.libro_extraccion_confirmado !== "boolean" && typeof candidate.libro_extraccion_confirmado === "boolean") {
+    merged.libro_extraccion_confirmado = candidate.libro_extraccion_confirmado;
+  }
+  if (typeof merged.libro_revision_manual_pendiente !== "boolean" && typeof candidate.libro_revision_manual_pendiente === "boolean") {
+    merged.libro_revision_manual_pendiente = candidate.libro_revision_manual_pendiente;
+  }
+
+  return merged;
+}
+
+function dedupeTrabajosById(rows: TrabajoRow[]): TrabajoRow[] {
+  const deduped = new Map<string, TrabajoRow>();
+
+  for (const row of rows) {
+    const existing = deduped.get(row.id);
+    if (!existing) {
+      deduped.set(row.id, { ...row });
+      continue;
+    }
+    deduped.set(row.id, mergeTrabajoRows(existing, row));
+  }
+
+  return [...deduped.values()];
 }
 
 const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
 const MAX_BOOK_QUESTIONS_PER_EXTRACT = 400;
+const DEFAULT_LIBRO_TEST_FILENAME = "2DO-BGU-TEXTO-BIOLOGIA.pdf";
+const DEFAULT_LIBRO_TEST_RELATIVE_PATH = `/libro_prueba/${DEFAULT_LIBRO_TEST_FILENAME}`;
+const CATALOG_REQUEST_OPTIONS: ApiRequestOptions = {
+  timeoutMs: 60_000,
+  retryOnAbort: 1,
+  retryDelayMs: 400,
+};
+const TRABAJOS_REQUEST_OPTIONS: ApiRequestOptions = {
+  timeoutMs: 120_000,
+  retryOnAbort: 1,
+  retryDelayMs: 500,
+};
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerSrc;
 
+function isAbortLikeError(err: unknown): boolean {
+  if (typeof err !== "object" || err === null) return false;
+  const maybe = err as { name?: unknown; message?: unknown };
+  if (typeof maybe.name === "string" && maybe.name === "AbortError") return true;
+  if (typeof maybe.message === "string" && maybe.message.toLowerCase().includes("aborted")) return true;
+  return false;
+}
+
 function normalizeError(err: unknown): string {
+  if (isAbortLikeError(err)) {
+    return "La carga tardó demasiado. Se aplicó reintento automático, pero la solicitud no respondió a tiempo.";
+  }
   if (typeof err === "object" && err !== null && "message" in err) {
     const msg = (err as { message?: unknown }).message;
     if (typeof msg === "string" && msg.trim() !== "") {
@@ -170,6 +232,43 @@ function looksLikeCompositeQuestion(texto: string): boolean {
   return markerMatches.length >= 2;
 }
 
+function isClosedQuestionType(tipo: LibroPreguntaInput["tipo"]): boolean {
+  return tipo === "opcion_multiple" || tipo === "verdadero_falso";
+}
+
+function normalizeQuestionTypePatch(pregunta: LibroPreguntaInput, nextTipo: LibroPreguntaInput["tipo"]): Partial<LibroPreguntaInput> {
+  if (nextTipo === "verdadero_falso") {
+    return {
+      tipo: nextTipo,
+      opciones: ["Verdadero", "Falso"],
+      respuesta_correcta: pregunta.respuesta_correcta === "Falso" ? "Falso" : "Verdadero",
+      respuesta_esperada_tipo: "opciones",
+      placeholder: "",
+    };
+  }
+
+  if (nextTipo === "opcion_multiple") {
+    const opcionesBase = (pregunta.opciones || []).map((opt) => (opt || "").trim()).filter(Boolean);
+    const opciones = opcionesBase.length >= 2 ? opcionesBase : ["Opción 1", "Opción 2"];
+    const answer = opciones.find((opt) => opt === (pregunta.respuesta_correcta || "").trim()) || opciones[0];
+    return {
+      tipo: nextTipo,
+      opciones,
+      respuesta_correcta: answer,
+      respuesta_esperada_tipo: "opciones",
+      placeholder: "",
+    };
+  }
+
+  return {
+    tipo: nextTipo,
+    opciones: [],
+    respuesta_correcta: undefined,
+    respuesta_esperada_tipo: "abierta",
+    placeholder: pregunta.placeholder || "Escribe tu respuesta",
+  };
+}
+
 function sanitizeExtractedQuestions(preguntas: LibroPreguntaInput[]): LibroPreguntaInput[] {
   return preguntas.filter((pregunta) => {
     const texto = (pregunta.texto || "").trim();
@@ -177,9 +276,22 @@ function sanitizeExtractedQuestions(preguntas: LibroPreguntaInput[]): LibroPregu
 
     const genericFallback = texto.toLowerCase() === "resume los conceptos principales del texto proporcionado.";
     const lowConfidenceHeuristic = (pregunta.confianza_ia ?? 1) <= 0.56 && /^explica:\s+/i.test(texto);
-    const notExerciseQuestion = !isLikelyExerciseQuestionText(texto);
+    if (genericFallback || lowConfidenceHeuristic) {
+      return false;
+    }
 
-    return !genericFallback && !lowConfidenceHeuristic && !notExerciseQuestion;
+    if (isLikelyExerciseQuestionText(texto)) {
+      return true;
+    }
+
+    // Coverage backstop:
+    // preserve non-obvious items when backend already attached page/confidence signals.
+    const hasAssignedPage = typeof pregunta.pagina_libro === "number" && pregunta.pagina_libro > 0;
+    const hasReasonableConfidence = (pregunta.confianza_ia ?? 0) >= 0.62;
+    const hasClosedShape = isClosedQuestionType(pregunta.tipo) && (pregunta.opciones || []).length >= 2;
+    const hasSufficientLength = texto.length >= 24;
+
+    return hasAssignedPage && hasSufficientLength && (hasReasonableConfidence || hasClosedShape);
   });
 }
 
@@ -203,10 +315,41 @@ async function parsePdfPages(file: File, pageStart?: number, pageEnd?: number): 
   for (let pageNum = start; pageNum <= end; pageNum += 1) {
     const page = await doc.getPage(pageNum);
     const content = await page.getTextContent();
-    const text = content.items
-      .map((item) => ("str" in item ? item.str : ""))
-      .join(" ")
-      .replace(/\s+/g, " ")
+    const textItems = content.items
+      .map((item) => {
+        if (!("str" in item)) return null;
+        const texto = String(item.str || "").trim();
+        if (!texto) return null;
+
+        const unknownItem = item as unknown as { transform?: number[] };
+        const transform = unknownItem.transform;
+        const x = Array.isArray(transform) && transform.length >= 6 && Number.isFinite(transform[4]) ? transform[4] : 0;
+        const y = Array.isArray(transform) && transform.length >= 6 && Number.isFinite(transform[5]) ? transform[5] : 0;
+
+        return { texto, x, y };
+      })
+      .filter((entry): entry is { texto: string; x: number; y: number } => !!entry)
+      .sort((a, b) => {
+        const deltaY = Math.abs(a.y - b.y);
+        if (deltaY > 2.5) return b.y - a.y;
+        return a.x - b.x;
+      });
+
+    const lineGroups: Array<{ y: number; parts: string[] }> = [];
+    for (const entry of textItems) {
+      const lastGroup = lineGroups[lineGroups.length - 1];
+      if (!lastGroup || Math.abs(lastGroup.y - entry.y) > 2.5) {
+        lineGroups.push({ y: entry.y, parts: [entry.texto] });
+      } else {
+        lastGroup.parts.push(entry.texto);
+      }
+    }
+
+    const text = lineGroups
+      .map((group) => group.parts.join(" ").replace(/\s+/g, " ").trim())
+      .filter(Boolean)
+      .join("\n")
+      .replace(/\n{2,}/g, "\n")
       .trim();
 
     if (!text || text.length < 30) continue;
@@ -322,16 +465,16 @@ export default function TeacherTrabajos() {
   const [saving, setSaving] = useState(false);
   const [search, setSearch] = useState("");
   const [trabajos, setTrabajos] = useState<TrabajoRow[]>([]);
-  const [lecciones, setLecciones] = useState<LeccionOption[]>([]);
   const [materias, setMaterias] = useState<Materia[]>([]);
   const [selectedMateria, setSelectedMateria] = useState<string>("");
-  const [selectedCurso, setSelectedCurso] = useState<string>("");
 
   const [showCreate, setShowCreate] = useState(false);
   const [showDetails, setShowDetails] = useState(false);
   const [selectedTrabajo, setSelectedTrabajo] = useState<TrabajoRow | null>(null);
   const [trabajoEntregas, setTrabajoEntregas] = useState<EntregaConCalificacion[]>([]);
   const [loadingEntregas, setLoadingEntregas] = useState(false);
+  const [bulkDeletingBookIA, setBulkDeletingBookIA] = useState(false);
+  const [loadingLibroDemo, setLoadingLibroDemo] = useState(false);
   const [editingTrabajoId, setEditingTrabajoId] = useState<string | null>(null);
   const [createMode, setCreateMode] = useState<"manual" | "libro">("manual");
   const [filePreviewModal, setFilePreviewModal] = useState<{ url: string; type: 'pdf' | 'image' | 'other' } | null>(null);
@@ -347,6 +490,7 @@ export default function TeacherTrabajos() {
   const [libroPageEnd, setLibroPageEnd] = useState<number | "">("");
   const [libroMaxPreguntas, setLibroMaxPreguntas] = useState(5);
   const [libroIdioma, setLibroIdioma] = useState("es");
+  const [libroModoFormulario, setLibroModoFormulario] = useState<"abierto" | "cerrado_auto" | "mixto_auto">("mixto_auto");
   const [libroPublicarAlCrear, setLibroPublicarAlCrear] = useState(false);
   const [libroMinPreguntasPublicar, setLibroMinPreguntasPublicar] = useState(3);
   const [libroRevisionManual, setLibroRevisionManual] = useState(false);
@@ -391,79 +535,86 @@ export default function TeacherTrabajos() {
     max_intentos: null,
   });
 
-  const loadData = useCallback(async () => {
-    const cursosRes = await api.get<{ data: Curso[] }>("/cursos");
+  const loadCatalogData = useCallback(async (): Promise<Materia[]> => {
+    const startedAt = performance.now();
+    const cursosRes = await api.get<{ data: Curso[] }>("/cursos", CATALOG_REQUEST_OPTIONS);
     const cursos = cursosRes.data || [];
-
-    // Cargar materias del profesor usando cursos existentes y reusar cache por curso.
-    const allMaterias: Materia[] = [];
-    const materiasByCurso = new Map<string, Materia[]>();
-    for (const curso of cursos) {
-      const materiasRes = await api.get<{ data: Materia[] }>(`/cursos/${curso.id}/materias`);
-      const materias = materiasRes.data || [];
-      materiasByCurso.set(curso.id, materias);
-      allMaterias.push(...materias);
-    }
-    setMaterias(allMaterias);
-
-    const allLecciones: LeccionOption[] = [];
-    const allTrabajos: TrabajoRow[] = [];
-
-    for (const curso of cursos) {
-      const materias = materiasByCurso.get(curso.id) || [];
-
-      for (const materia of materias) {
-        // Cargar trabajos por materia
-        try {
-          const trabajosMateria = await listTrabajosByMateria(materia.id);
-          for (const trabajo of trabajosMateria) {
-            allTrabajos.push({ ...trabajo, materia_titulo: materia.nombre });
-          }
-        } catch {
-          // Skip materias where listing fails so the page remains usable.
-        }
-
-        // Cargar lecciones para mantener compatibilidad con trabajos antiguos
-        const unidadesRes = await api.get<{ data: Unidad[] }>(`/materias/${materia.id}/unidades`);
-        const unidades = unidadesRes.data || [];
-
-        for (const unidad of unidades) {
-          const temasRes = await api.get<{ data: Tema[] }>(`/unidades/${unidad.id}/temas`);
-          const temas = temasRes.data || [];
-
-          for (const tema of temas) {
-            const leccionesRes = await api.get<{ data: Leccion[] }>(`/temas/${tema.id}/lecciones`);
-            const leccionesData = leccionesRes.data || [];
-
-            for (const leccion of leccionesData) {
-              allLecciones.push({ id: leccion.id, titulo: leccion.titulo });
-
-              try {
-                const trabajosLeccion = await listTrabajosByLeccion(leccion.id);
-                for (const trabajo of trabajosLeccion) {
-                  allTrabajos.push({ ...trabajo, leccion_titulo: leccion.titulo });
-                }
-              } catch {
-                // Skip lecciones where listing fails so the page remains usable.
-              }
-            }
-          }
-        }
+    const materiasResults = await Promise.all(cursos.map(async (curso) => {
+      try {
+        const materiasRes = await api.get<{ data: Materia[] }>(`/cursos/${curso.id}/materias`, CATALOG_REQUEST_OPTIONS);
+        return materiasRes.data || [];
+      } catch {
+        return [];
       }
+    }));
+
+    const allMaterias = materiasResults.flat();
+    setMaterias(allMaterias);
+    setSelectedMateria((prev) => {
+      if (prev && allMaterias.some((item) => item.id === prev)) return prev;
+      return allMaterias[0]?.id || "";
+    });
+
+    console.info("[Trabajos/loadCatalog]", {
+      durationMs: Math.round(performance.now() - startedAt),
+      cursos: cursos.length,
+      materias: allMaterias.length,
+    });
+
+    return allMaterias;
+  }, []);
+
+  const loadTrabajosBySelectedMateria = useCallback(async (materiaId: string): Promise<TrabajoRow[]> => {
+    if (!materiaId) {
+      setTrabajos([]);
+      setLibroReviewMetaByTrabajo({});
+      return [];
     }
 
-    const reviewCandidates = allTrabajos.filter((trabajo) => trabajo.extraido_de_libro && trabajo.id_extraccion && trabajo.estado === "borrador");
+    const startedAt = performance.now();
+    const materiaTitulo = materias.find((item) => item.id === materiaId)?.nombre;
+    const trabajosMateria = await listTrabajosByMateria(materiaId, TRABAJOS_REQUEST_OPTIONS);
+    const trabajosRows: TrabajoRow[] = trabajosMateria.map((trabajo) => ({
+      ...trabajo,
+      materia_titulo: materiaTitulo,
+    }));
+    const trabajosDedupeSorted = dedupeTrabajosById(trabajosRows).sort((a, b) => {
+      const dateA = new Date(a.created_at || 0).getTime();
+      const dateB = new Date(b.created_at || 0).getTime();
+      return dateB - dateA;
+    });
 
+    const reviewCandidates = trabajosDedupeSorted.filter((trabajo) => trabajo.extraido_de_libro && trabajo.id_extraccion && trabajo.estado === "borrador");
     const reviewEntries = await Promise.all(reviewCandidates.map(async (trabajo) => {
+      const hasDerivedPending = typeof trabajo.libro_revision_manual_pendiente === "boolean";
+      const hasExtraccionEstado = typeof trabajo.libro_extraccion_estado === "string" && trabajo.libro_extraccion_estado.trim() !== "";
+      const hasConfirmadoFlag = typeof trabajo.libro_extraccion_confirmado === "boolean";
+
+      if (hasDerivedPending || (hasExtraccionEstado && hasConfirmadoFlag)) {
+        const pendienteManual = trabajo.libro_revision_manual_pendiente;
+        const estado = trabajo.libro_extraccion_estado
+          || (pendienteManual ? "en_revision" : "aprobado");
+        const confirmado = hasConfirmadoFlag
+          ? Boolean(trabajo.libro_extraccion_confirmado)
+          : pendienteManual === false;
+
+        return [trabajo.id, {
+          estado,
+          confirmado,
+          pendiente_manual: pendienteManual,
+        }] as const;
+      }
+
       try {
         const estadoLibro = await getLibroEstado(trabajo.id);
         return [trabajo.id, {
           estado: estadoLibro.extraccion?.estado || "pendiente",
           confirmado: Boolean(estadoLibro.extraccion?.confirmado_por),
+          pendiente_manual: (estadoLibro.extraccion?.estado || "pendiente") !== "aprobado"
+            || !Boolean(estadoLibro.extraccion?.confirmado_por),
         }] as const;
       } catch {
-        // If libro state fails to load, keep item in manual queue to avoid premature publication visibility.
-        return [trabajo.id, { estado: "pendiente", confirmado: false }] as const;
+        return [trabajo.id, { estado: "pendiente", confirmado: false, pendiente_manual: true }] as const;
       }
     }));
 
@@ -472,21 +623,37 @@ export default function TeacherTrabajos() {
       nextReviewMetaByTrabajo[trabajoId] = meta;
     }
 
-    setLecciones(allLecciones);
-    setTrabajos(
-      allTrabajos.sort((a, b) => {
-        const dateA = new Date(a.created_at || 0).getTime();
-        const dateB = new Date(b.created_at || 0).getTime();
-        return dateB - dateA;
-      }),
-    );
+    setTrabajos(trabajosDedupeSorted);
     setLibroReviewMetaByTrabajo(nextReviewMetaByTrabajo);
 
-    setNewTrabajo((prev) => {
-      if (prev.leccion_id || allLecciones.length === 0) return prev;
-      return { ...prev, leccion_id: allLecciones[0]?.id || "" };
+    console.info("[Trabajos/loadTrabajosMateria]", {
+      materiaId,
+      totalTrabajos: trabajosDedupeSorted.length,
+      durationMs: Math.round(performance.now() - startedAt),
     });
-  }, []);
+
+    return trabajosDedupeSorted;
+  }, [materias]);
+
+  const refreshTrabajosMateriaActual = useCallback(async (): Promise<TrabajoRow[]> => {
+    if (!selectedMateria) return [];
+    const startedAt = performance.now();
+    try {
+      const snapshot = await loadTrabajosBySelectedMateria(selectedMateria);
+      console.info("[Trabajos/reviewRefresh]", {
+        materiaId: selectedMateria,
+        durationMs: Math.round(performance.now() - startedAt),
+        totalTrabajos: snapshot.length,
+      });
+      return snapshot;
+    } catch (err) {
+      if (isAbortLikeError(err)) {
+        toast.error("No se pudo refrescar la lista completa a tiempo. Se mantienen los datos disponibles.");
+        return [];
+      }
+      throw err;
+    }
+  }, [loadTrabajosBySelectedMateria, selectedMateria]);
 
   useEffect(() => {
     (async () => {
@@ -497,19 +664,35 @@ export default function TeacherTrabajos() {
           return;
         }
 
-        await loadData();
+        await loadCatalogData();
       } catch (err) {
         toast.error(t("teacher.trabajos.loadError", { defaultValue: normalizeError(err) }));
       } finally {
         setLoading(false);
       }
     })();
-  }, [loadData, navigate, t]);
+  }, [loadCatalogData, navigate, t]);
+
+  useEffect(() => {
+    if (loading) return;
+    if (!selectedMateria) {
+      setTrabajos([]);
+      setLibroReviewMetaByTrabajo({});
+      return;
+    }
+    (async () => {
+      try {
+        await loadTrabajosBySelectedMateria(selectedMateria);
+      } catch (err) {
+        toast.error(t("teacher.trabajos.loadError", { defaultValue: normalizeError(err) }));
+      }
+    })();
+  }, [loadTrabajosBySelectedMateria, loading, selectedMateria, t]);
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase();
     return trabajos.filter((trabajo) => {
-      const matchesMateria = !selectedMateria || trabajo.materia_id === selectedMateria;
+      const matchesMateria = selectedMateria ? trabajo.materia_id === selectedMateria : false;
       const matchesSearch =
         (trabajo.titulo || "").toLowerCase().includes(q) ||
         (trabajo.descripcion || "").toLowerCase().includes(q) ||
@@ -537,12 +720,39 @@ export default function TeacherTrabajos() {
       return false;
     }
 
+    if (typeof trabajo.libro_revision_manual_pendiente === "boolean") {
+      return trabajo.libro_revision_manual_pendiente;
+    }
+
     const meta = libroReviewMetaByTrabajo[trabajo.id];
     if (!meta) {
       return true;
     }
 
+    if (typeof meta.pendiente_manual === "boolean") {
+      return meta.pendiente_manual;
+    }
+
     return meta.estado !== "aprobado" || !meta.confirmado;
+  }, [libroReviewMetaByTrabajo]);
+
+  const isReadyToActivate = useCallback((trabajo: TrabajoRow): boolean => {
+    if (!trabajo.extraido_de_libro || !trabajo.id_extraccion || trabajo.estado !== "borrador") {
+      return false;
+    }
+
+    if (typeof trabajo.libro_revision_manual_pendiente === "boolean") {
+      return !trabajo.libro_revision_manual_pendiente;
+    }
+
+    const meta = libroReviewMetaByTrabajo[trabajo.id];
+    if (!meta) {
+      return false;
+    }
+    if (typeof meta.pendiente_manual === "boolean") {
+      return !meta.pendiente_manual;
+    }
+    return meta.estado === "aprobado" && meta.confirmado;
   }, [libroReviewMetaByTrabajo]);
 
   const pendingManualReviewTrabajos = useMemo(
@@ -565,6 +775,7 @@ export default function TeacherTrabajos() {
     setLibroPageEnd("");
     setLibroMaxPreguntas(5);
     setLibroIdioma("es");
+    setLibroModoFormulario("mixto_auto");
     setLibroPublicarAlCrear(false);
     setLibroMinPreguntasPublicar(3);
     setLibroRevisionManual(false);
@@ -632,20 +843,43 @@ export default function TeacherTrabajos() {
     setReviewDraft({ titulo: "", descripcion: "", instrucciones: "" });
   };
 
-  const loadReviewItem = async (ids: string[], index: number) => {
+  const syncTrabajoLocal = useCallback((trabajoId: string, patch: Partial<TrabajoRow>) => {
+    setTrabajos((prev) => prev.map((item) => (item.id === trabajoId ? { ...item, ...patch } : item)));
+    setReviewTrabajo((prev) => (prev && prev.id === trabajoId ? { ...prev, ...patch } : prev));
+  }, []);
+
+  const syncLibroMetaLocal = useCallback((trabajoId: string, meta: LibroReviewMeta) => {
+    setLibroReviewMetaByTrabajo((prev) => ({ ...prev, [trabajoId]: meta }));
+    setTrabajos((prev) => prev.map((item) => (item.id === trabajoId ? {
+      ...item,
+      libro_extraccion_estado: meta.estado as Trabajo["libro_extraccion_estado"],
+      libro_extraccion_confirmado: meta.confirmado,
+      libro_revision_manual_pendiente: typeof meta.pendiente_manual === "boolean" ? meta.pendiente_manual : undefined,
+    } : item)));
+  }, []);
+
+  const loadReviewItem = async (ids: string[], index: number, snapshotTrabajos?: TrabajoRow[]): Promise<boolean> => {
     const trabajoId = ids[index];
     if (!trabajoId) {
       closeSequentialReview();
-      return;
+      return false;
     }
 
     setReviewLoading(true);
     try {
       const estado = await getLibroEstado(trabajoId);
-      const trabajoActual = trabajos.find((item) => item.id === trabajoId) || null;
+      const trabajoActualEnMemoria = snapshotTrabajos?.find((item) => item.id === trabajoId)
+        || trabajos.find((item) => item.id === trabajoId)
+        || null;
+      const trabajoActual = trabajoActualEnMemoria
+        || (await getTrabajo(trabajoId).catch(() => null) as TrabajoRow | null);
 
       if (!trabajoActual) {
-        throw new Error(t("teacher.trabajos.bookReview.notFound", { defaultValue: "No se encontro el trabajo para revisar" }));
+        console.warn("[Libro/Review] trabajo no encontrado para revision", {
+          trabajoId,
+          queueIndex: index,
+        });
+        return false;
       }
 
       const preguntasMapeadas: LibroPreguntaInput[] = (estado.preguntas || []).map((p, idx) => ({
@@ -657,6 +891,7 @@ export default function TeacherTrabajos() {
         confianza_ia: p.confianza_ia ?? undefined,
         imagen_base64: p.imagen_base64 ?? undefined,
         imagen_fuente: p.imagen_fuente ?? undefined,
+        respuesta_correcta: p.respuesta_correcta ?? undefined,
         respuesta_esperada_tipo: p.respuesta_esperada_tipo ?? undefined,
         placeholder: p.placeholder ?? undefined,
         orden: p.orden || idx + 1,
@@ -687,15 +922,30 @@ export default function TeacherTrabajos() {
       setReviewQueueIds(ids);
       setReviewQueueIndex(index);
       setReviewOpen(true);
+      return true;
+    } catch (err) {
+      console.warn("[Libro/Review] error cargando item de revision", {
+        trabajoId,
+        queueIndex: index,
+        error: normalizeError(err),
+      });
+      return false;
     } finally {
       setReviewLoading(false);
     }
   };
 
-  const startSequentialReview = async (ids: string[]) => {
-    const filteredIds = ids.filter(Boolean);
+  const startSequentialReview = async (ids: string[], snapshotTrabajos?: TrabajoRow[]) => {
+    const filteredIds = [...new Set(ids.filter((id): id is string => typeof id === "string" && id.trim() !== ""))];
     if (filteredIds.length === 0) return;
-    await loadReviewItem(filteredIds, 0);
+
+    for (let index = 0; index < filteredIds.length; index += 1) {
+      const loaded = await loadReviewItem(filteredIds, index, snapshotTrabajos);
+      if (loaded) return;
+    }
+
+    closeSequentialReview();
+    toast.error(t("teacher.trabajos.bookReview.notFoundAny", { defaultValue: "No se encontro ningun trabajo valido para revisar." }));
   };
 
   const updateReviewPregunta = (index: number, patch: Partial<LibroPreguntaInput>) => {
@@ -719,6 +969,9 @@ export default function TeacherTrabajos() {
         texto: "",
         tipo: "respuesta_corta",
         opciones: [],
+        respuesta_correcta: undefined,
+        respuesta_esperada_tipo: "abierta",
+        placeholder: "Escribe tu respuesta",
         orden: prev.length + 1,
       },
     ]));
@@ -737,11 +990,28 @@ export default function TeacherTrabajos() {
 
   const normalizeReviewQuestions = (): LibroPreguntaInput[] => {
     return reviewPreguntas
-      .map((pregunta, idx) => ({
-        ...pregunta,
-        texto: (pregunta.texto || "").trim(),
-        orden: pregunta.orden > 0 ? pregunta.orden : idx + 1,
-      }))
+      .map((pregunta, idx) => {
+        const isClosed = isClosedQuestionType(pregunta.tipo);
+        const respuestaEsperadaTipo: LibroPreguntaInput["respuesta_esperada_tipo"] = isClosed ? "opciones" : "abierta";
+        const opciones = isClosed
+          ? pregunta.tipo === "verdadero_falso"
+            ? ["Verdadero", "Falso"]
+            : (pregunta.opciones || []).map((opt) => (opt || "").trim()).filter(Boolean)
+          : [];
+        return {
+          ...pregunta,
+          texto: (pregunta.texto || "").trim(),
+          opciones,
+          respuesta_correcta: isClosed
+            ? (pregunta.respuesta_correcta || "").trim() || undefined
+            : undefined,
+          respuesta_esperada_tipo: respuestaEsperadaTipo,
+          placeholder: isClosed
+            ? ""
+            : (pregunta.placeholder || "").trim() || "Escribe tu respuesta",
+          orden: pregunta.orden > 0 ? pregunta.orden : idx + 1,
+        };
+      })
       .filter((pregunta) => pregunta.texto.length > 0);
   };
 
@@ -796,6 +1066,16 @@ export default function TeacherTrabajos() {
 
       persistCurrentReviewSnapshot(reviewTrabajo.id, approvedIndexes, reviewCurrentQuestionIndex);
       setReviewDirty(false);
+      syncTrabajoLocal(reviewTrabajo.id, {
+        titulo: reviewDraft.titulo.trim(),
+        descripcion: reviewDraft.descripcion.trim() || null,
+        instrucciones: reviewDraft.instrucciones.trim() || null,
+      });
+      syncLibroMetaLocal(reviewTrabajo.id, {
+        estado: "en_revision",
+        confirmado: false,
+        pendiente_manual: true,
+      });
       if (!options?.silent) {
         toast.success(
           options?.approveCurrent
@@ -803,7 +1083,6 @@ export default function TeacherTrabajos() {
             : t("teacher.trabajos.bookReview.progressSaved", { defaultValue: "Progreso guardado" }),
         );
       }
-      await loadData();
       return true;
     } catch (err) {
       toast.error(normalizeError(err));
@@ -847,18 +1126,18 @@ export default function TeacherTrabajos() {
   };
 
   const goNextReviewItem = async () => {
-    const nextIndex = reviewQueueIndex + 1;
-    if (nextIndex >= reviewQueueIds.length) {
-      closeSequentialReview();
-      await loadData();
-      toast.success(t("teacher.trabajos.bookReview.completed", { defaultValue: "Revision secuencial completada" }));
-      return;
+    for (let nextIndex = reviewQueueIndex + 1; nextIndex < reviewQueueIds.length; nextIndex += 1) {
+      const loaded = await loadReviewItem(reviewQueueIds, nextIndex);
+      if (loaded) {
+        return;
+      }
     }
 
-    await loadReviewItem(reviewQueueIds, nextIndex);
+    closeSequentialReview();
+    toast.success(t("teacher.trabajos.bookReview.completed", { defaultValue: "Revision secuencial completada" }));
   };
 
-  const finishAndPublishCurrentReview = async () => {
+  const finishAndSetActivableCurrentReview = async () => {
     if (!reviewTrabajo) return;
 
     const isAllApproved = reviewPreguntas.length > 0 && reviewApprovedQuestionIndexes.length >= reviewPreguntas.length;
@@ -889,10 +1168,20 @@ export default function TeacherTrabajos() {
       });
 
       await confirmarLibro(reviewTrabajo.id, {
-        publicar: true,
-        notas_finales: t("teacher.trabajos.bookReview.autoPublished", { defaultValue: "Aprobado y publicado desde revision secuencial" }),
+        publicar: false,
+        notas_finales: t("teacher.trabajos.bookReview.autoReadyToActivate", { defaultValue: "Aprobado y confirmado desde revision secuencial (pendiente de activacion manual)" }),
       });
 
+      syncTrabajoLocal(reviewTrabajo.id, {
+        titulo: reviewDraft.titulo.trim(),
+        descripcion: reviewDraft.descripcion.trim() || null,
+        instrucciones: reviewDraft.instrucciones.trim() || null,
+      });
+      syncLibroMetaLocal(reviewTrabajo.id, {
+        estado: "aprobado",
+        confirmado: true,
+        pendiente_manual: false,
+      });
       clearReviewProgressSnapshot(reviewTrabajo.id);
 
       await goNextReviewItem();
@@ -1019,7 +1308,7 @@ export default function TeacherTrabajos() {
           toast.error("Error al publicar trabajo automáticamente: " + (err as any)?.message || "Error desconocido");
         }
       } else {
-        const leccionTitulo = lecciones.find((item) => item.id === newTrabajo.leccion_id)?.titulo || "Contenido";
+        const materiaTitulo = materias.find((item) => item.id === selectedMateria)?.nombre || "Materia";
         const libroBase = libroFileName ? libroFileName.replace(/\.[^.]+$/, "") : "Libro";
         const parsedPages = libroPages.filter((chunk) => chunk.text.trim().length > 0);
         const candidatePages = parsedPages.filter((chunk) => isLikelyExercisePage(chunk.text));
@@ -1062,6 +1351,8 @@ export default function TeacherTrabajos() {
         let createdCount = 0;
         let skippedByIACount = 0;
         let failedCount = 0;
+        const pageCreationFailures: Array<{ page: number; reason: string }> = [];
+        const omissionReasonCount = new Map<string, number>();
 
         const trabajosPorPagina: Array<{ trabajoId: string; page: number }> = [];
         const maxPage = Math.max(...parsedPages.map((chunk) => chunk.page));
@@ -1087,16 +1378,23 @@ export default function TeacherTrabajos() {
             }));
 
             const trabajo = await createTrabajo({
-              leccion_id: newTrabajo.leccion_id,
-              titulo: `${leccionTitulo} - ${libroBase} - Pagina ${chunk.page}`,
+              leccion_id: undefined,
+              materia_id: selectedMateria || undefined,
+              titulo: `${materiaTitulo} - ${libroBase} - Pagina ${chunk.page}`,
               descripcion: `Generado automaticamente desde libro (${libroBase}), pagina ${chunk.page}`,
               instrucciones: "Responde las preguntas basadas en el contenido de la pagina asignada.",
               fecha_vencimiento: newTrabajo.fecha_vencimiento || undefined,
             });
 
             trabajosPorPagina.push({ trabajoId: trabajo.id, page: chunk.page });
-          } catch {
+          } catch (err) {
             failedCount += 1;
+            const reason = normalizeError(err);
+            pageCreationFailures.push({ page: chunk.page, reason });
+            console.warn("[Libro/Create] fallo creando trabajo por pagina", {
+              page: chunk.page,
+              reason,
+            });
           } finally {
             const processed = i + 1;
             setLibroProgress((prev) => ({
@@ -1151,6 +1449,7 @@ export default function TeacherTrabajos() {
                 pagina_inicio: blockPages[0]?.page,
                 pagina_fin: blockMaxPage,
                 idioma: libroIdioma,
+                modo_formulario: libroModoFormulario,
                 max_preguntas: Math.min(MAX_BOOK_QUESTIONS_PER_EXTRACT, Math.max(libroMaxPreguntas, libroMaxPreguntas * blockPages.length)),
                 imagenes_por_pagina: Object.keys(imagenesPorPagina).length > 0 ? imagenesPorPagina : undefined,
                 imagenes_metadata_por_pagina: Object.keys(imagenesMetadataPorPagina).length > 0 ? imagenesMetadataPorPagina : undefined,
@@ -1165,6 +1464,7 @@ export default function TeacherTrabajos() {
                 confianza_ia: p.confianza_ia ?? undefined,
                 imagen_base64: p.imagen_base64 ?? undefined,
                 imagen_fuente: p.imagen_fuente ?? undefined,
+                respuesta_correcta: p.respuesta_correcta ?? undefined,
                 respuesta_esperada_tipo: p.respuesta_esperada_tipo ?? undefined,
                 placeholder: p.placeholder ?? undefined,
                 orden: allPreguntasExtraidas.length + idx + 1,
@@ -1191,6 +1491,7 @@ export default function TeacherTrabajos() {
             pagina_inicio: parsedPages[0]?.page,
             pagina_fin: maxPage,
             idioma: libroIdioma,
+            modo_formulario: libroModoFormulario,
             max_preguntas: Math.min(MAX_BOOK_QUESTIONS_PER_EXTRACT, Math.max(libroMaxPreguntas, libroMaxPreguntas * pagesForTrabajos.length)),
             imagenes_por_pagina: Object.keys(imagenesPorPagina).length > 0 ? imagenesPorPagina : undefined,
             imagenes_metadata_por_pagina: Object.keys(imagenesMetadataPorPagina).length > 0 ? imagenesMetadataPorPagina : undefined,
@@ -1205,16 +1506,24 @@ export default function TeacherTrabajos() {
             confianza_ia: p.confianza_ia ?? undefined,
             imagen_base64: p.imagen_base64 ?? undefined,
             imagen_fuente: p.imagen_fuente ?? undefined,
+            respuesta_correcta: p.respuesta_correcta ?? undefined,
             respuesta_esperada_tipo: p.respuesta_esperada_tipo ?? undefined,
             placeholder: p.placeholder ?? undefined,
             orden: p.orden || idx + 1,
           }));
         }
 
-        let preguntasLibro = sanitizeExtractedQuestions(allPreguntasExtraidas);
-        if (preguntasLibro.length === 0) {
-          preguntasLibro = normalizeExtractedQuestions(allPreguntasExtraidas);
-        }
+        const preguntasSanitizadas = sanitizeExtractedQuestions(allPreguntasExtraidas);
+        const preguntasNormalizadas = normalizeExtractedQuestions(allPreguntasExtraidas);
+        const filtroPrecisionDescartadas = Math.max(0, preguntasNormalizadas.length - preguntasSanitizadas.length);
+        const coberturaMinima = Math.max(3, Math.floor(preguntasNormalizadas.length * 0.4));
+        const debeRelajarFiltro =
+          preguntasNormalizadas.length > 0
+          && preguntasSanitizadas.length > 0
+          && preguntasSanitizadas.length < coberturaMinima;
+        let preguntasLibro = debeRelajarFiltro
+          ? preguntasNormalizadas
+          : (preguntasSanitizadas.length > 0 ? preguntasSanitizadas : preguntasNormalizadas);
 
         if (preguntasLibro.length === 0) {
           for (const item of trabajosPorPagina) {
@@ -1224,13 +1533,21 @@ export default function TeacherTrabajos() {
               // Best effort cleanup when extraction yields no usable questions.
             }
           }
-          throw new Error("No se pudieron extraer preguntas del libro. Prueba ampliar el rango de páginas o revisar la calidad del texto.");
+          throw new Error("Extraccion vacia: no se detectaron preguntas utiles en el libro. Prueba ampliar el rango o revisar la calidad del texto.");
         }
 
+        const paginasConTrabajo = new Set(trabajosPorPagina.map((item) => item.page));
         const preguntasPorPagina = new Map<number, LibroPreguntaInput[]>();
         for (const pregunta of preguntasLibro) {
           const page = pregunta.pagina_libro;
-          if (!page) continue;
+          if (!page) {
+            omissionReasonCount.set("sin_pagina_libro", (omissionReasonCount.get("sin_pagina_libro") || 0) + 1);
+            continue;
+          }
+          if (!paginasConTrabajo.has(page)) {
+            omissionReasonCount.set("pagina_fuera_de_lote", (omissionReasonCount.get("pagina_fuera_de_lote") || 0) + 1);
+            continue;
+          }
           const current = preguntasPorPagina.get(page) || [];
           current.push(pregunta);
           preguntasPorPagina.set(page, current);
@@ -1244,6 +1561,7 @@ export default function TeacherTrabajos() {
 
           if (pageQuestionsRaw.length === 0) {
             skippedByIACount += 1;
+            omissionReasonCount.set("sin_preguntas_asignadas_pagina", (omissionReasonCount.get("sin_preguntas_asignadas_pagina") || 0) + 1);
             try {
               await deleteTrabajo(item.trabajoId);
             } catch {
@@ -1258,6 +1576,7 @@ export default function TeacherTrabajos() {
                 pagina_inicio: parsedPages[0]?.page,
                 pagina_fin: maxPage,
                 idioma: libroIdioma,
+                modo_formulario: libroModoFormulario,
                 max_preguntas: Math.min(MAX_BOOK_QUESTIONS_PER_EXTRACT, Math.max(libroMaxPreguntas, libroMaxPreguntas * pagesForTrabajos.length)),
                 imagenes_por_pagina: Object.keys(imagenesPorPagina).length > 0 ? imagenesPorPagina : undefined,
                 imagenes_metadata_por_pagina: Object.keys(imagenesMetadataPorPagina).length > 0 ? imagenesMetadataPorPagina : undefined,
@@ -1310,11 +1629,68 @@ export default function TeacherTrabajos() {
           }));
         }
 
+        const topOmissionReasons = [...omissionReasonCount.entries()]
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 3)
+          .map(([reason, count]) => `${reason}:${count}`)
+          .join(", ");
+
+        console.info("[Libro/Create] extraction assignment diagnostics", {
+          rawExtractedQuestions: allPreguntasExtraidas.length,
+          normalizedQuestions: preguntasNormalizadas.length,
+          sanitizedQuestions: preguntasLibro.length,
+          filteredByPrecision: filtroPrecisionDescartadas,
+          relaxedCoverageFilter: debeRelajarFiltro,
+          pagesWithQuestions: createdCount,
+          pagesOmittedByIA: skippedByIACount,
+          pageCreateFailures: pageCreationFailures.length,
+          omissionReasonsTop: topOmissionReasons || "none",
+        });
+
+        if (createdCount === 0) {
+          const reasonSummary = topOmissionReasons || "sin_preguntas_asignadas_pagina";
+          throw new Error(`Extraccion vacia: no hubo paginas con preguntas asignables. Motivos: ${reasonSummary}`);
+        }
+
         setLibroProgress((prev) => ({
           ...prev,
           currentPhase: "finalizado",
           currentPage: null,
         }));
+
+        if (pageCreationFailures.length > 0) {
+          const reasonCount = new Map<string, number>();
+          for (const failure of pageCreationFailures) {
+            reasonCount.set(failure.reason, (reasonCount.get(failure.reason) || 0) + 1);
+          }
+          const dominantReason = [...reasonCount.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] || "Error inesperado";
+          const failedPages = pageCreationFailures
+            .map((item) => item.page)
+            .sort((a, b) => a - b)
+            .slice(0, 10);
+          const suffix = pageCreationFailures.length > 10 ? "..." : "";
+          toast.error(
+            t("teacher.trabajos.bookCreate.partialCreateError", {
+              defaultValue: "Fallaron {{count}} páginas al crear trabajos. Páginas: {{pages}}{{suffix}}. Motivo: {{reason}}",
+              count: pageCreationFailures.length,
+              pages: failedPages.join(", "),
+              suffix,
+              reason: dominantReason,
+            }),
+          );
+        }
+
+        if (skippedByIACount > 0) {
+          const omissionTop = [...omissionReasonCount.entries()]
+            .sort((a, b) => b[1] - a[1])[0];
+          toast(
+            t("teacher.trabajos.bookCreate.omissionSummary", {
+              defaultValue: "La IA omitio {{count}} paginas sin preguntas asignables. Motivo principal: {{reason}}",
+              count: skippedByIACount,
+              reason: omissionTop ? omissionTop[0] : "sin_preguntas_asignadas_pagina",
+            }),
+          );
+        }
       }
 
       toast.success(editingTrabajoId
@@ -1327,10 +1703,17 @@ export default function TeacherTrabajos() {
 
       const mustStartSequentialReview = !editingTrabajoId && createMode === "libro" && libroRevisionManual && createdBookTrabajoIds.length > 0;
       resetCreateState();
-      await loadData();
+      let trabajosSnapshot: TrabajoRow[] = [];
+      try {
+        trabajosSnapshot = await refreshTrabajosMateriaActual();
+      } catch (refreshErr) {
+        console.warn("[Libro/Create] refresh dirigido falló, se continuará con fallback por trabajo", {
+          error: normalizeError(refreshErr),
+        });
+      }
 
       if (mustStartSequentialReview) {
-        await startSequentialReview(createdBookTrabajoIds);
+        await startSequentialReview(createdBookTrabajoIds, trabajosSnapshot);
       }
     } catch (err) {
       console.error("Error al crear/editar trabajo:", err);
@@ -1390,9 +1773,55 @@ export default function TeacherTrabajos() {
     try {
       await publicarTrabajo(trabajoId);
       toast.success(t("teacher.trabajos.published", { defaultValue: "Trabajo publicado" }));
-      await loadData();
+      await refreshTrabajosMateriaActual();
     } catch (err) {
       toast.error(normalizeError(err));
+    }
+  };
+
+  const handleLoadDemoLibro = async () => {
+    if (saving || loadingLibroDemo) {
+      return;
+    }
+
+    const configuredDemoUrl = (import.meta.env.VITE_LIBRO_TEST_URL as string | undefined)?.trim();
+    const candidateUrls = [configuredDemoUrl, DEFAULT_LIBRO_TEST_RELATIVE_PATH, `http://localhost:9082${DEFAULT_LIBRO_TEST_RELATIVE_PATH}`]
+      .filter((url): url is string => Boolean(url));
+
+    setLoadingLibroDemo(true);
+    try {
+      let loaded = false;
+      let lastError: unknown = null;
+      for (const url of candidateUrls) {
+        try {
+          const response = await fetch(url, { cache: "no-store" });
+          if (!response.ok) {
+            throw new Error(`No se pudo cargar ${url} (${response.status})`);
+          }
+
+          const blob = await response.blob();
+          const inferredName = url.split("/").pop() || DEFAULT_LIBRO_TEST_FILENAME;
+          const fileName = inferredName.includes(".") ? inferredName : DEFAULT_LIBRO_TEST_FILENAME;
+          const demoFile = new File([blob], fileName, { type: blob.type || "application/pdf" });
+          await onUploadLibro(demoFile);
+          loaded = true;
+          break;
+        } catch (err) {
+          lastError = err;
+          continue;
+        }
+      }
+
+      if (!loaded) {
+        const fallbackHint = configuredDemoUrl
+          ? "Verifica que VITE_LIBRO_TEST_URL sea accesible desde el navegador."
+          : `Configura VITE_LIBRO_TEST_URL o publica el archivo en ${DEFAULT_LIBRO_TEST_RELATIVE_PATH}.`;
+        throw new Error(`${fallbackHint} Detalle: ${normalizeError(lastError)}`);
+      }
+    } catch (err) {
+      toast.error(normalizeError(err));
+    } finally {
+      setLoadingLibroDemo(false);
     }
   };
 
@@ -1418,7 +1847,7 @@ export default function TeacherTrabajos() {
     try {
       await cerrarTrabajo(trabajoId);
       toast.success(t("teacher.trabajos.closed", { defaultValue: "Trabajo cerrado" }));
-      await loadData();
+      await refreshTrabajosMateriaActual();
     } catch (err) {
       toast.error(normalizeError(err));
     }
@@ -1470,6 +1899,106 @@ export default function TeacherTrabajos() {
     setImagePan({ x: 0, y: 0 });
   };
 
+  const handleEliminarTrabajosLibroIA = async () => {
+    if (bulkDeletingBookIA) return;
+    if (materias.length === 0) {
+      toast.error("No hay materias disponibles para buscar trabajos de libro.");
+      return;
+    }
+
+    const accepted = await confirm(
+      "Se eliminarán todos los trabajos creados por análisis de libro con IA (acción temporal de testing). ¿Continuar?",
+      {
+        tone: "danger",
+        title: "Eliminar trabajos de libro (IA)",
+        confirmText: "Sí, eliminar todos",
+        cancelText: "Cancelar",
+      },
+    );
+    if (!accepted) return;
+
+    setBulkDeletingBookIA(true);
+    const startedAt = performance.now();
+    try {
+      const trabajosByMateria = await Promise.all(materias.map(async (materia) => {
+        try {
+          const items = await listTrabajosByMateria(materia.id, {
+            ...TRABAJOS_REQUEST_OPTIONS,
+            timeoutMs: 150_000,
+          });
+          return items.map((trabajo) => ({ ...trabajo, materia_titulo: materia.nombre } as TrabajoRow));
+        } catch (err) {
+          console.warn("[Trabajos/deleteLibroIA] no se pudo listar materia", {
+            materiaId: materia.id,
+            error: normalizeError(err),
+          });
+          return [];
+        }
+      }));
+
+      const allRows = dedupeTrabajosById(trabajosByMateria.flat());
+      const targets = allRows.filter((item) => item.extraido_de_libro || Boolean(item.id_extraccion));
+      if (targets.length === 0) {
+        toast("No se encontraron trabajos creados por análisis de libro.");
+        return;
+      }
+
+      let deletedCount = 0;
+      let failedCount = 0;
+      const deletedIds = new Set<string>();
+      const queue = [...targets];
+      const failures: Array<{ id: string; reason: string }> = [];
+      const workerCount = Math.min(4, queue.length);
+      const workers = Array.from({ length: workerCount }, async () => {
+        while (queue.length > 0) {
+          const item = queue.shift();
+          if (!item) break;
+          try {
+            await deleteTrabajo(item.id);
+            deletedCount += 1;
+            deletedIds.add(item.id);
+          } catch (err) {
+            failedCount += 1;
+            failures.push({ id: item.id, reason: normalizeError(err) });
+          }
+        }
+      });
+      await Promise.all(workers);
+
+      setTrabajos((prev) => prev.filter((item) => !deletedIds.has(item.id)));
+      setLibroReviewMetaByTrabajo((prev) => {
+        const next = { ...prev };
+        for (const id of deletedIds) {
+          delete next[id];
+        }
+        return next;
+      });
+      if (selectedTrabajo && deletedIds.has(selectedTrabajo.id)) {
+        setShowDetails(false);
+        setSelectedTrabajo(null);
+      }
+      await refreshTrabajosMateriaActual();
+
+      const dominantFailure = failures[0]?.reason || "Error inesperado";
+      if (failedCount > 0) {
+        toast.error(`Eliminación parcial: ${deletedCount} eliminados, ${failedCount} fallidos. Motivo principal: ${dominantFailure}`);
+      } else {
+        toast.success(`Se eliminaron ${deletedCount} trabajos creados por libro/IA.`);
+      }
+
+      console.info("[Trabajos/deleteLibroIA] completed", {
+        targets: targets.length,
+        deletedCount,
+        failedCount,
+        durationMs: Math.round(performance.now() - startedAt),
+      });
+    } catch (err) {
+      toast.error(normalizeError(err));
+    } finally {
+      setBulkDeletingBookIA(false);
+    }
+  };
+
   const handleEliminar = async (trabajoId: string) => {
     if (!await confirm(
       t("teacher.trabajos.confirmDelete", { defaultValue: "Deseas eliminar este trabajo? Esta accion no se puede deshacer." }),
@@ -1485,13 +2014,18 @@ export default function TeacherTrabajos() {
     try {
       await deleteTrabajo(trabajoId);
       toast.success(t("teacher.trabajos.deleted", { defaultValue: "Trabajo eliminado" }));
-      await loadData();
+      await refreshTrabajosMateriaActual();
     } catch (err) {
       toast.error(normalizeError(err));
     }
   };
 
   const reviewCurrentQuestion = reviewPreguntas[reviewCurrentQuestionIndex] || null;
+  const reviewCurrentIsClosed = !!reviewCurrentQuestion && isClosedQuestionType(reviewCurrentQuestion.tipo);
+  const reviewCurrentOptions = reviewCurrentQuestion
+    ? (reviewCurrentQuestion.opciones || []).map((option) => (option || "").trim()).filter(Boolean)
+    : [];
+  const reviewCurrentCorrectAnswer = (reviewCurrentQuestion?.respuesta_correcta || "").trim();
   const reviewApprovedCount = reviewApprovedQuestionIndexes.length;
   const reviewAllQuestionsApproved = reviewPreguntas.length > 0 && reviewApprovedCount >= reviewPreguntas.length;
   const reviewCurrentQuestionApproved = reviewApprovedQuestionIndexes.includes(reviewCurrentQuestionIndex);
@@ -1520,7 +2054,6 @@ export default function TeacherTrabajos() {
                   value={selectedMateria}
                   onChange={(e) => setSelectedMateria(e.target.value)}
                 >
-                  <option value="">{t("teacher.trabajos.allMaterias", { defaultValue: "Todas las materias" })}</option>
                   {materias.map((materia) => (
                     <option key={materia.id} value={materia.id}>{materia.nombre}</option>
                   ))}
@@ -1536,6 +2069,14 @@ export default function TeacherTrabajos() {
           </div>
           
           <div className="flex items-center gap-3">
+            <button
+              onClick={() => { void handleEliminarTrabajosLibroIA(); }}
+              disabled={bulkDeletingBookIA}
+              className="inline-flex items-center gap-2 px-4 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors shadow-md font-medium disabled:opacity-60 disabled:cursor-not-allowed"
+            >
+              {bulkDeletingBookIA ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
+              <span>{bulkDeletingBookIA ? "Eliminando IA..." : "Eliminar trabajos IA"}</span>
+            </button>
             <button
               onClick={openCreateModal}
               className="inline-flex items-center gap-2 px-5 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors shadow-md font-medium"
@@ -1661,19 +2202,26 @@ export default function TeacherTrabajos() {
               className="bg-white rounded-xl shadow-sm hover:shadow-md transition-shadow p-6 border border-gray-100 cursor-pointer"
               onClick={() => handleViewTrabajoDetails(trabajo)}
             >
-              <div className="flex items-start justify-between gap-2 mb-3">
-                <div className="flex-1">
-                  <h3 className="font-semibold text-gray-900 text-lg">{trabajo.titulo}</h3>
-                  <p className="text-sm text-gray-500 mt-1">{trabajo.materia_titulo || trabajo.leccion_titulo}</p>
+                <div className="flex items-start justify-between gap-2 mb-3">
+                  <div className="flex-1">
+                    <h3 className="font-semibold text-gray-900 text-lg">{trabajo.titulo}</h3>
+                    <p className="text-sm text-gray-500 mt-1">{trabajo.materia_titulo || trabajo.leccion_titulo}</p>
+                  </div>
+                  <div className="flex flex-col items-end gap-1">
+                    <span className={`text-xs px-3 py-1.5 rounded-full font-medium ${
+                      trabajo.estado === "publicado" ? "bg-emerald-100 text-emerald-700" :
+                      trabajo.estado === "cerrado" ? "bg-gray-200 text-gray-700" :
+                      "bg-amber-100 text-amber-700"
+                    }`}>
+                      {trabajo.estado.charAt(0).toUpperCase() + trabajo.estado.slice(1)}
+                    </span>
+                    {isReadyToActivate(trabajo) && (
+                      <span className="text-[11px] px-2 py-1 rounded-full font-medium bg-sky-100 text-sky-700 border border-sky-200">
+                        {t("teacher.trabajos.bookReview.readyToActivate", { defaultValue: "Listo para activar" })}
+                      </span>
+                    )}
+                  </div>
                 </div>
-                <span className={`text-xs px-3 py-1.5 rounded-full font-medium ${
-                  trabajo.estado === "publicado" ? "bg-emerald-100 text-emerald-700" : 
-                  trabajo.estado === "cerrado" ? "bg-gray-200 text-gray-700" : 
-                  "bg-amber-100 text-amber-700"
-                }`}>
-                  {trabajo.estado.charAt(0).toUpperCase() + trabajo.estado.slice(1)}
-                </span>
-              </div>
 
               {trabajo.descripcion && (
                 <p className="text-sm text-gray-600 mt-3 line-clamp-2">{trabajo.descripcion}</p>
@@ -1751,15 +2299,8 @@ export default function TeacherTrabajos() {
                   <select
                     className="w-full border border-gray-300 rounded-lg px-4 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white shadow-sm"
                     value={selectedMateria}
-                    onChange={(e) => {
-                      setSelectedMateria(e.target.value);
-                      const materia = materias.find(m => m.id === e.target.value);
-                      if (materia) {
-                        setSelectedCurso(materia.curso_id);
-                      }
-                    }}
+                    onChange={(e) => setSelectedMateria(e.target.value)}
                   >
-                    <option value="">{t("teacher.trabajos.selectMateria", { defaultValue: "Selecciona una materia" })}</option>
                     {materias.map((materia) => (
                       <option key={materia.id} value={materia.id}>{materia.nombre}</option>
                     ))}
@@ -1917,6 +2458,29 @@ export default function TeacherTrabajos() {
                     />
                   </label>
 
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      className="px-3 py-2 rounded border border-indigo-300 bg-white text-indigo-700 text-sm hover:bg-indigo-50 disabled:opacity-60"
+                      onClick={() => {
+                        void handleLoadDemoLibro();
+                      }}
+                      disabled={saving || loadingLibroDemo}
+                    >
+                      <span className="inline-flex items-center gap-2">
+                        {loadingLibroDemo ? <Loader2 size={14} className="animate-spin" /> : <BookOpen size={14} />}
+                        {loadingLibroDemo
+                          ? t("common.loading", { defaultValue: "Cargando..." })
+                          : t("teacher.trabajos.bookCreate.loadDemoBook", { defaultValue: "Cargar PDF de prueba" })}
+                      </span>
+                    </button>
+                    <p className="text-xs text-gray-600">
+                      {t("teacher.trabajos.bookCreate.loadDemoBookHelp", {
+                        defaultValue: "Temporal: carga el libro de ejemplo sin selector de archivos (ideal para la vista embebida de VS).",
+                      })}
+                    </p>
+                  </div>
+
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
                     <label className="text-sm">
                       {t("teacher.trabajos.libro.pageStart", { defaultValue: "Pagina inicio" })}
@@ -1960,6 +2524,28 @@ export default function TeacherTrabajos() {
                       value={libroIdioma}
                       onChange={(e) => setLibroIdioma(e.target.value || "es")}
                     />
+                  </label>
+
+                  <label className="text-sm block">
+                    {t("teacher.trabajos.bookCreate.formMode", { defaultValue: "Modo de formulario automático" })}
+                    <select
+                      className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 bg-white"
+                      value={libroModoFormulario}
+                      onChange={(e) => setLibroModoFormulario((e.target.value as "abierto" | "cerrado_auto" | "mixto_auto") || "mixto_auto")}
+                    >
+                      <option value="mixto_auto">
+                        {t("teacher.trabajos.bookCreate.formModeMixedAuto", { defaultValue: "Auto abierta/cerrada (recomendado)" })}
+                      </option>
+                      <option value="cerrado_auto">
+                        {t("teacher.trabajos.bookCreate.formModeClosedAuto", { defaultValue: "Intentar cerradas automáticamente" })}
+                      </option>
+                      <option value="abierto">
+                        {t("teacher.trabajos.bookCreate.formModeOpen", { defaultValue: "Solo abiertas" })}
+                      </option>
+                    </select>
+                    <p className="mt-1 text-xs text-gray-600">
+                      {t("teacher.trabajos.bookCreate.formModeHelp", { defaultValue: "Si una cerrada no es confiable o válida, se convertirá automáticamente en abierta." })}
+                    </p>
                   </label>
 
                   <label className="inline-flex items-center gap-2 text-sm text-gray-800">
@@ -2199,13 +2785,19 @@ export default function TeacherTrabajos() {
                       </p>
                     )}
 
-                    <div className="grid md:grid-cols-4 gap-2 text-sm">
+                    <div className="grid md:grid-cols-5 gap-2 text-sm">
                       <label>
                         {t("teacher.trabajos.libro.type", { defaultValue: "Tipo" })}
                         <select
                           className="mt-1 w-full border border-gray-300 rounded-lg px-2 py-2"
                           value={reviewCurrentQuestion.tipo}
-                          onChange={(e) => updateReviewPregunta(reviewCurrentQuestionIndex, { tipo: e.target.value as LibroPreguntaInput["tipo"] })}
+                          onChange={(e) => {
+                            const nextTipo = e.target.value as LibroPreguntaInput["tipo"];
+                            updateReviewPregunta(
+                              reviewCurrentQuestionIndex,
+                              normalizeQuestionTypePatch(reviewCurrentQuestion, nextTipo),
+                            );
+                          }}
                         >
                           <option value="opcion_multiple">{t("teacher.trabajos.libro.questionTypes.opcion_multiple", { defaultValue: "Opcion multiple" })}</option>
                           <option value="verdadero_falso">{t("teacher.trabajos.libro.questionTypes.verdadero_falso", { defaultValue: "Verdadero/Falso" })}</option>
@@ -2248,22 +2840,99 @@ export default function TeacherTrabajos() {
                           onChange={(e) => updateReviewPregunta(reviewCurrentQuestionIndex, { confianza_ia: e.target.value ? Number(e.target.value) : undefined })}
                         />
                       </label>
+
+                      <label>
+                        {t("teacher.trabajos.libro.maxScore", { defaultValue: "Puntaje" })}
+                        <input
+                          type="number"
+                          min={0.1}
+                          step={0.1}
+                          className="mt-1 w-full border border-gray-300 rounded-lg px-2 py-2"
+                          value={reviewCurrentQuestion.puntaje_maximo ?? 1}
+                          onChange={(e) => updateReviewPregunta(reviewCurrentQuestionIndex, { puntaje_maximo: e.target.value ? Number(e.target.value) : 1 })}
+                        />
+                      </label>
                     </div>
 
-                    <label className="text-sm block mt-2">
-                      {t("teacher.trabajos.libro.options", { defaultValue: "Opciones (separadas por coma)" })}
-                      <input
-                        className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2"
-                        value={(reviewCurrentQuestion.opciones || []).join(", ")}
-                        onChange={(e) => {
-                          const opciones = e.target.value
-                            .split(",")
-                            .map((item) => item.trim())
-                            .filter(Boolean);
-                          updateReviewPregunta(reviewCurrentQuestionIndex, { opciones });
-                        }}
-                      />
-                    </label>
+                    {reviewCurrentIsClosed ? (
+                      <div className="mt-2 space-y-2 rounded-lg border border-slate-200 bg-slate-50 p-3">
+                        <label className="text-sm block">
+                          {t("teacher.trabajos.libro.options", { defaultValue: "Opciones (separadas por coma)" })}
+                          <input
+                            className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 bg-white"
+                            value={reviewCurrentOptions.join(", ")}
+                            onChange={(e) => {
+                              const opciones = e.target.value
+                                .split(",")
+                                .map((item) => item.trim())
+                                .filter(Boolean);
+                              const correct =
+                                opciones.find((option) => option === reviewCurrentCorrectAnswer)
+                                || opciones[0]
+                                || undefined;
+                              updateReviewPregunta(reviewCurrentQuestionIndex, {
+                                opciones,
+                                respuesta_correcta: correct,
+                                respuesta_esperada_tipo: "opciones",
+                              });
+                            }}
+                          />
+                        </label>
+
+                        {reviewCurrentQuestion.tipo === "verdadero_falso" ? (
+                          <div className="flex flex-wrap gap-2 text-sm">
+                            {["Verdadero", "Falso"].map((option) => (
+                              <label key={option} className="inline-flex items-center gap-2 border border-gray-200 bg-white rounded px-3 py-1.5">
+                                <input
+                                  type="radio"
+                                  name={`review-correct-${reviewCurrentQuestionIndex}`}
+                                  checked={reviewCurrentCorrectAnswer === option}
+                                  onChange={() => updateReviewPregunta(reviewCurrentQuestionIndex, {
+                                    opciones: ["Verdadero", "Falso"],
+                                    respuesta_correcta: option,
+                                    respuesta_esperada_tipo: "opciones",
+                                  })}
+                                />
+                                <span>{option}</span>
+                              </label>
+                            ))}
+                          </div>
+                        ) : (
+                          <label className="text-sm block">
+                            {t("teacher.trabajos.libro.correctAnswer", { defaultValue: "Respuesta correcta" })}
+                            <select
+                              className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 bg-white"
+                              value={reviewCurrentCorrectAnswer}
+                              onChange={(e) => updateReviewPregunta(reviewCurrentQuestionIndex, {
+                                respuesta_correcta: e.target.value || undefined,
+                                respuesta_esperada_tipo: "opciones",
+                              })}
+                            >
+                              {reviewCurrentOptions.length === 0 && (
+                                <option value="">{t("teacher.trabajos.libro.selectOptionFirst", { defaultValue: "Primero define las opciones" })}</option>
+                              )}
+                              {reviewCurrentOptions.map((option) => (
+                                <option key={option} value={option}>{option}</option>
+                              ))}
+                            </select>
+                          </label>
+                        )}
+                      </div>
+                    ) : (
+                      <label className="text-sm block mt-2">
+                        {t("teacher.trabajos.libro.placeholder", { defaultValue: "Placeholder de respuesta" })}
+                        <input
+                          className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2"
+                          value={reviewCurrentQuestion.placeholder || ""}
+                          onChange={(e) => updateReviewPregunta(reviewCurrentQuestionIndex, {
+                            placeholder: e.target.value,
+                            opciones: [],
+                            respuesta_correcta: undefined,
+                            respuesta_esperada_tipo: "abierta",
+                          })}
+                        />
+                      </label>
+                    )}
 
                     <div className="flex justify-between gap-2">
                       <button
@@ -2310,7 +2979,7 @@ export default function TeacherTrabajos() {
                 </label>
 
                 <p className="text-xs text-blue-700 bg-blue-50 border border-blue-200 rounded p-2">
-                  {t("teacher.trabajos.bookReview.publishHint", { defaultValue: "Verifica y guarda cada pregunta. Al completar todas, finaliza para publicar el trabajo." })}
+                  {t("teacher.trabajos.bookReview.publishHint", { defaultValue: "Verifica y guarda cada pregunta. Al completar todas, finaliza para dejar el trabajo activable (sin publicarlo)." })}
                 </p>
               </div>
             )}
@@ -2348,13 +3017,13 @@ export default function TeacherTrabajos() {
 
                 <button
                   className="px-4 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
-                  onClick={() => { void finishAndPublishCurrentReview(); }}
+                  onClick={() => { void finishAndSetActivableCurrentReview(); }}
                   disabled={reviewSaving || reviewLoading || !reviewAllQuestionsApproved}
                   type="button"
                 >
                   {reviewSaving
                     ? t("common.saving", { defaultValue: "Guardando..." })
-                    : t("teacher.trabajos.bookReview.finishPublish", { defaultValue: "Finalizar y publicar" })}
+                    : t("teacher.trabajos.bookReview.finishPublish", { defaultValue: "Finalizar y dejar activable" })}
                 </button>
 
                 <button

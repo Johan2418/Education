@@ -20,17 +20,29 @@ type Config struct {
 	LibroAnalysis   HuggingFaceConfig
 	LibroMCP        HuggingFaceConfig
 	LibroModel      LibroModelConfig
+	LibroAsync      LibroAsyncConfig
 	LibreOfficePath string
 	ConversionAPI   ConversionAPIConfig
 }
 
 type HuggingFaceConfig struct {
-	APIKey         string
-	Model          string
-	FallbackModel  string
-	EnableFallback bool
-	BaseURL        string
-	TimeoutSeconds int
+	APIKey          string
+	Model           string
+	FallbackModel   string
+	EnableFallback  bool
+	BaseURL         string
+	TimeoutSeconds  int
+	LibroExtraction LibroExtractionConfig
+}
+
+type LibroExtractionConfig struct {
+	MinConfidence             float64
+	MinClosedConfidence       float64
+	ShortFidelityMin          float64
+	LongFidelityMin           float64
+	MinQuestionChars          int
+	MinQuestionTokens         int
+	HeuristicSentenceMinChars int
 }
 
 type LibroModelConfig struct {
@@ -38,6 +50,12 @@ type LibroModelConfig struct {
 	BenchEnabled     bool
 	TrainingRevision string
 	BenchmarkBatchID string
+}
+
+type LibroAsyncConfig struct {
+	ExtractWorkers       int
+	ExtractQueueSize     int
+	ExtractJobTTLMinutes int
 }
 
 type ConversionAPIConfig struct {
@@ -102,6 +120,11 @@ func Load() *Config {
 		}
 	}
 
+	defaultLibroExtraction := defaultLibroExtractionConfig()
+	libroIAExtraction := loadLibroExtractionConfig("LIBRO_IA", defaultLibroExtraction)
+	libroAnalysisExtraction := loadLibroExtractionConfig("LIBRO_ANALYSIS", libroIAExtraction)
+	libroMCPExtraction := loadLibroExtractionConfig("LIBRO_MCP", libroIAExtraction)
+
 	// Keep legacy hours in config for compatibility and observability.
 	effectiveLegacyExpireHours := 168
 	if hasLegacyExpireHours && legacyExpireHours > 0 {
@@ -135,20 +158,22 @@ func Load() *Config {
 			FrontendURL: envOrDefault("FRONTEND_URL", "http://localhost:5173"),
 		},
 		HuggingFace: HuggingFaceConfig{
-			APIKey:         envOrDefault("HUGGINGFACE_API_KEY", ""),
-			Model:          envOrDefault("HUGGINGFACE_MODEL", "mistralai/Mistral-7B-Instruct-v0.3"),
-			FallbackModel:  envOrDefault("HUGGINGFACE_FALLBACK_MODEL", ""),
-			EnableFallback: envOrDefaultBool("HUGGINGFACE_ENABLE_FALLBACK", false),
-			BaseURL:        envOrDefault("HUGGINGFACE_BASE_URL", "https://router.huggingface.co"),
-			TimeoutSeconds: envOrDefaultInt("HUGGINGFACE_TIMEOUT_SECONDS", 30),
+			APIKey:          envOrDefault("HUGGINGFACE_API_KEY", ""),
+			Model:           envOrDefault("HUGGINGFACE_MODEL", "mistralai/Mistral-7B-Instruct-v0.3"),
+			FallbackModel:   envOrDefault("HUGGINGFACE_FALLBACK_MODEL", ""),
+			EnableFallback:  envOrDefaultBool("HUGGINGFACE_ENABLE_FALLBACK", false),
+			BaseURL:         envOrDefault("HUGGINGFACE_BASE_URL", "https://router.huggingface.co"),
+			TimeoutSeconds:  envOrDefaultInt("HUGGINGFACE_TIMEOUT_SECONDS", 30),
+			LibroExtraction: defaultLibroExtraction,
 		},
 		LibroIA: HuggingFaceConfig{
-			APIKey:         envOrDefault("LIBRO_IA_API_KEY", envOrDefault("HUGGINGFACE_API_KEY", "")),
-			Model:          envOrDefault("LIBRO_IA_MODEL", envOrDefault("HUGGINGFACE_MODEL", "mistralai/Mistral-7B-Instruct-v0.3")),
-			FallbackModel:  envOrDefault("LIBRO_IA_FALLBACK_MODEL", envOrDefault("HUGGINGFACE_FALLBACK_MODEL", "")),
-			EnableFallback: envOrDefaultBool("LIBRO_IA_ENABLE_FALLBACK", envOrDefaultBool("HUGGINGFACE_ENABLE_FALLBACK", false)),
-			BaseURL:        envOrDefault("LIBRO_IA_BASE_URL", envOrDefault("HUGGINGFACE_BASE_URL", "https://router.huggingface.co")),
-			TimeoutSeconds: envOrDefaultInt("LIBRO_IA_TIMEOUT_SECONDS", envOrDefaultInt("HUGGINGFACE_TIMEOUT_SECONDS", 30)),
+			APIKey:          envOrDefault("LIBRO_IA_API_KEY", envOrDefault("HUGGINGFACE_API_KEY", "")),
+			Model:           envOrDefault("LIBRO_IA_MODEL", envOrDefault("HUGGINGFACE_MODEL", "mistralai/Mistral-7B-Instruct-v0.3")),
+			FallbackModel:   envOrDefault("LIBRO_IA_FALLBACK_MODEL", envOrDefault("HUGGINGFACE_FALLBACK_MODEL", "")),
+			EnableFallback:  envOrDefaultBool("LIBRO_IA_ENABLE_FALLBACK", envOrDefaultBool("HUGGINGFACE_ENABLE_FALLBACK", false)),
+			BaseURL:         envOrDefault("LIBRO_IA_BASE_URL", envOrDefault("HUGGINGFACE_BASE_URL", "https://router.huggingface.co")),
+			TimeoutSeconds:  envOrDefaultInt("LIBRO_IA_TIMEOUT_SECONDS", envOrDefaultInt("HUGGINGFACE_TIMEOUT_SECONDS", 30)),
+			LibroExtraction: libroIAExtraction,
 		},
 		LibroAnalysis: HuggingFaceConfig{
 			APIKey: envOrDefault(
@@ -175,6 +200,7 @@ func Load() *Config {
 				"LIBRO_ANALYSIS_TIMEOUT_SECONDS",
 				envOrDefaultInt("LIBRO_IA_TIMEOUT_SECONDS", envOrDefaultInt("HUGGINGFACE_TIMEOUT_SECONDS", 30)),
 			),
+			LibroExtraction: libroAnalysisExtraction,
 		},
 		LibroMCP: HuggingFaceConfig{
 			APIKey: envOrDefault(
@@ -201,6 +227,7 @@ func Load() *Config {
 				"LIBRO_MCP_TIMEOUT_SECONDS",
 				envOrDefaultInt("LIBRO_IA_TIMEOUT_SECONDS", envOrDefaultInt("HUGGINGFACE_TIMEOUT_SECONDS", 30)),
 			),
+			LibroExtraction: libroMCPExtraction,
 		},
 		LibroModel: LibroModelConfig{
 			CandidateModels: envOrDefaultList(
@@ -225,6 +252,11 @@ func Load() *Config {
 					"2026.05.0",
 				),
 			),
+		},
+		LibroAsync: LibroAsyncConfig{
+			ExtractWorkers:       envOrDefaultInt("LIBRO_EXTRACT_WORKERS", 2),
+			ExtractQueueSize:     envOrDefaultInt("LIBRO_EXTRACT_QUEUE_SIZE", 100),
+			ExtractJobTTLMinutes: envOrDefaultInt("LIBRO_EXTRACT_JOB_TTL_MINUTES", 60),
 		},
 		LibreOfficePath: envOrDefault("LIBREOFFICE_PATH", ""),
 		ConversionAPI: ConversionAPIConfig{
@@ -308,6 +340,15 @@ func envOrDefaultInt(key string, fallback int) int {
 	return fallback
 }
 
+func envOrDefaultFloat(key string, fallback float64) float64 {
+	if v := strings.TrimSpace(os.Getenv(key)); v != "" {
+		if n, err := strconv.ParseFloat(v, 64); err == nil {
+			return n
+		}
+	}
+	return fallback
+}
+
 func envInt(key string) (int, bool) {
 	v, exists := os.LookupEnv(key)
 	if !exists || strings.TrimSpace(v) == "" {
@@ -363,4 +404,51 @@ func envOrDefaultList(key string, fallback []string) []string {
 		return copied
 	}
 	return out
+}
+
+func defaultLibroExtractionConfig() LibroExtractionConfig {
+	return LibroExtractionConfig{
+		MinConfidence:             0.55,
+		MinClosedConfidence:       0.72,
+		ShortFidelityMin:          0.72,
+		LongFidelityMin:           0.78,
+		MinQuestionChars:          20,
+		MinQuestionTokens:         4,
+		HeuristicSentenceMinChars: 28,
+	}
+}
+
+func loadLibroExtractionConfig(prefix string, fallback LibroExtractionConfig) LibroExtractionConfig {
+	cfg := LibroExtractionConfig{
+		MinConfidence:             clampFloat(envOrDefaultFloat(prefix+"_MIN_CONFIDENCE", fallback.MinConfidence), 0, 1),
+		MinClosedConfidence:       clampFloat(envOrDefaultFloat(prefix+"_MIN_CLOSED_CONFIDENCE", fallback.MinClosedConfidence), 0, 1),
+		ShortFidelityMin:          clampFloat(envOrDefaultFloat(prefix+"_MIN_SHORT_FIDELITY", fallback.ShortFidelityMin), 0, 1),
+		LongFidelityMin:           clampFloat(envOrDefaultFloat(prefix+"_MIN_LONG_FIDELITY", fallback.LongFidelityMin), 0, 1),
+		MinQuestionChars:          envOrDefaultInt(prefix+"_MIN_QUESTION_CHARS", fallback.MinQuestionChars),
+		MinQuestionTokens:         envOrDefaultInt(prefix+"_MIN_QUESTION_TOKENS", fallback.MinQuestionTokens),
+		HeuristicSentenceMinChars: envOrDefaultInt(prefix+"_HEURISTIC_SENTENCE_MIN_CHARS", fallback.HeuristicSentenceMinChars),
+	}
+	if cfg.MinQuestionChars < 10 {
+		cfg.MinQuestionChars = 10
+	}
+	if cfg.MinQuestionTokens < 2 {
+		cfg.MinQuestionTokens = 2
+	}
+	if cfg.MinClosedConfidence <= 0 || cfg.MinClosedConfidence > 1 {
+		cfg.MinClosedConfidence = fallback.MinClosedConfidence
+	}
+	if cfg.HeuristicSentenceMinChars < cfg.MinQuestionChars {
+		cfg.HeuristicSentenceMinChars = cfg.MinQuestionChars
+	}
+	return cfg
+}
+
+func clampFloat(v, min, max float64) float64 {
+	if v < min {
+		return min
+	}
+	if v > max {
+		return max
+	}
+	return v
 }

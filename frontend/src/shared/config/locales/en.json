@@ -945,15 +945,18 @@
       "bookReview": {
         "title": "Sequential review for book assignments",
         "progress": "Assignment {{current}} of {{total}}",
-        "publishHint": "Approving automatically publishes this assignment and lets you continue with the next one.",
+        "publishHint": "Verify and save each question. When all are done, finish to leave the assignment ready to activate (without publishing).",
         "skipContinue": "Skip and continue",
         "finishWithoutApprove": "Finish without approving",
         "approveContinue": "Approve and continue",
         "approveFinish": "Approve and finish",
+        "finishPublish": "Finish and leave ready to activate",
+        "readyToActivate": "Ready to activate",
         "completed": "Sequential review completed",
         "titleRequired": "Title is required to approve",
         "notFound": "Assignment not found for review",
-        "autoPublished": "Approved and published from sequential review"
+        "autoPublished": "Approved and published from sequential review",
+        "autoReadyToActivate": "Approved and confirmed from sequential review (pending manual activation)"
       },
       "reports": "Reports",
       "libro": {
@@ -1917,6 +1920,30 @@
   "student.grades.types.content": "Contents",
   "student.grades.types.exam": "Tests",
   "student.grades.types.assignment": "Tasks",
-  "student.grades.empty": "There are no grades for the selected filters."
+  "student.grades.empty": "There are no grades for the selected filters.",
+  "admin.dashboard.title": "Administration dashboard",
+  "admin.dashboard.subtitle": "Global tracking for users, courses and academic performance across contents, tests and tasks.",
+  "admin.dashboard.adminPanel": "Administration dashboard",
+  "admin.dashboard.users": "Users",
+  "admin.dashboard.cursos": "Courses",
+  "admin.dashboard.modelos": "3D models",
+  "admin.dashboard.grades": "Grades",
+  "admin.dashboard.students": "Students",
+  "admin.dashboard.teachers": "Teachers",
+  "admin.dashboard.gradedContents": "Graded contents",
+  "admin.dashboard.gradedTests": "Graded tests",
+  "admin.dashboard.gradedTasks": "Graded tasks",
+  "admin.dashboard.averageGrade": "Overall average /10",
+  "admin.dashboard.activeSchoolYear": "Active school year",
+  "admin.dashboard.topCourse": "Top course",
+  "admin.dashboard.systemSummary": "Academic system summary",
+  "admin.dashboard.ctaGrades": "Go to grades",
+  "admin.grades.title": "Global grades",
+  "admin.grades.subtitle": "Global view of contents, tests and tasks with filters by school year, course, subject, unit and topic.",
+  "admin.grades.filters.schoolYear": "School year",
+  "admin.grades.filters.allYears": "All years",
+  "admin.grades.kpi.topCourse": "Top course",
+  "admin.grades.charts.byCourse": "Average by course (/10)",
+  "admin.grades.activeYear": "Active school year"
 }
 

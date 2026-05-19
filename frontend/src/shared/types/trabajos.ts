@@ -17,6 +17,9 @@ export interface Trabajo {
   estado: EstadoTrabajo;
   extraido_de_libro?: boolean;
   id_extraccion?: string | null;
+  libro_extraccion_estado?: "pendiente" | "extrayendo" | "completado" | "en_revision" | "aprobado" | "cancelado";
+  libro_extraccion_confirmado?: boolean;
+  libro_revision_manual_pendiente?: boolean;
   // New fields for enhanced assignment system
   tipo_trabajo: TipoTrabajo;
   permite_archivo: boolean;
@@ -104,6 +107,7 @@ export interface ExtractLibroRequest {
   pagina_fin?: number;
   idioma?: string;
   max_preguntas?: number;
+  modo_formulario?: "abierto" | "cerrado_auto" | "mixto_auto";
   imagenes_por_pagina?: Record<string, string>;
   imagenes_metadata_por_pagina?: Record<string, PdfPaginaMetadata>;
 }
@@ -171,6 +175,8 @@ export interface ExtractLibroAsyncResponse {
   estado: EstadoExtraccionJob;
   progress: number;
   message: string;
+  queued_at: string;
+  queue_depth_peak: number;
 }
 
 export interface LibroExtractJobStatusResponse {
@@ -182,11 +188,16 @@ export interface LibroExtractJobStatusResponse {
   error?: string;
   error_type?: string;
   error_message?: string;
-  started_at: string;
+  queued_at: string;
+  started_at?: string;
   updated_at: string;
   completed_at?: string;
   failed_at?: string;
+  wait_ms: number;
+  run_ms: number;
   duration_ms: number;
+  total_ms: number;
+  queue_depth_peak: number;
   result?: ExtractLibroResponse;
 }
 
